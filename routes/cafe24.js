@@ -22,10 +22,10 @@ router.get('/start', (req, res) => {
   if (!sessionId) {
     sessionId = crypto.randomUUID();
     res.cookie('cafe24_session_id', sessionId, {
-        httpOnly: true,
-        secure: true, // 보안 통신 강제: 반드시 HTTPS 연결
-        sameSite: 'lax',
-        maxAge: 10 * 60 * 1000 // 10분 쿠키 유지
+      httpOnly: true,
+      secure: true, // 보안 통신 강제: 반드시 HTTPS 연결
+      sameSite: 'lax',
+      maxAge: 10 * 60 * 1000 // 10분 쿠키 유지
     });
   }
 
@@ -33,6 +33,8 @@ router.get('/start', (req, res) => {
   stateStore.save(sessionId, state); // 10분 TTL 저장
 
   const authorizeUrl = cafe24AuthService.getAuthorizeUrl(state);
+  console.log("AUTHORIZE URL:", authorizeUrl);
+  console.log("SCOPE RAW:", JSON.stringify(config.SCOPE));
   console.log(`[INFO] OAuth 인증 화면으로 이동합니다. 타겟 쇼핑몰: ${config.MALL_ID}`);
   res.redirect(authorizeUrl);
 });
@@ -86,14 +88,14 @@ router.get('/callback', async (req, res) => {
 router.get('/token', (req, res) => {
   // 보안을 위해 운영 환경에서는 접근을 엄격히 차단
   if (config.NODE_ENV !== 'development') {
-    return res.status(403).json({ 
-      error: "Forbidden", 
-      message: "해당 엔드포인트는 운영 환경에서 접근할 수 없습니다. (NODE_ENV !== development)" 
+    return res.status(403).json({
+      error: "Forbidden",
+      message: "해당 엔드포인트는 운영 환경에서 접근할 수 없습니다. (NODE_ENV !== development)"
     });
   }
 
   const tokens = tokenStore.getTokens(config.MALL_ID);
-  
+
   if (!tokens.accessToken) {
     return res.status(404).json({ message: "메모리에 저장된 토큰이 없습니다. 만료되었거나 앱 재시작 때문입니다." });
   }
@@ -148,7 +150,7 @@ router.get('/products', async (req, res) => {
     res.json(data);
   } catch (err) {
     if (err.status === 401) {
-       return res.status(401).send(`
+      return res.status(401).send(`
           <h2>⚠ 권한 만료 (401)</h2>
           <a href="/cafe24/refresh">토큰 리프레시 진행</a>
        `);

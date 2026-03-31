@@ -5,11 +5,11 @@ import { config } from '../config/env.js';
  * 향후 주문 조회(orders), 회원 조회 등 카페24 각 도메인 별 API 로직 추가 위치입니다.
  */
 export const cafe24ApiService = {
-  
+
   // 기능 안내 테스트용 - 최신 상품 목록 가져오기 제한(limit) 5개
   getProducts: async (accessToken, limit = 5) => {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}`;
-    
+
     console.log(`[INFO] 상품 조회 API 통신 시작 (GET ${url})`);
     const response = await fetch(url, {
       method: 'GET',
@@ -22,15 +22,15 @@ export const cafe24ApiService = {
     });
 
     const data = await response.json();
-    
+
     // 401 권한 없음 (만료), 404 없음, 400 파라미터 에러 등 핸들링
     if (!response.ok) {
       const error = new Error(`상품 조회 통신 에러 발생`);
-      error.status = response.status; 
+      error.status = response.status;
       error.data = data;
       throw error;
     }
-    
+
     return data;
   }
 };

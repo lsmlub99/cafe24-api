@@ -16,45 +16,28 @@ export const cafe24AuthService = {
   getAccessToken: async (code) => {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/oauth/token`;
 
-    const payload = {
+    // [핵심 변경 사항] 카페24 공식 문서 스펙 준수: client_id:client_secret 을 Base64로 인코딩하여 Header에 삽입해야 합니다.
+    const base64Credentials = Buffer.from(`${config.CLIENT_ID}:${config.CLIENT_SECRET}`).toString('base64');
+
+    const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code: String(code),
-      redirect_uri: config.REDIRECT_URI,
-      client_id: config.CLIENT_ID,
-      client_secret: config.CLIENT_SECRET
-    };
-
-    const body = new URLSearchParams(payload);
-
-    console.log('=== TOKEN REQUEST DEBUG ===');
-    console.log('TOKEN URL:', url);
-    console.log('TOKEN PAYLOAD:', {
-      grant_type: payload.grant_type,
-      code_preview: `${String(code).slice(0, 6)}...`,
-      redirect_uri: payload.redirect_uri,
-      client_id: payload.client_id,
-      client_secret_length: payload.client_secret?.length
+      redirect_uri: config.REDIRECT_URI
+      // client_id, client_secret를 여기서 제거하고 Header로 이동
     });
+
+    console.log(`[INFO] (getAccessToken) 통신 요청 준비 완료. Payload:`, body.toString());
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
+        'Authorization': `Basic ${base64Credentials}`, // 공식 문서 필수 항목
         'Content-Type': 'application/x-www-form-urlencoded'
       },
       body
     });
 
-    const rawText = await response.text();
-
-    console.log('TOKEN RESPONSE STATUS:', response.status);
-    console.log('TOKEN RESPONSE RAW:', rawText);
-
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      throw new Error(`토큰 응답이 JSON이 아닙니다: ${rawText}`);
-    }
+    const data = await response.json();
 
     if (!response.ok) {
       throw new Error(`토큰 발급 실패: ${JSON.stringify(data)}`);
@@ -66,16 +49,21 @@ export const cafe24AuthService = {
   refreshAccessToken: async (refreshToken) => {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/oauth/token`;
 
+    // [핵심 변경 사항] 리프레시 토큰 요청 시에도 Basic Auth 필수
+    const base64Credentials = Buffer.from(`${config.CLIENT_ID}:${config.CLIENT_SECRET}`).toString('base64');
+
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: config.CLIENT_ID,
-      client_secret: config.CLIENT_SECRET
+      refresh_token: refreshToken
+      // client_id, client_secret를 여기서 제거하고 Header로 이동
     });
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Authorization': `Basic ${base64Credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
       body
     });
 

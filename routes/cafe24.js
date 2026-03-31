@@ -77,8 +77,11 @@ router.get('/callback', async (req, res) => {
     `);
 
   } catch (err) {
-    console.error(`[ERROR] 교환 오류:`, err);
-    res.status(500).send("서버 측 카페24 API 내부 연동 오류");
+    console.error("[ERROR] 교환 오류 상세:", err);
+    res.status(500).send(`
+    <h2>토큰 교환 실패</h2>
+    <pre>${err.message}</pre>
+  `);
   }
 });
 

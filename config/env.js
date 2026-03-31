@@ -4,11 +4,11 @@ dotenv.config();
 export const config = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: process.env.PORT || 3000,
-  MALL_ID: process.env.MALL_ID, // 하드코딩 제거
-  CLIENT_ID: process.env.CLIENT_ID,
-  CLIENT_SECRET: process.env.CLIENT_SECRET,
+  MALL_ID: process.env.MALL_ID?.trim(),
+  CLIENT_ID: process.env.CLIENT_ID?.trim(),
+  CLIENT_SECRET: process.env.CLIENT_SECRET?.trim(),
   REDIRECT_URI: process.env.REDIRECT_URI?.trim(),
-  SCOPE: process.env.SCOPE?.trim() // 하드코딩 제거
+  SCOPE: process.env.SCOPE?.trim()
 };
 
 // 필수 환경변수 누락 시 즉시 서버 구동 실패 처리 (장애 전파 방지)

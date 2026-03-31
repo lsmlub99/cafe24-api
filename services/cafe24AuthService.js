@@ -32,6 +32,7 @@ export const cafe24AuthService = {
     console.log("TOKEN REQUEST URL:", url);
     console.log("TOKEN REQUEST PAYLOAD:", {
       grant_type: 'authorization_code',
+      mall_id: config.MALL_ID,
       code: String(code),
       redirect_uri: config.REDIRECT_URI,
       client_id: config.CLIENT_ID,
@@ -59,6 +60,7 @@ export const cafe24AuthService = {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/oauth/token`;
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
+      mall_id: config.MALL_ID,
       refresh_token: refreshToken, // 보안상 새로 갱신될 수 있음
       client_id: config.CLIENT_ID,
       client_secret: config.CLIENT_SECRET

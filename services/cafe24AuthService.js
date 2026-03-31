@@ -28,6 +28,16 @@ export const cafe24AuthService = {
       client_secret: config.CLIENT_SECRET
     });
 
+    console.log("TOKEN REQUEST URL:", url);
+    console.log("TOKEN REQUEST PAYLOAD:", {
+      grant_type: 'authorization_code',
+      code: String(code),
+      redirect_uri: config.REDIRECT_URI,
+      client_id: config.CLIENT_ID,
+      client_secret_length: config.CLIENT_SECRET?.length
+    });
+
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -35,10 +45,10 @@ export const cafe24AuthService = {
     });
 
     const data = await response.json();
-    
+
     // 네트워크 실패 또는 토큰 교환 실패 에러 핸들링
     if (!response.ok) {
-        throw new Error(`토큰 발급 실패: ${JSON.stringify(data)}`);
+      throw new Error(`토큰 발급 실패: ${JSON.stringify(data)}`);
     }
     return data;
   },
@@ -60,9 +70,9 @@ export const cafe24AuthService = {
     });
 
     const data = await response.json();
-    
+
     if (!response.ok) {
-        throw new Error(`토큰/리프레시 재발급 실패: ${JSON.stringify(data)}`);
+      throw new Error(`토큰/리프레시 재발급 실패: ${JSON.stringify(data)}`);
     }
     return data;
   }

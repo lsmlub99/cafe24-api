@@ -22,6 +22,7 @@ export const cafe24AuthService = {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/oauth/token`;
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
+      mall_id: config.MALL_ID,
       code: String(code),
       redirect_uri: config.REDIRECT_URI,
       client_id: config.CLIENT_ID,

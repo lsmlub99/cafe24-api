@@ -79,9 +79,9 @@ router.post('/', async (req, res) => {
             throw new Error("카페24 접근 토큰이 만료되었거나 DB에 없습니다. 시스템 관리자 인증이 우선 필요합니다.");
         }
         
-        // 카페24 API에서 실제 상품 50개를 불러옴
+        // 카페24 API에서 최신 상품 100개를 불러와 넓은 범위에서 검색
         console.log("[MCP] 상품 추천 도구 가동 - 카페24 API에서 실시간 조회 처리 중...");
-        const response = await cafe24ApiService.getProducts(accessToken, 50);
+        const response = await cafe24ApiService.getProducts(accessToken, 100);
         const products = response.products || [];
 
         const { skin_type, concerns = [], category } = args;
@@ -151,7 +151,15 @@ router.post('/', async (req, res) => {
             content: [{ 
                 type: 'text', 
                 text: JSON.stringify({ 
-                    ai_notice: "다음 JSON 데이터를 바탕으로 고객에게 예쁜 마크다운 포맷으로 쇼핑몰 URL, 가격, 추천 이유를 곁들여 설명해주세요.",
+                    ai_notice: `[최고 중요 지시사항] 당신은 셀퓨전씨의 전문 뷰티 큐레이터입니다. 아래 제공된 JSON 데이터를 바탕으로 고객에게 상품을 추천할 때 '반드시' 아래의 마크다운(Markdown) 템플릿 양식을 엄격하게 고수하여 시각적으로 매우 아름답고 화려하게 출력하세요. 절대 단순 텍스트 나열로 응답하지 마십시오.
+
+[마크다운 템플릿 규칙]
+1. 각 상품의 시작은 '### 🎁 [상품명]' 형식의 헤더를 사용하세요.
+2. 상품명 바로 밑에는 무조건 썸네일 이미지를 띄우세요. (마크다운 이미지 문법 필수: ![상품이미지](thumbnail 값))
+3. 가격은 눈에 띄게 **💳 가격: OOO원** 처럼 두꺼운 글씨와 이모지를 사용하세요.
+4. 왜 이 상품을 추천하는지(match_reasons)를 💡 이모지와 함께 마크다운 인용구( > ) 텍스트 박스로 예쁘게 강조해서 설명하세요.
+5. 마지막 줄에는 상품으로 직행할 수 있도록 블록 링크 형태인 **[🛒 상품 자세히 보러가기 클릭] (product_url 값)** 을 명확하게 달아주세요.
+6. 전체적으로 가독성이 뛰어나고 홈쇼핑 카탈로그를 보는 듯한 세련된 느낌을 주어야 합니다.`,
                     recommendations: top3 
                 }, null, 2) 
             }] 

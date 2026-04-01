@@ -128,6 +128,8 @@ router.post('/', async (req, res) => {
         // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임
         // args.count가 있으면 그만큼(최대 5), 없으면 기본 3개
         const recommendCount = Math.min(args.count || 3, 5); 
+        const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
+        
         // 👉 [세로 카드형 레이아웃] 채팅 UI에 최적화된 세로 불릿 켄쿠레이션 작성
         let preRendered = `✅ **본 추천은 셀퓨전씨 공식몰 실시간 판매 데이터 기반 100% 확실한 정보입니다.**\n\n`;
         preRendered += `---\n\n`;

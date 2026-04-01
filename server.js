@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import { config } from './config/env.js';
 import cafe24Router from './routes/cafe24.js';
+import mcpRouter from './routes/mcp.js';
 
 const app = express();
 
@@ -23,6 +24,7 @@ mongoose.connect(config.MONGO_URI)
   });
 
 app.use('/cafe24', cafe24Router);
+app.use('/mcp', mcpRouter); // AI 모델 컨텍스트 프로토콜 라우팅 추가
 
 app.get('/', (req, res) => {
   res.send(`
@@ -30,8 +32,9 @@ app.get('/', (req, res) => {
     <ul>
       <li><a href="/cafe24/start">1. 카페24 인증(OAuth) 및 MongoDB 연동</a></li>
       <li><a href="/cafe24/token">2. 현재 DB에 발급된 토큰 상태 확인</a></li>
-      <li><a href="/cafe24/products">3. 상품 리스트 조회 테스트 (API 연동 예시)</a></li>
+      <li><a href="/cafe24/products">3. 상품 리스트 조회 테스트 (API 연동)</a></li>
       <li><a href="/cafe24/refresh">4. 만료된 토큰을 리프레시하고 DB에 재기록</a></li>
+      <li><a href="/mcp">5. MCP (Model Context Protocol) 통신 인터페이스 대기중</a></li>
     </ul>
     <p style="color:red; font-size:12px;">* 주의: Render 등에서 호스팅 시 재부팅되더라도 더이상 정보가 소실되지 않습니다.</p>
   `);

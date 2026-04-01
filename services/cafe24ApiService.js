@@ -8,7 +8,8 @@ export const cafe24ApiService = {
 
   // 기능 안내 테스트용 - 최신 상품 목록 가져오기 제한(limit) 5개
   getProducts: async (accessToken, limit = 5) => {
-    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}`;
+    // 진열 상태(display=T) 및 판매 중(selling=T)인 최신 상품만 가져와 단종/과거 데이터 제외
+    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T`;
 
     console.log(`[INFO] 상품 조회 API 통신 시작 (GET ${url})`);
     const response = await fetch(url, {

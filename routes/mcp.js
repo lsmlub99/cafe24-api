@@ -93,18 +93,29 @@ router.post('/', async (req, res) => {
         
         let response;
         try {
-            // 🏎️ [하이브리드 전략] 50개(고속) vs 100개(정확도) 균형 조절
-            const fetchLimit = args.category ? 50 : 100;
-            console.log(`[MCP] 하이브리드 검색 - '${args.category || '전체'}' (${fetchLimit}개)`);
-            response = await cafe24ApiService.getProducts(accessToken, fetchLimit, args.category);
+            // 🔍 [검색어 지능형 확장] '선크림' -> '썬스크린/썬/UV' 등으로 자동 변환하여 검색 실패 방지
+            let searchKeyword = args.category || '';
+            if (searchKeyword === '선크림' || searchKeyword === '썬크림') searchKeyword = '썬';
+            if (searchKeyword === '세럼') searchKeyword = '세럼';
+            if (searchKeyword === '앰플') searchKeyword = '앰플';
+            if (searchKeyword === '토너' || searchKeyword === '스킨') searchKeyword = '토너';
+
+            const fetchLimit = searchKeyword ? 60 : 100; // 좀 더 넉넉하게
+            console.log(`[MCP] 하이브리드 검색 가동 - 쿼리: '${searchKeyword}' (${fetchLimit}개)`);
+            response = await cafe24ApiService.getProducts(accessToken, fetchLimit, searchKeyword);
+
+            // ⚠️ [2차 백업] 검색 결과가 0개라면? (사용자 단어와 상품명이 아예 다를 때)
+            if (!response.products || response.products.length === 0) {
+                console.log("[MCP] ⚠️ 키워드 검색 결과 없음. 전체 상품 조회로 자동 전환(Fallback)...");
+                response = await cafe24ApiService.getProducts(accessToken, 100, ''); 
+            }
         } catch (apiError) {
             if (apiError.status === 401) {
                 const tokens = await tokenStore.getTokens(config.MALL_ID);
                 const tokenData = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
                 await tokenStore.saveTokens(config.MALL_ID, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at);
                 accessToken = tokenData.access_token;
-                const fetchLimit = args.category ? 50 : 100;
-                response = await cafe24ApiService.getProducts(accessToken, fetchLimit, args.category);
+                response = await cafe24ApiService.getProducts(accessToken, 100, '');
             } else {
                 throw apiError;
             }
@@ -114,6 +125,16 @@ router.post('/', async (req, res) => {
         const recommendCount = Math.min(args.count || 5, 10); 
         const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
         
+        // 🚫 결과가 정말 하나도 없는 경우 대응
+        if (topN.length === 0) {
+            return {
+                content: [{
+                    type: 'text',
+                    text: "죄송합니다. 현재 조건(피부타입/고민)에 딱 맞는 제품을 찾지 못했습니다. 조금 더 넓은 범위의 추천을 원하시면 '인기 상품 보여줘'라고 말씀해 주세요."
+                }]
+            };
+        }
+
         let preRendered = '';
         preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
         preRendered += '| ' + topN.map(() => ':---:').join(' | ') + ' |\n';

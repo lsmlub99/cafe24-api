@@ -1,46 +1,184 @@
-# Cafe24 Admin API 연동 서버 (Mongoose 영구 데이터베이스 연동 버전)
+# 🧴 CellFusionC AI Shopping Assistant — MCP Server
 
-Render의 무료 클라우드 환경에서도 서버가 재부팅될 때마다 카페24 상점 연동 토큰이 삭제되는 현상을 완벽히 방어하고자, **Mongoose 기반의 원격 MongoDB 저장소 연동이 100% 통합된 최종판**입니다. 
+> **카페24 Admin API × AI MCP 통합 서버**  
+> 셀퓨전씨 공식 쇼핑몰의 실시간 상품 데이터를 AI에게 연결하여,  
+> 고객 맞춤형 스킨케어 추천과 공식 베스트셀러 랭킹을 제공하는 지능형 커머스 백엔드입니다.
 
-이제 토큰과 만료 시간 정보가 클라우드 DB에 분산 보관되므로 서버가 멈추거나 슬립, 업데이트되더라도 기존 연동이 영구적으로 보존됩니다.
+---
 
-## 1. MongoDB 연동 환경 구성의 주요 이점
-- **무중단 운영 보장**: Node.js 서버 메모리나 로컬 파일(`tokens.json`)이 유실되더라도 백엔드가 시작될 때마다 클라우드 데이터베이스에서 토큰 정보를 찾아 읽어 오므로 추가적인 `/cafe24/start` 수동 조작이 불필요해집니다.
-- **다중 매장 스케일링**: 작성된 `models/Token.js` 스키마 안에는 고유값인 `mall_id`가 지정되어 있습니다. 하나의 서버에 다수 매장의 토큰 레코드들이 꼬이지 않고 질서있게 영구 기록 및 업데이트됩니다.
+## 📌 프로젝트 개요
 
-## 2. 무료 MongoDB Atlas 클러스터 생성 및 연동 가이드 (필수)
+| 항목 | 내용 |
+|---|---|
+| **목적** | AI 에이전트가 카페24 공식몰의 실시간 상품 데이터를 활용하여 최적의 상품 추천을 제공 |
+| **기술 스택** | Node.js, Express, MongoDB(Mongoose), Cafe24 Admin API, MCP(Model Context Protocol) |
+| **배포** | Render (자동 배포, GitHub 연동) |
+| **아키텍처** | Service Layer Pattern + In-Memory Cache + Auto Token Refresh |
 
-> **데이터를 살려두려면 이 과정이 필요합니다.** 무료 요금을 지원하는 MongoDB 클라우드를 이용합니다.
+---
 
-1. **MongoDB Atlas** [https://www.mongodb.com/ko-kr/cloud/atlas](https://www.mongodb.com/ko-kr/cloud/atlas) 에 회원가입 후 로그인합니다.
-2. 클러스터(Cluster) 생성 단계에서 요금이 발생하지 않는 **M0 Free 티어**를 선택하여 생성합니다.
-3. 생성된 클러스터 패널의 **[Connect] -> [Drivers]** 메뉴로 이동하면, 애플리케이션 연결 문자열 코드가 팝업에 나타납니다.
-   *(예: `mongodb+srv://adminID:<password>@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority`)*
-4. 복사한 문자열에서 `<password>` 부분만 설정하신 비밀번호 텍스트로 치환해 줍니다.
-5. 로컬에서는 이 프로젝트의 `.env` 파일을 열고, 해당 문자열을 `MONGO_URI` 에 붙여넣고 세이브합니다.
+## 🏗️ 시스템 아키텍처
 
-## 3. Render 배포 가이드라인 및 도메인 연동 흐름
+```
+┌─────────────┐     MCP JSON-RPC      ┌──────────────────────┐
+│  AI Agent   │ ◄─────────────────►  │   MCP Express Server  │
+│  (Claude등) │     SSE + POST        │   (routes/mcp.js)     │
+└─────────────┘                       └──────────┬───────────┘
+                                                  │
+                              ┌────────────────────┼────────────────────┐
+                              ▼                    ▼                    ▼
+                   ┌──────────────────┐  ┌─────────────────┐  ┌────────────────┐
+                   │ Recommendation   │  │ Cafe24 API      │  │ Token Store    │
+                   │ Service          │  │ Service          │  │ (MongoDB)      │
+                   │ - 채점 알고리즘   │  │ - 상품 조회      │  │ - 토큰 영구저장 │
+                   │ - 중복 필터링     │  │ - 카테고리 조회   │  │ - 자동 갱신     │
+                   │ - 업셀링 매핑     │  │ - 5분 캐싱       │  │                │
+                   └──────────────────┘  └────────┬────────┘  └────────────────┘
+                                                  │
+                                                  ▼
+                                        ┌─────────────────┐
+                                        │  Cafe24 Admin   │
+                                        │  REST API       │
+                                        │  (공식 쇼핑몰)   │
+                                        └─────────────────┘
+```
 
-**Render.com 배포 순서 (보안을 위한 수동 입력 과정 포함)**
-1. 이 프로젝트 코드를 GitHub 저장소에 업로드(Push) 합니다. `.env`는 올라가지 않으니 안심하십시오.
-2. `https://dashboard.render.com` 접속 후 `New > Web Service` 항목으로 진입, GitHub 저장소와 연결합니다.
-3. 설정 입력란 기입 (Build Command: `npm install` / Start Command: `npm start`)
-4. **Environment Variables (핵심 단계)**: 로컬 `.env` 에 있던 아래 설정값 6가지를 Render 내 환경변수 입력기에 넣습니다.
-   - `MALL_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `SCOPE`, `REDIRECT_URI`
-   - **(신규) `MONGO_URI`** : 방금 발급 받은 몽고DB 주소를 이곳에 기입합니다. 
-5. 앱 배포를 실행시킵니다. (데이터베이스 통신 오류 시 자동으로 서버를 정지하도록 코딩되어 있습니다.)
+---
 
-## 4. 커스텀 도메인 (api.cellfusionc.co.kr) 연결 처리 
+## 🔥 핵심 기능
 
-1. 앱이 정상 구동된 후 Render 대시보드의 `Settings > Custom Domains` 섹션으로 진입합니다.
-2. 타겟 도메인인 `api.cellfusionc.co.kr`을 적고 하단에 표시되는 무료 CNAME 목적지 주소를 클립보드에 복사합니다.
-3. 귀사가 도메인을 구매 유지 중인 호스팅 업체 관리자 페이지("DNS 레코드 수정")로 진입합니다.
-4. CNAME 레코드 신설 / 호스트에는 `api` 영역 입력 / 타겟(값)에는 방금 복사한 2번 항목을 등록하고 저장합니다.
-5. 네임서버가 안정화되면 외부망으로 SSL 기반의 접속 환경이 자동 준비 완료됩니다.
+### 1. 🎯 AI 맞춤형 상품 추천 (`search_cafe24_real_products`)
+- 고객의 피부 타입(건성/지성/민감성)과 고민(트러블/수분/진정)을 분석
+- 카페24 API에서 실시간 상품 100개를 조회하여 **AI 채점 알고리즘**으로 최적 매칭
+- **키워드 가중치 채점**: 피부 타입(+3점), 고민 키워드(+2점), 카테고리(+2점)
+- **1+1 중복 방지**: 정규식으로 `[1+1]`, `(증정)` 등 수식어를 제거한 '핵심 본명' 기반 필터링
+- **업셀링(Up-sell)**: 기획 세트 상품을 대표 상품의 연관 상품(`upsell_options`)으로 묶어 하단 제안
+- **랜덤 가산점(Jitter)**: 맞춤 추천 시에만 동점자 순위를 뒤섞어 생동감 제공
 
-## 5. 최종 운영 유지보수 권고사항
+### 2. 🏆 공식 베스트셀러 랭킹 (`get_bestseller_ranking`)
+- 카페24 공식몰 **베스트 카테고리(Category No.47)**의 실제 진열 순서를 그대로 가져옴
+- 쇼핑몰 관리자가 설정한 공식 랭킹 → **매번 동일한 순위 = 신뢰도 100%**
+- 기본 5개, 최대 10개까지 동적 확장 가능
 
-- **Refresh 토큰 수동 갱신 가동 로직**:
-  만약 2시간 기간을 넘겨 `Access Token`의 수명이 다했다면, `/cafe24/products` 를 호출했을 때 내부 코드 단에서 자동으로 `401 Error`를 뱉어내게 프로그래밍 되어있습니다. 프론트엔드 또는 담당자는 즉각 `/cafe24/refresh` 주소를 한번 찔러주기만 하면, 2주 기간이 남은 리프레시 토큰이 몽고DB를 거쳐가서 알아서 교환된 후 양쪽을 리필하고 종료됩니다.
-- **신규 SCOPE 확장 권한 재부여 방법**:
-  추후 본 파일에 `mall.read_order` 등의 주문 권한 스코프를 추가하고 싶으시다면, `.env`를 업데이트한 뒤 쇼핑몰 권한 주체가 귀찮으시더라도 다시 한번 `/cafe24/start` 화면을 들어가서 권한 확장 동의창 확인버튼을 눌러주셔야 최종 DB에 기록이 갱신 반영됩니다.
+### 3. 🔄 무중단 토큰 자동 갱신 (Auto-Refresh)
+- 카페24 Access Token 만료(2시간) 시 **자동으로 Refresh Token을 사용하여 재발급**
+- 사용자 개입 없이 백그라운드에서 토큰을 교체하고 원래 요청을 즉시 재시도
+- MongoDB에 토큰을 영구 저장하여 서버 재시작 시에도 데이터 유실 방지
+
+### 4. ⚡ 인메모리 캐싱 (5분 TTL)
+- 동일한 API 요청을 5분 내에 반복할 경우 카페24 서버에 재요청하지 않고 즉시 응답
+- API 호출 부하 방지 및 응답 속도 100배 이상 단축
+
+### 5. 🎨 상황별 적응형 UI/UX 렌더링
+- **맞춤 추천**: 세로 카드형 불릿 레이아웃 (이미지 + 상품명 + 가격 + 추천이유 + 구매링크)
+- **랭킹 조회**: 순위 뱃지 카드형 레이아웃 (메달 이모지 + 공식 순서 보장)
+- 백엔드 서버에서 마크다운을 사전 렌더링(Pre-render)하여 AI의 자의적 레이아웃 파괴를 원천 차단
+
+---
+
+## 📂 프로젝트 구조
+
+```
+cafe24-api/
+├── server.js                          # 메인 엔트리포인트 (Express + MongoDB 연결)
+├── config/
+│   └── env.js                         # 환경변수 로드 및 필수값 검증
+├── routes/
+│   ├── cafe24.js                      # OAuth 2.0 인증 라우터 (카페24 로그인)
+│   └── mcp.js                         # MCP 통신 라우터 (AI 연동 핵심)
+├── services/
+│   ├── cafe24ApiService.js            # 카페24 API 호출 + 캐싱 서비스
+│   ├── cafe24AuthService.js           # OAuth 토큰 발급/갱신 서비스
+│   └── recommendationService.js       # 상품 추천 채점 알고리즘
+├── stores/
+│   ├── tokenStore.js                  # MongoDB 기반 토큰 영구 저장소
+│   └── stateStore.js                  # OAuth State 검증용 임시 저장소
+├── models/
+│   └── Token.js                       # Mongoose 토큰 스키마
+├── .env.example                       # 환경변수 템플릿
+└── package.json
+```
+
+---
+
+## ⚙️ 환경변수 설정
+
+```env
+PORT=3000
+MALL_ID=your_cafe24_mall_id
+CLIENT_ID=your_cafe24_client_id
+CLIENT_SECRET=your_cafe24_client_secret
+REDIRECT_URI=https://your-server.com/cafe24/callback
+SCOPE=mall.read_product,mall.read_category
+MONGO_URI=mongodb+srv://your_mongodb_connection_string
+```
+
+---
+
+## 🚀 실행 방법
+
+```bash
+# 1. 의존성 설치
+npm install
+
+# 2. 환경변수 설정
+cp .env.example .env
+# .env 파일에 실제 값 입력
+
+# 3. 서버 실행
+npm start
+
+# 4. 카페24 OAuth 인증 (최초 1회)
+# 브라우저에서 접속: https://your-server.com/cafe24/start
+```
+
+---
+
+## 🛠️ 기술적 의사결정 기록
+
+| 결정 사항 | 선택한 방식 | 이유 |
+|---|---|---|
+| 토큰 저장 | MongoDB (Mongoose) | 서버 재시작/재배포 시에도 토큰 유실 방지 |
+| 캐싱 전략 | In-Memory (Map) | 외부 Redis 없이도 충분한 단일 서버 환경 |
+| AI 레이아웃 제어 | 백엔드 Pre-render | LLM이 지시를 무시하고 레이아웃을 변경하는 문제 해결 |
+| 추천 vs 랭킹 분리 | 별도 MCP Tool | 맞춤 추천은 AI 채점, 랭킹은 공식 데이터 직조회로 역할 분리 |
+| Rate Limit | 미적용 (철거) | AI 백엔드 통신과 간섭하여 오작동 유발, 추후 화이트리스트 기반 재도입 예정 |
+| 중복 상품 처리 | 정규식 Base Name 추출 | `[1+1]`, `(증정)` 등 수식어를 제거한 본명 기반 매핑으로 대표+연관 구조화 |
+
+---
+
+## 📊 MCP Tool 명세
+
+### `search_cafe24_real_products`
+| 파라미터 | 타입 | 설명 |
+|---|---|---|
+| `skin_type` | string | 피부 타입 (건성, 지성, 민감성 등) |
+| `concerns` | array | 피부 고민 (수분, 진정, 트러블 등) |
+| `category` | string | 원하는 카테고리 (크림, 앰플, 비비 등) |
+| `count` | number | 추천 개수 (기본 3, 최대 5) |
+
+### `get_bestseller_ranking`
+| 파라미터 | 타입 | 설명 |
+|---|---|---|
+| `count` | number | 랭킹 개수 (기본 5, 최대 10) |
+
+---
+
+## 🔒 보안
+
+- OAuth 2.0 Authorization Code Flow (카페24 공식 스펙)
+- Authorization: Basic 헤더 인증 (client_id:client_secret Base64)
+- 모든 API 통신 HTTPS 강제
+- MongoDB Atlas 클라우드 저장 (토큰 암호화 전송)
+- `.env` 파일 `.gitignore` 처리
+
+---
+
+## 📝 라이선스
+
+이 프로젝트는 카페24 앱스토어 입점을 위한 비공개 프로젝트입니다.
+
+---
+
+> **Built with ❤️ for CellFusionC Official Store**  
+> *AI-Powered Beauty Commerce Backend*

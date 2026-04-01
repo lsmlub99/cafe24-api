@@ -128,45 +128,39 @@ router.post('/', async (req, res) => {
         // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임
         // args.count가 있으면 그만큼(최대 5), 없으면 기본 3개
         const recommendCount = Math.min(args.count || 3, 5); 
-        const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
-        
-        // 👉 [마스터피스] 3개 고정을 풀고 배열 길이에 따라 (3개~5개) 동적으로 늘어나는 마크다운 표 자동 생성
-        let markdownTable = `✅ **본 추천은 셀퓨전씨 공식몰의 실시간 최신 판매 데이터를 바탕으로 분석된 100% 확실한 정보입니다.**\n\n`;
-        
-        // 헤더 동적 생성 (1순위, 2순위...)
-        markdownTable += `| ${topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅'][i]} ${i+1}순위 추천`).join(' | ')} |\n`;
-        markdownTable += `| ${topN.map(() => `:---:`).join(' | ')} |\n`;
-        
-        // 아이템 출력 동적 생성
-        markdownTable += `| ${topN.map(p => `[![상품명](${p.thumbnail})](${p.product_url})`).join(' | ')} |\n`;
-        markdownTable += `| ${topN.map(p => `**[${p.name.replace(/\|/g, '')}](${p.product_url})**`).join(' | ')} |\n`;
-        markdownTable += `| ${topN.map(p => `**💳 ${p.price}**`).join(' | ')} |\n`;
-        markdownTable += `| ${topN.map(p => `💡 ${p.match_reasons.split(',')[0]}`).join(' | ')} |\n`;
-        markdownTable += `| ${topN.map(p => `[🛒 즉시 구매하기](${p.product_url})`).join(' | ')} |\n`;
-        
-        // 1+1 업셀 링크 동적 생성
-        const getUpsellLink = (p) => p && p.upsell_options && p.upsell_options.length > 0 ? `🎁 연관 혜택: [관련 세트상품 보기](${p.upsell_options[0].product_url})` : '🎁 (기획세트 없음)';
-        markdownTable += `| ${topN.map(p => getUpsellLink(p)).join(' | ')} |\n\n`;
+        // 👉 [세로 카드형 레이아웃] 채팅 UI에 최적화된 세로 불릿 켄쿠레이션 작성
+        let preRendered = `✅ **본 추천은 셀퓨전씨 공식몰 실시간 판매 데이터 기반 100% 확실한 정보입니다.**\n\n`;
+        preRendered += `---\n\n`;
+
+        topN.forEach((p, i) => {
+            const medal = ['🥇 1순위 추천','🥈 2순위 추천','🥉 3순위 추천','🏅 4순위','🏅 5순위'][i];
+            const upsellText = p.upsell_options && p.upsell_options.length > 0 
+                ? `\n> 🎁 **연관 혜택:** [관련 세트상품 보기](${p.upsell_options[0].product_url})` 
+                : '';
+            preRendered += `### ${medal}\n`;
+            preRendered += `[![${p.name}](${p.thumbnail})](${p.product_url})\n\n`;
+            preRendered += `> **[${p.name}](${p.product_url})**\n`;
+            preRendered += `> 💳 **${p.price}**   |   💡 ${p.match_reasons.split(',')[0]}\n`;
+            preRendered += `> [🛒 즉시 구매하기](${p.product_url})${upsellText}\n\n`;
+        });
+        preRendered += `---\n`;
 
         result = { 
-            content: [
-                { 
-                    type: 'text', 
-                    text: `[시스템 핵심 통제/강제 사항]
-당신은 셀퓨전씨의 VIP 뷰티 큐레이터입니다. 당신(LLM)이 표 양식을 제멋대로 일반 세로형 테이블로 무너뜨리는 것을 방지하기 위해, 백엔드 서버가 이미 디자인이 완벽하게 끝난 "완제품 마크다운 표"를 텍스트로 넘겨주었습니다.
-당신은 아래의 [완성된 마크다운 표 기성품] 이라는 텍스트 블록 전체를 "단 한 글자도, 단 한 줄도 수정하지 말고 무조건 100% 완벽히 똑같이 복사해서 화면 가장 상단에 1빠따로 출력" 하세요! 絶対(절대)로 표 구조를 다시 만들거나 요약하지 마세요.
+            content: [{ 
+                type: 'text', 
+                text: `[시스템 핵심 통제 지시사항]
+당신은 셀퓨전씨 VIP 뷰티 큐레이터입니다.
+아래 [완성된 카드 레이아웃] 블록을 "단 한 글자도 수정하지 말고 100% 그대로 복사"하여 가장 먼저 출력하세요.
+그 뒤에, 각 상품이 사용자 고민에 왜 딱 맞는지 상품당 딱 1~2줄로만 따뜻하고 경쾌하게 코멘트해주세요.
+절대로 길게 쓰지 마세요. 간결함이 진짜 실력입니다.
 
-[완성된 마크다운 표 기성품] (이 부분을 가장 먼저 출력할 것)
-${markdownTable}
+[완성된 카드 레이아웃] (가장 먼저 출력)
+${preRendered}
 
-[🧴 핵심 요약 코멘트] 영역 추가 지시사항
-위의 표를 무사히 복붙해 띄웠다면, 그 아래쪽에 요약 코너를 만들어주세요. 같이 제공된 [JSON 원본 데이터]를 참고하여, 각각의 제품이 왜 고객에게 찰떡궁합인지 다정하고 경쾌한 말투로 **"무조건 딱 2줄 이내로 아주 짧고 임팩트 있게"** 핵심만 코멘트하세요. 장황하게 길게 설명하는 것을 엄격히 금지합니다. (고객이 읽다 지칩니다)
-
-===== [AI가 상세 분석 코멘트를 작성할 때 참고할 JSON 원본 데이터] =====
+===== [참고 JSON 데이터] =====
 ${JSON.stringify({ recommendations: topN }, null, 2)}
 ===== [데이터 끝] =====`
-                }
-            ] 
+            }] 
         };
 
       } else if (name === 'get_bestseller_ranking') {
@@ -213,37 +207,42 @@ ${JSON.stringify({ recommendations: topN }, null, 2)}
         // 카테고리 진열 순서를 유지하면서 상세 정보를 매핑
         const rankedProducts = productNos.map(no => detailProducts.find(p => p.product_no === no)).filter(Boolean);
 
-        // 랭킹 전용 마크다운 표 생성 (순서 = 쇼핑몰 공식 진열 순서 그대로!)
+        // 랭킹 전용 세로 카드형 레이아웃 생성 (순서 = 쇼핑몰 공식 진열 순서 그대로!)
         const rankItems = rankedProducts.map((p, i) => {
             let img = p.list_image || p.detail_image || p.tiny_image;
             if (!img) img = 'https://dummyimage.com/180x180/e0e0e0/555555.png?text=No_Image';
             if (img.startsWith('//')) img = `https:${img}`;
             if (img.startsWith('http://')) img = img.replace('http://', 'https://');
             const url = `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`;
-            return { rank: i + 1, name: p.product_name, price: `${parseInt(p.price)}원`, thumbnail: img, product_url: url };
+            return { rank: i + 1, name: p.product_name, price: `${parseInt(p.price)}원`, thumbnail: img, product_url: url, summary: p.summary_description || '' };
         });
 
-        let markdownTable = `🏆 **셀퓨전씨 공식몰 실시간 베스트셀러 TOP ${rankItems.length} (공식 랭킹)**\n\n`;
-        markdownTable += `| ${rankItems.map(r => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1]} ${r.rank}위`).join(' | ')} |\n`;
-        markdownTable += `| ${rankItems.map(() => ':---:').join(' | ')} |\n`;
-        markdownTable += `| ${rankItems.map(r => `[![${r.name}](${r.thumbnail})](${r.product_url})`).join(' | ')} |\n`;
-        markdownTable += `| ${rankItems.map(r => `**[${r.name.replace(/\|/g, '')}](${r.product_url})**`).join(' | ')} |\n`;
-        markdownTable += `| ${rankItems.map(r => `**💳 ${r.price}**`).join(' | ')} |\n`;
-        markdownTable += `| ${rankItems.map(r => `[🛒 구매하기](${r.product_url})`).join(' | ')} |\n\n`;
+        let preRendered = `🏆 **셀퓨전씨 공식몰 실시간 베스트셀러 TOP ${rankItems.length}**\n`;
+        preRendered += `> 📡 *쇼핑몰 공식 랭킹 데이터 기반 | 매번 동일한 순위를 보장합니다*\n\n`;
+        preRendered += `---\n\n`;
+
+        rankItems.forEach(r => {
+            const medal = ['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1];
+            preRendered += `### ${medal} ${r.rank}위\n`;
+            preRendered += `[![${r.name}](${r.thumbnail})](${r.product_url})\n\n`;
+            preRendered += `> **[${r.name}](${r.product_url})**\n`;
+            preRendered += `> 💳 **${r.price}**   |   [🛒 구매하기](${r.product_url})\n\n`;
+        });
+        preRendered += `---\n`;
 
         result = {
             content: [{
                 type: 'text',
-                text: `[시스템 핵심 통제/강제 사항]
-당신은 셀퓨전씨 공식 랭킹 리포터입니다. 아래의 [완성된 마크다운 표]는 백엔드가 카페24 공식몰 베스트 카테고리의 "실제 진열 순서"를 그대로 가져와 만든 것입니다.
-이 순서는 쇼핑몰 관리자가 직접 설정한 공식 랭킹이므로, 절대로 순서를 변경하거나 표를 재구성하지 마세요.
-아래 표를 단 한 글자도 수정하지 말고 100% 그대로 복사하여 가장 먼저 출력하세요.
+                text: `[시스템 핵심 통제 지시사항]
+당신은 셀퓨전씨 공식 랭킹 리포터입니다.
+아래 [완성된 카드 레이아웃]은 카페24 공식몰 베스트 카테고리의 "실제 진열 순서"를 그대로 가져온 것입니다.
+이 순서는 쇼핑몰 관리자가 직접 설정한 공식 랭킹이므로, 절대 순서를 변경하거나 레이아웃을 재구성하지 마세요.
+아래 블록을 단 한 글자도 수정하지 말고 100% 그대로 복사하여 가장 먼저 출력하세요.
+그 뒤에, "현재 셀퓨전씨 공식몰에서 가장 사랑받고 있는 TOP ${rankItems.length} 제품입니다" 라는 한 줄 요약 후, 각 제품당 딱 1줄로만 짧고 위트있게 코멘트하세요.
+장황하게 길게 설명하는 것은 엄격히 금지합니다.
 
-[완성된 마크다운 표 기성품]
-${markdownTable}
-
-[🧴 핵심 요약 코멘트] 영역
-위 표를 그대로 출력한 후, 아래쪽에 "현재 셀퓨전씨 공식몰에서 가장 사랑받고 있는 TOP ${rankItems.length} 제품입니다" 라는 한 줄 요약 후, 각 제품에 대해 딱 1줄로 짧고 위트있게 왜 인기인지 코멘트하세요. 장황하게 길게 설명하는 것은 엄격히 금지합니다.
+[완성된 카드 레이아웃] (가장 먼저 출력)
+${preRendered}
 
 ===== [참고 JSON 데이터] =====
 ${JSON.stringify({ ranking: rankItems }, null, 2)}

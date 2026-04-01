@@ -55,11 +55,19 @@ export const recommendationService = {
 
         // [채점 로직] 카테고리 (비중 높음) + 동의어 확장 검색
         const categoryWords = this._expandKeywords(category);
-        for (const kw of categoryWords) {
-            if (searchTarget.includes(kw)) {
-                score += 3;
-                reasons.push(`[${category}] 카테고리 매칭`);
-                break;
+        let categoryMatched = false;
+        if (category) {
+            for (const kw of categoryWords) {
+                if (searchTarget.includes(kw)) {
+                    score += 5; // 가중치 상향 (3 -> 5)
+                    reasons.push(`[${category}] 카테고리 매칭`);
+                    categoryMatched = true;
+                    break;
+                }
+            }
+            // 🚫 [강력 필터] 카테고리를 명시했는데 매칭되지 않으면 세럼 대신 마스크가 뜨는 걸 막기 위해 점수를 확 깎음
+            if (!categoryMatched) {
+                score -= 20; 
             }
         }
 

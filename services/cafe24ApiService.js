@@ -11,10 +11,16 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5분(300,000ms) 유지
  */
 export const cafe24ApiService = {
 
-  // ⚡ [속도 고도화] 상품 목록 가져오기 - 필요한 필드만 콕 집어서 요청 (데이터 다이어트)
-  getProducts: async (accessToken, limit = 50) => {
+  // ⚡ [정확도 끝판왕] 상품 목록 가져오기 - 키워드 검색 시 카페24 전체 DB에서 100% 찾아옴
+  getProducts: async (accessToken, limit = 100, keyword = '') => {
     const fields = 'product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
-    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&fields=${fields}`;
+    // 카페24 최대 한도인 100개로 상향
+    let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=100&display=T&selling=T&fields=${fields}`;
+    
+    // 만약 "세럼" 같은 카테고리 키워드가 있다면, 카페24 전체 상품 중 해당 이름이 들어간 것만 골라옵니다.
+    if (keyword) {
+        url += `&product_name=${encodeURIComponent(keyword)}`;
+    }
 
     // 1. 캐시 히트(Cache Hit) 검사
     const cachedData = cacheMem.get(url);

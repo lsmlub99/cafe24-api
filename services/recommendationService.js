@@ -45,12 +45,13 @@ export const recommendationService = {
         let score = 0;
         let reasons = [];
         
-        // 검색 텍스트 합치기 (이름, 설명, 해시태그 태그)
+        // [지능 고도화] 검색 텍스트 합치기 (이름, 요약, 핵심특징, 해시태그)
         const searchTarget = [
             p.product_name, 
             p.summary_description, 
+            p.simple_description, // 성분/효능이 들어있을 확률이 높음
             ...(Array.isArray(p.product_tag) ? p.product_tag : [])
-        ].join(' ').toLowerCase();
+        ].map(v => (v || '').toLowerCase()).join(' ');
 
         // [채점 로직] 카테고리 (비중 높음) + 동의어 확장 검색
         const categoryWords = this._expandKeywords(category);

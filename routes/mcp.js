@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
         let response;
         try {
             console.log("[MCP] 상품 추천 도구 가동 - 카페24 API 실시간 조회 중...");
-            response = await cafe24ApiService.getProducts(accessToken, 100);
+            response = await cafe24ApiService.getProducts(accessToken, 50);
         } catch (apiError) {
             if (apiError.status === 401) {
                 console.log("[MCP] ⚠️ 엑세스 토큰 2시간 만료 감지(401). 자동 복구(Refresh Token)를 시도합니다...");
@@ -113,7 +113,7 @@ router.post('/', async (req, res) => {
                 accessToken = tokenData.access_token;
                 console.log("[MCP] ✅ 토큰 갱신 성공!");
                 
-                response = await cafe24ApiService.getProducts(accessToken, 100);
+                response = await cafe24ApiService.getProducts(accessToken, 50);
             } else {
                 throw apiError;
             }

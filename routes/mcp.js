@@ -116,31 +116,36 @@ router.post('/', async (req, res) => {
         // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임
         const top3 = recommendationService.scoreAndFilterProducts(products, args);
         
+        // 👉 [마스터피스] 표 양식을 제멋대로 부수는 AI를 완전히 통제하기 위해, 서버가 아예 마크다운 표를 완벽히 그려서 강제로 떠먹여 줍니다.
+        let markdownTable = `✅ **본 추천은 셀퓨전씨 공식몰의 실시간 최신 판매 데이터를 바탕으로 분석된 100% 확실한 정보입니다.**\n\n`;
+        markdownTable += `| 🥇 1순위 추천 | 🥈 2순위 추천 | 🥉 3순위 추천 |\n`;
+        markdownTable += `|:---:|:---:|:---:|\n`;
+        markdownTable += `| ${top3[0] ? `[![상품명](${top3[0].thumbnail})](${top3[0].product_url})` : '-'} | ${top3[1] ? `[![상품명](${top3[1].thumbnail})](${top3[1].product_url})` : '-'} | ${top3[2] ? `[![상품명](${top3[2].thumbnail})](${top3[2].product_url})` : '-'} |\n`;
+        markdownTable += `| ${top3[0] ? `**[${top3[0].name.replace(/\|/g, '')}](${top3[0].product_url})**` : '-'} | ${top3[1] ? `**[${top3[1].name.replace(/\|/g, '')}](${top3[1].product_url})**` : '-'} | ${top3[2] ? `**[${top3[2].name.replace(/\|/g, '')}](${top3[2].product_url})**` : '-'} |\n`;
+        markdownTable += `| ${top3[0] ? `**💳 ${top3[0].price}**` : '-'} | ${top3[1] ? `**💳 ${top3[1].price}**` : '-'} | ${top3[2] ? `**💳 ${top3[2].price}**` : '-'} |\n`;
+        markdownTable += `| ${top3[0] ? `💡 ${top3[0].match_reasons.split(',')[0]}` : '-'} | ${top3[1] ? `💡 ${top3[1].match_reasons.split(',')[0]}` : '-'} | ${top3[2] ? `💡 ${top3[2].match_reasons.split(',')[0]}` : '-'} |\n`;
+        markdownTable += `| ${top3[0] ? `[🛒 즉시 구매하기](${top3[0].product_url})` : '-'} | ${top3[1] ? `[🛒 즉시 구매하기](${top3[1].product_url})` : '-'} | ${top3[2] ? `[🛒 즉시 구매하기](${top3[2].product_url})` : '-'} |\n`;
+        
+        const getUpsellLink = (p) => p && p.upsell_options && p.upsell_options.length > 0 ? `🎁 연관 혜택: [관련 세트상품 보기](${p.upsell_options[0].product_url})` : '🎁 (기획세트 없음)';
+        markdownTable += `| ${getUpsellLink(top3[0])} | ${getUpsellLink(top3[1])} | ${getUpsellLink(top3[2])} |\n\n`;
+
         result = { 
             content: [
                 { 
                     type: 'text', 
-                    text: `[최고급 쇼핑몰 UI 출력 지시사항 (절대 준수)] 
-당신은 셀퓨전씨 VIP 뷰티 큐레이터입니다. 추천 결과를 출력할 때는 무조건 아래 마크다운 표 양식을 복사하여 데이터만 채워 넣으세요. 표를 그리지 않거나 일반 줄글로 나열하는 행위는 시스템에서 완전히 금지되어 있습니다.
+                    text: `[시스템 핵심 통제/강제 사항]
+당신은 셀퓨전씨의 VIP 뷰티 큐레이터입니다. 당신(LLM)이 표 양식을 제멋대로 일반 세로형 테이블로 무너뜨리는 것을 방지하기 위해, 백엔드 서버가 이미 디자인이 완벽하게 끝난 "완제품 마크다운 표"를 텍스트로 넘겨주었습니다.
+당신은 아래의 [완성된 마크다운 표 기성품] 이라는 텍스트 블록 전체를 "단 한 글자도, 단 한 줄도 수정하지 말고 무조건 100% 완벽히 똑같이 복사해서 화면 가장 상단에 1빠따로 출력" 하세요! 絶対(절대)로 표 구조를 다시 만들거나 요약하지 마세요.
 
-[카드형 마크다운 테이블 템플릿]
-| 🥇 1순위 | 🥈 2순위 | 🥉 3순위 |
-|:---:|:---:|:---:|
-| [![상품명](thumbnail값)](product_url값) | [![상품명](thumbnail값)](product_url값) | [![상품명](thumbnail값)](product_url값) |
-| **[상품명](product_url값)** | **[상품명](product_url값)** | **[상품명](product_url값)** |
-| **💳 가격1** | **💳 가격2** | **💳 가격3** |
-| 💡 추천이유 | 💡 추천이유 | 💡 추천이유 |
-| [🛒 즉시 구매하기](product_url값) | [🛒 즉시 구매하기](product_url값) | [🛒 즉시 구매하기](product_url값) |
-| 🎁 연관 혜택: [단품/기획 보러가기](연관url) | 🎁 연관 혜택: (없음) | 🎁 연관 혜택: [단품/기획 보러가기](연관url) |
+[완성된 마크다운 표 기성품] (이 부분을 가장 먼저 출력할 것)
+${markdownTable}
 
-[필수 요구사항]
-1. 응답 맨 첫 줄에 반드시 "✅ **본 추천은 셀퓨전씨 공식몰의 실시간 최신 판매 데이터를 바탕으로 분석된 100% 확실한 정보입니다.**" 라는 출처 문구를 띄울 것.
-2. 각 상품당 \`upsell_options\` (1+1 등)가 있으면 반드시 표 마지막 줄에 묶음 구매 링크 달아줄 것.
-3. 표를 예쁘게 다 그린 후, 표 아래 바깥쪽에 [🧴 상세 처방 분석] 헤딩을 달고 각각의 제품 분석을 매우 길고 상세히 서술할 것.
+[🧴 상세 처방 분석] 영역 추가 지시사항
+위의 표를 무사히 복붙해 띄웠다면, 그 아래쪽에 상세 분석 코너를 만들어주세요. 같이 제공된 [JSON 원본 데이터]를 참고하여, 추천 제품 1~3순위에 대해 발림성, 제형, 성분이 고객의 피부 고민과 왜 찰떡궁합인지 다정하고 분석적인 화법으로 3~4줄 이상 길게 코멘트를 남겨주면 됩니다.
 
-===== [제공된 상품 데이터 시작] =====
+===== [AI가 상세 분석 코멘트를 작성할 때 참고할 JSON 원본 데이터] =====
 ${JSON.stringify({ recommendations: top3 }, null, 2)}
-===== [제공된 상품 데이터 끝] =====`
+===== [데이터 끝] =====`
                 }
             ] 
         };

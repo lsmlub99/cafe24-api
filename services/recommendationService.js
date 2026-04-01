@@ -77,22 +77,34 @@ export const recommendationService = {
     const validProducts = scoredProducts.filter(p => p.score > 0);
     validProducts.sort((a, b) => b.score - a.score); // 높은 점수순
 
-    // 3. 중복 노출 방지 필터링 (원플러스원, 단품, 기획세트가 동시에 뜨는 현상 억제)
+    // 3. 중복 노출 방지 & 기획세트(1+1) 묶어버리기 (Upsell 연관 제안용)
     const uniqueTop3 = [];
-    const seenBaseNames = new Set();
+    const baseNameMap = new Map(); // 본명(Base Name) 추적용
     
     for (const p of validProducts) {
         // 정규식으로 '[1+1]', '(증정)', '기획' 등을 싹 날려버리고 핵심 단어(Base Name)만 추출
-        const baseName = p.name.replace(/\[.*?\]|\(.*?\)|1\+1|기획|세트|증정/g, '').trim();
+        const baseName = p.name.replace(/\[.*?\]|\(.*?\)|1\+1|기획|세트|증정|대용량/g, '').trim();
         
-        // 이 Base Name이 이미 앞 등수에 뽑혀 들어갔다면, 이번 놈은 버립니다 (중복 제거)
-        if (!seenBaseNames.has(baseName)) {
-            uniqueTop3.push(p);
-            seenBaseNames.add(baseName);
+        // 처음 발견하는 본명이라면 (대표 상품)
+        if (!baseNameMap.has(baseName)) {
+            p.upsell_options = []; // 이 상품의 기획/1+1 버전을 담을 연관 상품 바구니
+            baseNameMap.set(baseName, p);
+            
+            if (uniqueTop3.length < 3) {
+                uniqueTop3.push(p);
+            }
+        } else {
+            // 이미 1, 2, 3등 자리를 차지한 대표 상품의 '1+1 형제(기획)' 상품이라면? -> 버리지 말고 바구니에 살포시 담기
+            const parentProduct = baseNameMap.get(baseName);
+            // 너무 많이 주렁주렁 달리지 않게 (최대 2개까지만 연관 노출)
+            if (parentProduct.upsell_options.length < 2) {
+                parentProduct.upsell_options.push({
+                    name: p.name,
+                    price: p.price,
+                    product_url: p.product_url
+                });
+            }
         }
-        
-        // 3개가 꽉 차면 종료
-        if (uniqueTop3.length === 3) break;
     }
 
     return uniqueTop3;

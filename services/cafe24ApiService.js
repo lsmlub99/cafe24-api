@@ -51,5 +51,39 @@ export const cafe24ApiService = {
     console.log(`[Cache SET 💾] 새로운 실시간 상품 정보를 가져와 5분간 자체 방어막(캐시)에 보관합니다.`);
 
     return data;
+  },
+
+  // === [고도화 업데이트] 쇼핑몰 공식 "베스트/카테고리" 랭킹 그대로 가져오기 ===
+  // 카페24 관리자 센터에서 설정한 특정 카테고리(베스트셀러 등) 번호(categoryNo)를 넣으면 쇼핑몰 프론트와 똑같은 순서대로 빼옵니다.
+  getCategoryProducts: async (accessToken, categoryNo, limit = 10) => {
+    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${categoryNo}/products?limit=${limit}&display=T&selling=T`;
+
+    const cachedData = cacheMem.get(url);
+    if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL_MS)) {
+        console.log(`[Cache HIT ⚡] 베스트 카테고리(${categoryNo}) 랭킹 조회 캐시 반환`);
+        return cachedData.data;
+    }
+
+    console.log(`[INFO] 카테고리 상품 조회 통신 시작 (GET ${url})`);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Cafe24-Api-Version': '2023-09-01' 
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      const detail = data?.error?.message || JSON.stringify(data);
+      const error = new Error(`카테고리 랭킹 통신 에러: ${detail}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    cacheMem.set(url, { timestamp: Date.now(), data });
+    return data;
   }
 };

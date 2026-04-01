@@ -1,0 +1,435 @@
+Logo
+예시) Product 또는 상품으로 검색
+API Index
+Introduction
+Authentication
+Product
+Categories products
+Mains products
+Products
+Products decorationimages
+Products discountprice
+Products hits
+Products icons
+Products options
+Products variants
+Products variants inventories
+Productsdetail
+Category
+Categories
+Personal
+Carts
+Products carts
+Retrieve a count of carts containing a product
+Products carts (Version: 2026-03-01)
+
+API 버전 선택
+한국어
+상품
+Product
+상품분류
+Category
+개인화정보
+Personal
+Introduction
+Cafe24 API 
+카페24 쇼핑몰 API는 카페24 쇼핑몰에 연동하여 서비스를 제공하기 위한 앱스토어 입점 개발사, 서드파티 솔루션 제공자 등에 제공하는 API입니다.
+
+카페24 API는 RESTful한 아키텍쳐로서 OAuth 2.0 기반의 인증 시스템과 표준 HTTP Request Method, 리소스를 예측할 수 있는 엔드포인트 URL, HTTP 코드 기반의 에러 메시지를 제공합니다.
+
+API Diagram 
+리소스 관계를 다이어그램으로 제공하여, 전체적인 카페24 API 체계를 확인할 수 있습니다.
+
+
+
+Request/Response Format 
+API 요청과 응답은 JSON Format을 지원합니다.
+
+개인정보 보호를 위하여 카페24 API는 HTTPS 프로토콜만 지원합니다.
+
+Dates 속성은 ISO_8601  Format으로 제공합니다. : YYYY-MM-DDTHH:MM:SS+09:00
+
+요청 예제 (조회)
+cURL
+curl -X GET \
+  'https://{mallid}.cafe24api.com/{endpoint_url}' \
+  -H 'Authorization: Basic {base64_encode({client_id}:{front_api_key})}' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Cafe24-Api-Version: {version}' \
+  -H 'X-Cafe24-Client-Id: {client_id}'
+요청 예제 (등록/수정)
+cURL
+curl -X POST \
+  'https://{mallid}.cafe24api.com/{endpoint_url}' \
+  -H 'Authorization: Basic {base64_encode({client_id}:{front_api_key})}' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Cafe24-Api-Version: {version}' \
+  -H 'X-Cafe24-Client-Id: {client_id}' \
+  -d '{ .... }'
+정상 응답 예제
+{
+  "resource": {
+      "key": "value",
+      "key": "value"
+   }
+}
+에러 응답 예제
+{
+  "error": {
+      "code": "error code",
+      "message": "error message",
+      "more_info": {
+      }
+  }
+}
+Method 
+각 리소스 별로 Create, Read, Update, Delete를 지원하며 표준 HTTP Method를 사용하여 API를 사용할 수 있습니다.
+
+POST : 해당 리소스를 생성(Create)합니다.
+
+GET : 해당 리소스의 정보를 조회(Read)합니다.
+
+PUT : 해당 리소스를 수정(Update)합니다.
+
+DELETE : 해당 리소스를 삭제(Delete)합니다.
+
+Front API Intro 
+Front API는 공개된 정보(상품 진열 정보) 또는 쇼핑몰 이용 고객이 자신의 정보를 조회하거나 게시물 등을 작성할 때 적합합니다. Front API는 Admin API에 비하여 일부 정보는 제한되어있습니다.
+
+사용 예시
+https://{mallid}.cafe24api.com/api/v2/sampleapi
+API Status Code 
+Code	발생하는 사례	오류 해결 방법
+200	GET 성공, PUT 성공, DELETE 성공시	
+201	POST 성공시	
+202	비동기 처리 요청이 접수되었으나 아직 처리가 완료되지 않은 경우	
+204	DELETE 성공시 응답 본문이 없는 경우	
+207	다중 요청 등록시 상태가 객체별로 다른 경우	오류 상태를 객체별로 확인하여 해당 상태에 따라 대응합니다.
+400	서버에서 요청을 이해할 수 없음
+1) Content-Type이 잘못 지정되어있음
+2) application/type이 json이 아님	요청시 "Content-Type"이 application/json으로 되어있는지 확인합니다.
+400	요청 API URL에 한글 또는 특수문자를 인코딩하지 않고 그대로 사용한 경우	요청 API URL에 한글 또는 특수문자를 URL 인코딩하였는지 확인합니다.
+401	1) Access Token 없이 호출한 경우
+2) Access Token이 유효하지 않은 경우
+3) Access Token이 만료된 경우
+4) 알 수 없는 클라이언트일 경우	유효한 발급 절차에 따라 발급받은 Access Token을 사용하였는지 확인합니다.
+401	Front API 사용시 client_id를 미입력한 경우	유효한 클라이언트 ID를 사용하였는지 확인합니다.
+403	1) Access Token은 있으나 해당 Scope에 권한이 없음
+2) Front API에서 볼 수 있는 권한이 없을 경우	API를 호출할 수 있는 권한이 있는지 API의 Scope 또는 쇼핑몰의 설정을 확인합니다.
+403	https 프로토콜이 아닌 경우	API 요청시 https 로 요청하였는지 확인합니다.
+403	뉴상품 쇼핑몰이 아닌 경우	쇼핑몰이 (뉴)상품관리로 업그레이드 되어야 사용 가능합니다.
+403	(Admin API 호출시) 쇼핑몰에서 해당 앱이 삭제된 경우	쇼핑몰에 앱이 설치되었는지 확인 후 앱을 다시 설치합니다.
+403	(Front API 호출시) 쇼핑몰에서 해당 앱이 삭제된 경우	쇼핑몰에 앱이 설치되었는지 확인 후 앱을 다시 설치합니다.
+403	(Customer API 호출시) 쇼핑몰에서 해당 앱이 삭제된 경우	쇼핑몰에 앱이 설치되었는지 확인 후 앱을 다시 설치합니다.
+404	1) API URL을 잘못 호출한 경우
+2) 리소스를 찾을 수 없을 경우
+3) {#id}가 없는 경우	엔드포인트 URL의 오류가 있는지 API 문서를 참고하여 확인합니다.
+409	동일 리소스에 동일 내용을 업데이트할 경우	수정할 데이터를 요청해주세요.
+422	조회/처리 요청시 값이 정해진 스펙과 다를 경우
+1) 필수 파라메터 누락함
+2) 정해진 스펙과 다를 경우	API 문서를 참고하여 필수 파라메터가 입력되지 않았거나 유효하지 않은 값을 입력하였는지 확인합니다.
+429	클라이언트의 API 요청이 Bucket을 초과한 경우	API 최대 허용 요청 건수를 초과하지 않도록 잠시 후 다시 요청합니다.
+500	내부 서버 에러, 알 수 없는 에러	일시적으로 에러가 발생하였습니다. 잠시 후에 다시 시도합니다.
+503	현재 서버가 다운된 경우	개발자센터로 문의해주세요.
+503	서버가 다운된 경우. API를 사용할 수 없음.	개발자센터로 문의해주세요.
+504	요청 시간이 초과된 경우(Timeout)	일시적으로 에러가 발생하여 응답이 지연되고 있습니다. 잠시 후에 다시 시도해주세요.
+How to use GET API 
+카페24 API는 데이터를 조회하는 여러가지 방법을 제공하고 있습니다.
+
+다음은 API 조회시 여러가지 파라메터를 사용하여 다양하게 데이터를 호출할 수 있는 방법을 설명하고 있습니다.
+
+1. 검색조건 추가
+검색조건은 엔드포인트에 파라메터를 추가하여 검색할 수 있습니다.
+
+여러 조건을 같이 검색할 경우 "&" 구분자를 이용하여 검색 조건을 추가할 수 있습니다.
+
+API에서 지원하는 경우, 타임존을 사용하여 날짜와 시간 검색을 할 수 있습니다.
+
+검색조건 추가
+예) 특정 브랜드 내에서 상품 판매가가 1000원 이상인 상품 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?brand_code=B000000A&price_min=1000
+
+예) 상품 등록일 범위를 지정하여 상품 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?created_start_date=2018-01-03&created_end_date=2018-02-03
+
+예) 상품 수정일 범위를 지정하여 상품 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?updated_start_date=2018-01-03T14:01:26+09:00&updated_end_date=2018-02-03T14:01:26+09:00
+2. 콤마로 여러 건을 검색
+API에서 지원하는 경우, 콤마(,)를 사용하여 여러 값을 동시에 검색할 수 있습니다. (단, 100개 항목 이하로 입력 해주세요.)
+
+콤마(,)로 추가한 검색 조건은 OR 조건으로, 검색 조건에 해당되는 모든 값들이 검색됩니다.
+
+콤마로 여러 건을 검색
+예) 특정 상품번호를 지정하여 상품 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?product_no=11,12,13
+
+예) 특정 상품번호와 상품코드를 지정하여 상품 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?product_no=11,12,13&product_code=P000000X,P000000W
+3. 멀티쇼핑몰 정보 조회
+특정 멀티쇼핑몰 번호를 명시하면 해당 멀티쇼핑몰의 정보를 조회할 수 있습니다.
+
+멀티쇼핑몰 번호를 명시하지 않을 경우, 기본 쇼핑몰의 정보를 조회합니다.
+
+멀티쇼핑몰 정보 조회
+예) 특정 멀티쇼핑몰의 상품 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?shop_no=2
+4. 상세 조회와 단건 조회
+리소스의 ID를 명시하여 상세 조회를 할 수 있습니다.
+
+상세 조회는 리소스 하나만 조회할 수 있지만, 목록 조회보다 더 많은 항목이 반환됩니다.
+
+상세 조회와 단건 조회
+예) 특정 상품번호를 지정하여 상품 상세 조회
+GET https://{mallid}.cafe24api.com/api/v2/products/128
+
+
+예) 특정 상품번호를 지정하여 상품 단건 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?product_no=128
+5. Pagination
+조회 결과가 많을 경우, 정해진 'limit' 기본 값만큼 결과가 조회됩니다.
+
+'limit' 파라메터를 이용하여 조회 건수를 확장할 수 있으며, API마다 정의된 최대 값만큼만 확장할 수 있습니다.
+
+'limit' 최대 값으로 모든 데이터를 조회할 수 없는 경우, 'offset' 파라메터를 사용할 수 있습니다.
+
+Pagination
+예 ) 상품 100개 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?limit=100
+
+
+예) 201번째 상품부터 300번째 상품까지 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?limit=100&offset=200
+6. 특정 항목 조회
+특정한 값들만 조회하고 싶을 때는 'fields' 파라메터를 사용하여 조회할 수 있습니다.
+
+특정 항목 조회
+예) 상품명과 상품번호 항목만 조회
+GET https://{mallid}.cafe24api.com/api/v2/products?fields=product_name,product_no
+7. 하위 리소스 조회
+API에서 지원하는 경우, 'embed' 파라메터를 사용하여 하위 리소스의 데이터를 같이 조회할 수 있습니다.
+
+하위 리소스 조회
+예) 상품 조회시 품목과 재고 데이터를 함께 조회
+GET https://{mallid}.cafe24api.com/api/v2/products/570?embed=variants,inventories
+API Limit 
+카페24 API는 안정적인 응답 속도와 플랫폼 전체의 가용성을 보장하기 위해, 요청 수 제한 정책과 사용량 제한 정책을 병행 적용합니다.
+
+요청 수 제한
+카페24 API는 "Leaky Bucket" 알고리즘으로 작동합니다. Leaky Bucket 알고리즘은 성능을 위해 비정상적으로 많은 API 요청만 제한되고 일상적인 API 요청은 별다른 제약 없이 사용할 수 있는 효과가 있습니다.제한되고 일상적인 API 요청은 별다른 제약 없이 사용할 수 있는 효과가 있습니다.
+
+카페24 API는 API 요청을 Bucket에 쌓아둡니다. Bucket은 쇼핑몰 당 "호출건 수 제한"만큼 가득차면 API 호출이 제한됩니다. Bucket은 1초에 2회씩 감소하며, 감소한만큼 다시 API 호출을 할 수 있습니다.
+
+만약 앱이 1초에 2회씩 API를 호출한다면 API 호출을 별다른 제약 없이 계속 사용할 수 있습니다.
+
+순간적으로 1초 이내에 "호출건 수 제한" 이상의 콜이 발생한다면 429 에러(Too Many Request)를 반환합니다.
+
+Bucket 이내의 호출이라도 해당 쇼핑몰에서 동일 IP로 초당 10회 이상의 호출이 발생할 경우 비정상적인 호출로 판단될 수 있습니다.
+
+Header에 X-Api-Call-Limit을 확인하면 429 에러를 피할 수 있습니다. 해당 쇼핑몰에서 얼마나 API를 호출했는지, 그리고 Bucket 여유량은 얼마나 남았는지를 확인할 수 있습니다.
+
+X-Api-Call-Limit : 1/40
+사용량 제한
+카페24 API는 단순 호출 횟수 제한 외에도 사용량 기반 제한 정책을 적용합니다. API 응답에는 Usage와 Remain 관련 Header가 함께 포함되며, 이를 통해 현재 사용량과 재호출 가능 시간을 확인할 수 있습니다.
+
+X-Cafe24-Call-Usage : 호출 횟수 한도 대비 사용률(%)
+
+X-Cafe24-Call-Remain : 호출 재개 가능까지 남은 시간(초)
+
+X-Cafe24-Time-Usage : 처리 시간 한도 대비 사용률(%)
+
+X-Cafe24-Time-Remain : 처리 시간 재개 가능까지 남은 시간(초)
+
+Remain 항목은 Usage 값이 100% 이상, 즉 자원이 모두 소진된 상태에서만 응답에 포함됩니다.
+
+정상 사용 구간에서는 Remain 값이 내려오지 않으며, 이는 아직 제한에 도달하지 않았음을 의미합니다.
+
+제한을 초과하면 해당 클라이언트의 API 호출은 일시적으로 차단되며, 차단된 상태에서 계속 호출을 시도할 경우 Usage 값이 100%를 초과하여 재호출 가능까지 남은 시간은 더 길어질 수 있습니다.
+
+따라서 서비스 영향 최소화를 위해 Header 값을 반드시 확인하고, 호출 로직을 조정하는 것이 필요합니다.
+
+X-Cafe24-Call-Usage : 120.04
+X-Cafe24-Call-Remain : 32
+X-Cafe24-Time-Usage : 100.5
+X-Cafe24-Time-Remain : 7
+Versioning 
+Version 2026-03-01 (latest) 이전 버전과 호환되지 않은 변경사항에 대해 날짜로 버전을 제공합니다.
+
+custom headers "X-Cafe24-Api-Version"를 통해 원하시는 버전을 지정할 수 있으며 버전을 지정하지 않을경우 개발정보의 앱 버전으로 동작합니다.
+
+앱 버전은 아래 경로를 통해 확인 및 변경이 가능합니다.
+
+개발자센터(로그인) > Apps > 개발정보 > 인증정보 내 버전관리
+버전의 만료 기간은 최신 버전 릴리즈가 출시된 시점부터 최대 1년입니다.
+
+해당 버전이 만료된 이후에는 만료되지 않은 버전 중 가장 오래된 버전으로 동작합니다.
+
+예시 코드 (요청)
+cURL
+curl -X GET \
+  'https://{mallid}.cafe24api.com/api/v2/categories' \
+  -H 'Authorization: Basic {base64_encode({client_id}:{front_api_key})}' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Cafe24-Api-Version: 2026-03-01' \
+  -H 'X-Cafe24-Client-Id: BrIfqEKoP.......'
+Authentication
+Basic Authentication 
+Front API는 HTTP Basic 인증 방식을 지원합니다. 인증된 요청은 클라이언트별 설정에 따른 API 호출 제한이 적용되며, 인증하지 않은 요청은 제한된 호출 한도가 적용됩니다.
+
+Basic 인증 데이터는 client_id와 front_api_key를 콜론(:)으로 연결한 후 Base64로 인코딩하여 생성합니다.
+
+{client_id} : 개발자 센터에서 생성한 앱의 client_id를 입력합니다.
+
+{front_api_key} : 개발자 센터에서 생성한 앱의 front_api_key를 입력합니다.
+
+인증 정보가 유효하지 않은 경우 401 Unauthorized 응답이 반환됩니다.
+
+Base64 인코딩 생성 방법
+1. client_id와 front_api_key를 콜론(:)으로 연결합니다.
+   {client_id}:{front_api_key}
+
+2. 연결된 문자열을 Base64로 인코딩합니다.
+   Base64({client_id}:{front_api_key})
+
+3. 인코딩된 값을 Authorization 헤더에 설정합니다.
+   Authorization: Basic {Base64로 인코딩된 값}
+예시
+Authorization: Basic {base64_encode({client_id}:{front_api_key})}
+예시 코드 (요청)
+curl -X GET \
+  'https://{mallid}.cafe24api.com/api/v2/products/count' \
+  -H 'Authorization: Basic {base64_encode({client_id}:{front_api_key})}' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Cafe24-Client-Id: {client_id}'
+예시 코드 (응답)
+HTTP/1.1 200 OK
+{
+    "count": 85
+}
+API Limit by Authentication 
+Front API는 인증 여부에 따라 API 호출 제한이 다르게 적용됩니다.
+
+인증된 요청 : 클라이언트별 설정 또는 시스템 기본값에 따른 일반적인 호출 제한이 적용됩니다.
+
+인증되지 않은 요청 : 제한된 호출 한도가 적용됩니다.
+
+안정적인 서비스 운영을 위해 Basic 인증을 사용하는 것을 권장합니다.
+
+Categories products
+
+
+카테고리 상품(Categories products)은 카테고리의 상품의 표시 순서, 고정 여부, 진열 영역 등을 조회, 수정할 수 있는 관계형 리소스입니다.
+
+Endpoints
+GET /api/v2/categories/{category_no}/products
+GET /api/v2/categories/{category_no}/products/count
+Mains products
+
+
+메인분류 상품(Mains products)은 상품 메인진열의 순서에 관한 메인분류의 관계형 리소스입니다
+
+Endpoints
+GET /api/v2/mains/{display_group}/products
+Products
+
+
+상품(Products)은 쇼핑몰에서 거래되는 제품의 기본 단위입니다.
+컬러, 사이즈 같은 옵션이 있을 경우 각각의 옵션이 상품 하위의 품목으로 생성될 수 있습니다.
+상품은 상품명, 판매가, 요약설명, 상품 검색어 등의 정보를 포함하고 있습니다.
+상품은 품목, 상품 메모, SEO 등 여러 하위 리소스들을 갖고 있습니다.
+
+Endpoints
+GET /api/v2/products
+GET /api/v2/products/count
+GET /api/v2/products/{product_no}
+Products decorationimages
+
+
+꾸미기 이미지(Decorationimages)는 쇼핑몰에 진열된 상품에 등록되어있는 꾸미기 이미지를 조회할 수 있습니다.
+꾸미기 이미지는 하위 리소스로서 상품(Products) 하위에서만 사용할 수 있습니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/decorationimages
+Products discountprice
+
+
+상품 할인가(Discountprice)는 상품의 할인가격을 표시하는 리소스입니다. 혜택(Benefits)이 적용된 상품의 경우 상품의 할인가를 조회할 수 있습니다.
+상품 할인가는 하위 리소스로서 상품(Products) 하위에서만 사용가능하며, 상품 목록 조회시 Embed 파라메터로 호출가능합니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/discountprice
+Products hits
+
+
+상품 조회수(Hits)는 상품을 쇼핑몰 고객들이 얼마나 조회했는지를 나타내는 지표입니다.
+상품 조회수를 확인하면, 고객들이 어떤 상품을 가장 많이 조회하는지 알 수 있습니다.
+상품 조회수는 하위 리소스로서 상품(Products) 하위에서만 사용할 수 있습니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/hits/count
+Products icons
+
+
+상품 아이콘은 상품을 강조하기 위해 상품 옆에 추가할 수 있는 작은 이미지들입니다. 진열된 상품에 할인 정보, "매진 임박" 등의 메시지를 추가하여 상품을 강조할 수 있습니다.
+상품 아이콘는 하위 리소스로서 상품(Products) 하위에서만 사용할 수 있습니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/icons
+Products options
+
+
+상품 옵션(Products options)은 상품이 다른 색상이나 사이즈를 갖고 있는 경우 이를 각각의 옵션으로 구현할 수 있도록 하는 기능입니다.
+옵션은 색상, 사이즈 같은 옵션명(option_name)과 색상 중 빨간색, 노란색과 같은 옵션값(option_value)으로 구성되어있습니다.
+상품에 옵션 등록시 옵션을 기반으로 품목(variants)이 생성됩니다.
+옵션은 하위 리소스로서 상품(Products) 하위에서만 사용할 수 있습니다.
+옵션의 목록조회, 생성, 수정, 삭제가 가능합니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/options
+Products variants
+
+
+상품의 품목(Products variants)은 쇼핑몰에서 판매되는 상품의 기본 단위입니다.
+쇼핑몰은 일반적으로 고객에게 다양한 선택권을 제공하기 위해 같은 상품이지만 사이즈가 다르거나, 혹은 색상이 다른 품목들을 판매합니다.
+품목의 조회, 등록, 수정 또는 삭제를 할 수 있습니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/variants
+GET /api/v2/products/{product_no}/variants/{variant_code}
+Products variants inventories
+
+
+재고(Inventories)는 판매 가능한 해당 품목의 수량을 의미합니다. 재고는 품목(Variants)별로 존재하며 해당 재고 이상 품목이 판매되면 해당 상품은 품절 상태가 됩니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/variants/{variant_code}/inventories
+Productsdetail
+상품상세정보(Productsdetail)는 상품 상세페이지에 노출되는 항목과 그 값을 조회할 수 있는 기능입니다.
+
+Endpoints
+GET /api/v2/productsdetail/{product_no}
+Categories
+
+
+상품분류(Categories)는 쇼핑몰에 노출할 카테고리를 설정하는 기능입니다.
+상품분류는 대분류 하위에 중분류, 소분류, 상세 분류까지 세분화해서 설정할 수 있습니다.
+상품분류 리소스를 사용하면 쇼핑몰의 분류들을 조회하거나 분류를 생성, 수정, 삭제할 수 있습니다.
+
+Endpoints
+GET /api/v2/categories
+GET /api/v2/categories/count
+GET /api/v2/categories/{category_no}
+Carts
+장바구니(Carts)는 상품을 주문하기 전 한번에 주문할 수 있도록 상품을 미리 담아두는 기능입니다.
+장바구니 리소스에서는 Front API를 사용하여 특정 상품을 장바구니에 담을 수 있고 Admin API에서는 특정 회원의 장바구니를 조회할 수 있습니다.
+
+Endpoints
+POST /api/v2/carts
+Products carts
+
+
+상품 장바구니(Products carts)는 특정 상품을 장바구니에 담은 회원과 그 숫자를 조회할 수 있는 리소스입니다.
+특정 상품을 장바구니에 담은 회원의 ID, 담은날짜와 회원의 수 정보를 조회할 수 있습니다.
+
+Endpoints
+GET /api/v2/products/{product_no}/carts/count
+Top

@@ -58,7 +58,7 @@ router.post('/', async (req, res) => {
         tools: [
           {
             name: 'search_cafe24_real_products',
-            description: '사용자의 피부 고민과 일치하는 셀퓨전씨 실제 판매 상품을 카페24 API에서 라이브로 검색하여 추천합니다.',
+            description: '사용자의 피부 고민(건성, 트러블 등)이나 원하는 카테고리(크림, 앰플 등)에 맞춰 셀퓨전씨 실제 판매 상품을 카페24 API에서 라이브로 검색하여 맞춤 추천합니다. 베스트셀러/랭킹/인기 순위를 묻는 질문에는 이 도구를 사용하지 마세요.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -67,7 +67,18 @@ router.post('/', async (req, res) => {
                 category: { type: 'string', description: '원하는 카테고리 종류 (예: 비비, 크림, 앰플, 클렌징)' },
                 count: { type: 'number', description: '사용자가 특별히 요청한 추천 개수. 특별한 언급이 없으면 3위까지. (예: 5위까지 보여줘 -> 5)' }
               },
-              required: [] // 모든 필드는 상황에 따라 선택적으로 입력
+              required: []
+            }
+          },
+          {
+            name: 'get_bestseller_ranking',
+            description: '셀퓨전씨 공식몰의 실시간 베스트셀러 랭킹(인기 순위)을 가져옵니다. 사용자가 "잘 나가는 거 뭐야", "베스트 보여줘", "인기 순위", "랭킹", "요즘 뭐가 잘 팔려" 등 인기/판매 순위를 물어볼 때 반드시 이 도구를 사용하세요.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                count: { type: 'number', description: '보여줄 랭킹 개수. 기본 5개. (예: 3위까지만 -> 3, 10위까지 -> 10)' }
+              },
+              required: []
             }
           }
         ]
@@ -156,6 +167,88 @@ ${JSON.stringify({ recommendations: topN }, null, 2)}
 ===== [데이터 끝] =====`
                 }
             ] 
+        };
+
+      } else if (name === 'get_bestseller_ranking') {
+        // ====== [베스트셀러 랭킹 전용 파이프라인] ======
+        // 카페24 공식몰 '베스트' 카테고리(47번)의 진열 순서를 그대로 가져옵니다.
+        const BEST_CATEGORY_NO = 47;
+        let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
+        if (!accessToken) {
+            throw new Error("카페24 접근 토큰이 없습니다. 관리자 인증이 필요합니다.");
+        }
+
+        const rankingCount = Math.min(args.count || 5, 10);
+        let catResponse;
+        try {
+            console.log(`[MCP] 🏆 베스트셀러 랭킹 조회 시작 (카테고리 ${BEST_CATEGORY_NO})`);
+            catResponse = await cafe24ApiService.getCategoryProducts(accessToken, BEST_CATEGORY_NO, rankingCount);
+        } catch (apiError) {
+            if (apiError.status === 401) {
+                console.log("[MCP] ⚠️ 토큰 만료 감지. 자동 갱신 시도...");
+                const refreshToken = await tokenStore.getRefreshToken(config.MALL_ID);
+                if (!refreshToken) throw new Error("리프레시 토큰 소실. /cafe24/start 재로그인 필요.");
+                const tokenData = await cafe24AuthService.refreshAccessToken(refreshToken);
+                await tokenStore.saveTokens(config.MALL_ID, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at);
+                accessToken = tokenData.access_token;
+                catResponse = await cafe24ApiService.getCategoryProducts(accessToken, BEST_CATEGORY_NO, rankingCount);
+            } else {
+                throw apiError;
+            }
+        }
+
+        // 카테고리 API는 product_no 목록만 반환하므로, 각 상품의 상세 정보를 가져와야 합니다.
+        const productNos = (catResponse.products || []).map(p => p.product_no);
+        if (productNos.length === 0) throw new Error("베스트 카테고리에 진열된 상품이 없습니다.");
+
+        // 상품 번호들로 상세 정보 일괄 조회
+        const detailUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?product_no=${productNos.join(',')}&fields=product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,product_tag,sold_out`;
+        const detailRes = await fetch(detailUrl, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+        });
+        const detailData = await detailRes.json();
+        const detailProducts = detailData.products || [];
+
+        // 카테고리 진열 순서를 유지하면서 상세 정보를 매핑
+        const rankedProducts = productNos.map(no => detailProducts.find(p => p.product_no === no)).filter(Boolean);
+
+        // 랭킹 전용 마크다운 표 생성 (순서 = 쇼핑몰 공식 진열 순서 그대로!)
+        const rankItems = rankedProducts.map((p, i) => {
+            let img = p.list_image || p.detail_image || p.tiny_image;
+            if (!img) img = 'https://dummyimage.com/180x180/e0e0e0/555555.png?text=No_Image';
+            if (img.startsWith('//')) img = `https:${img}`;
+            if (img.startsWith('http://')) img = img.replace('http://', 'https://');
+            const url = `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`;
+            return { rank: i + 1, name: p.product_name, price: `${parseInt(p.price)}원`, thumbnail: img, product_url: url };
+        });
+
+        let markdownTable = `🏆 **셀퓨전씨 공식몰 실시간 베스트셀러 TOP ${rankItems.length} (공식 랭킹)**\n\n`;
+        markdownTable += `| ${rankItems.map(r => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1]} ${r.rank}위`).join(' | ')} |\n`;
+        markdownTable += `| ${rankItems.map(() => ':---:').join(' | ')} |\n`;
+        markdownTable += `| ${rankItems.map(r => `[![${r.name}](${r.thumbnail})](${r.product_url})`).join(' | ')} |\n`;
+        markdownTable += `| ${rankItems.map(r => `**[${r.name.replace(/\|/g, '')}](${r.product_url})**`).join(' | ')} |\n`;
+        markdownTable += `| ${rankItems.map(r => `**💳 ${r.price}**`).join(' | ')} |\n`;
+        markdownTable += `| ${rankItems.map(r => `[🛒 구매하기](${r.product_url})`).join(' | ')} |\n\n`;
+
+        result = {
+            content: [{
+                type: 'text',
+                text: `[시스템 핵심 통제/강제 사항]
+당신은 셀퓨전씨 공식 랭킹 리포터입니다. 아래의 [완성된 마크다운 표]는 백엔드가 카페24 공식몰 베스트 카테고리의 "실제 진열 순서"를 그대로 가져와 만든 것입니다.
+이 순서는 쇼핑몰 관리자가 직접 설정한 공식 랭킹이므로, 절대로 순서를 변경하거나 표를 재구성하지 마세요.
+아래 표를 단 한 글자도 수정하지 말고 100% 그대로 복사하여 가장 먼저 출력하세요.
+
+[완성된 마크다운 표 기성품]
+${markdownTable}
+
+[🧴 핵심 요약 코멘트] 영역
+위 표를 그대로 출력한 후, 아래쪽에 "현재 셀퓨전씨 공식몰에서 가장 사랑받고 있는 TOP ${rankItems.length} 제품입니다" 라는 한 줄 요약 후, 각 제품에 대해 딱 1줄로 짧고 위트있게 왜 인기인지 코멘트하세요. 장황하게 길게 설명하는 것은 엄격히 금지합니다.
+
+===== [참고 JSON 데이터] =====
+${JSON.stringify({ ranking: rankItems }, null, 2)}
+===== [데이터 끝] =====`
+            }]
         };
 
       } else {

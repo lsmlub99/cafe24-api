@@ -64,7 +64,8 @@ router.post('/', async (req, res) => {
               properties: {
                 skin_type: { type: 'string', description: '요청받은 피부 타입 (예: 건성, 지성, 민감성 등)' },
                 concerns: { type: 'array', items: { type: 'string' }, description: '고객의 피부 고민들 (예: 수분, 진정, 트러블, 커버 등)' },
-                category: { type: 'string', description: '원하는 카테고리 종류 (예: 비비, 크림, 앰플, 클렌징)' }
+                category: { type: 'string', description: '원하는 카테고리 종류 (예: 비비, 크림, 앰플, 클렌징)' },
+                count: { type: 'number', description: '사용자가 특별히 요청한 추천 개수. 특별한 언급이 없으면 3위까지. (예: 5위까지 보여줘 -> 5)' }
               },
               required: [] // 모든 필드는 상황에 따라 선택적으로 입력
             }
@@ -114,20 +115,27 @@ router.post('/', async (req, res) => {
         const products = response.products || [];
 
         // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임
-        const top3 = recommendationService.scoreAndFilterProducts(products, args);
+        // args.count가 있으면 그만큼(최대 5), 없으면 기본 3개
+        const recommendCount = Math.min(args.count || 3, 5); 
+        const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
         
-        // 👉 [마스터피스] 표 양식을 제멋대로 부수는 AI를 완전히 통제하기 위해, 서버가 아예 마크다운 표를 완벽히 그려서 강제로 떠먹여 줍니다.
+        // 👉 [마스터피스] 3개 고정을 풀고 배열 길이에 따라 (3개~5개) 동적으로 늘어나는 마크다운 표 자동 생성
         let markdownTable = `✅ **본 추천은 셀퓨전씨 공식몰의 실시간 최신 판매 데이터를 바탕으로 분석된 100% 확실한 정보입니다.**\n\n`;
-        markdownTable += `| 🥇 1순위 추천 | 🥈 2순위 추천 | 🥉 3순위 추천 |\n`;
-        markdownTable += `|:---:|:---:|:---:|\n`;
-        markdownTable += `| ${top3[0] ? `[![상품명](${top3[0].thumbnail})](${top3[0].product_url})` : '-'} | ${top3[1] ? `[![상품명](${top3[1].thumbnail})](${top3[1].product_url})` : '-'} | ${top3[2] ? `[![상품명](${top3[2].thumbnail})](${top3[2].product_url})` : '-'} |\n`;
-        markdownTable += `| ${top3[0] ? `**[${top3[0].name.replace(/\|/g, '')}](${top3[0].product_url})**` : '-'} | ${top3[1] ? `**[${top3[1].name.replace(/\|/g, '')}](${top3[1].product_url})**` : '-'} | ${top3[2] ? `**[${top3[2].name.replace(/\|/g, '')}](${top3[2].product_url})**` : '-'} |\n`;
-        markdownTable += `| ${top3[0] ? `**💳 ${top3[0].price}**` : '-'} | ${top3[1] ? `**💳 ${top3[1].price}**` : '-'} | ${top3[2] ? `**💳 ${top3[2].price}**` : '-'} |\n`;
-        markdownTable += `| ${top3[0] ? `💡 ${top3[0].match_reasons.split(',')[0]}` : '-'} | ${top3[1] ? `💡 ${top3[1].match_reasons.split(',')[0]}` : '-'} | ${top3[2] ? `💡 ${top3[2].match_reasons.split(',')[0]}` : '-'} |\n`;
-        markdownTable += `| ${top3[0] ? `[🛒 즉시 구매하기](${top3[0].product_url})` : '-'} | ${top3[1] ? `[🛒 즉시 구매하기](${top3[1].product_url})` : '-'} | ${top3[2] ? `[🛒 즉시 구매하기](${top3[2].product_url})` : '-'} |\n`;
         
+        // 헤더 동적 생성 (1순위, 2순위...)
+        markdownTable += `| ${topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅'][i]} ${i+1}순위 추천`).join(' | ')} |\n`;
+        markdownTable += `| ${topN.map(() => `:---:`).join(' | ')} |\n`;
+        
+        // 아이템 출력 동적 생성
+        markdownTable += `| ${topN.map(p => `[![상품명](${p.thumbnail})](${p.product_url})`).join(' | ')} |\n`;
+        markdownTable += `| ${topN.map(p => `**[${p.name.replace(/\|/g, '')}](${p.product_url})**`).join(' | ')} |\n`;
+        markdownTable += `| ${topN.map(p => `**💳 ${p.price}**`).join(' | ')} |\n`;
+        markdownTable += `| ${topN.map(p => `💡 ${p.match_reasons.split(',')[0]}`).join(' | ')} |\n`;
+        markdownTable += `| ${topN.map(p => `[🛒 즉시 구매하기](${p.product_url})`).join(' | ')} |\n`;
+        
+        // 1+1 업셀 링크 동적 생성
         const getUpsellLink = (p) => p && p.upsell_options && p.upsell_options.length > 0 ? `🎁 연관 혜택: [관련 세트상품 보기](${p.upsell_options[0].product_url})` : '🎁 (기획세트 없음)';
-        markdownTable += `| ${getUpsellLink(top3[0])} | ${getUpsellLink(top3[1])} | ${getUpsellLink(top3[2])} |\n\n`;
+        markdownTable += `| ${topN.map(p => getUpsellLink(p)).join(' | ')} |\n\n`;
 
         result = { 
             content: [
@@ -144,7 +152,7 @@ ${markdownTable}
 위의 표를 무사히 복붙해 띄웠다면, 그 아래쪽에 요약 코너를 만들어주세요. 같이 제공된 [JSON 원본 데이터]를 참고하여, 각각의 제품이 왜 고객에게 찰떡궁합인지 다정하고 경쾌한 말투로 **"무조건 딱 2줄 이내로 아주 짧고 임팩트 있게"** 핵심만 코멘트하세요. 장황하게 길게 설명하는 것을 엄격히 금지합니다. (고객이 읽다 지칩니다)
 
 ===== [AI가 상세 분석 코멘트를 작성할 때 참고할 JSON 원본 데이터] =====
-${JSON.stringify({ recommendations: top3 }, null, 2)}
+${JSON.stringify({ recommendations: topN }, null, 2)}
 ===== [데이터 끝] =====`
                 }
             ] 

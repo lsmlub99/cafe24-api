@@ -3,7 +3,7 @@
  * (목적: 라우터 파일의 비대화를 막고, 향후 알고리즘 변경 시 이곳만 수정하도록 격리)
  */
 export const recommendationService = {
-  scoreAndFilterProducts: (products, args) => {
+  scoreAndFilterProducts: (products, args, limit = 3) => {
     const { skin_type, concerns = [], category } = args;
 
     // 1. 가져온 상품들에 대해 하나씩 채점 실행
@@ -85,7 +85,7 @@ export const recommendationService = {
     validProducts.sort((a, b) => b.score - a.score); // 높은 점수순
 
     // 3. 중복 노출 방지 & 기획세트(1+1) 묶어버리기 (Upsell 연관 제안용)
-    const uniqueTop3 = [];
+    const uniqueTopN = [];
     const baseNameMap = new Map(); // 본명(Base Name) 추적용
     
     for (const p of validProducts) {
@@ -97,8 +97,8 @@ export const recommendationService = {
             p.upsell_options = []; // 이 상품의 기획/1+1 버전을 담을 연관 상품 바구니
             baseNameMap.set(baseName, p);
             
-            if (uniqueTop3.length < 3) {
-                uniqueTop3.push(p);
+            if (uniqueTopN.length < limit) {
+                uniqueTopN.push(p);
             }
         } else {
             // 이미 1, 2, 3등 자리를 차지한 대표 상품의 '1+1 형제(기획)' 상품이라면? -> 버리지 말고 바구니에 살포시 담기
@@ -112,8 +112,11 @@ export const recommendationService = {
                 });
             }
         }
+        
+        // 꽉 차면 종료 (기본 3, 최대 5)
+        if (uniqueTopN.length === limit) break;
     }
 
-    return uniqueTop3;
+    return uniqueTopN;
   }
 };

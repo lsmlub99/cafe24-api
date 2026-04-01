@@ -44,15 +44,17 @@ export const recommendationService = {
             reasons.push(`현재 품절/미판매 상태`);
         }
 
-        // 키워드 매칭은 안 됐지만 품절도 아니면 0.5점 기본점수 부여
+        // 키워드 매칭은 안 됐지만 품절도 아니면 쇼핑몰 자체 랭킹/진열순을 위해 0.5점 기본점수 부여
+        let isGenericBestseller = false;
         if (reasons.length === 0 && score === 0 && p.sold_out === 'F') {
            score += 0.5;
-           reasons.push("셀퓨전씨 추천 베스트 상품");
+           reasons.push("셀퓨전씨 공식 추천 상품");
+           isGenericBestseller = true;
         }
 
-        // 👉 [고도화 팁] 똑같은 질문에 맨날 똑같은 상품만 뜨는 지루함을 막기 위한 랜덤 가산점(Jitter)
-        // 아주 미세한 소수점 점수를 난수로 더해 동점자들 사이의 순위를 매번 뒤섞어줍니다.
-        if (score > 0) {
+        // 👉 [고도의 디테일] 피부 고민 등 맞춤형 추천일 때는 지루함 방지용 랜덤성(Jitter) 부여!
+        // 단, 사용자가 "베스트셀러 아무거나 랭킹 보여줘" 등 조건이 없는 범용 질문일 때는, 카페24 공식 랭킹 순서를 파괴하지 않고 일관된 신뢰도를 주기 위해 난수 개입을 차단합니다!
+        if (score > 0 && !isGenericBestseller) {
            score += Math.random() * 0.4;
         }
 
@@ -63,9 +65,14 @@ export const recommendationService = {
             price: `${parseInt(p.price)}원`,
             product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`,
             thumbnail: (() => {
-                const img = p.list_image || p.detail_image || p.tiny_image;
-                if (!img) return 'https://dummyimage.com/180x180/e0e0e0/555555.png&text=No_Image'; 
-                return img.startsWith('//') ? `https:${img}` : img; // 엑스박스 방지
+                let img = p.list_image || p.detail_image || p.tiny_image;
+                if (!img) return 'https://dummyimage.com/180x180/e0e0e0/555555.png?text=No_Image'; 
+                
+                // HTTP 프로토콜 강제 HTTPS 변환 (AI 브라우저에서 Mixed Content 보안 검열로 인한 엑스박스 방지)
+                if (img.startsWith('//')) img = `https:${img}`;
+                if (img.startsWith('http://')) img = img.replace('http://', 'https://');
+                
+                return img;
             })(),
             tags: p.product_tag,
             score,

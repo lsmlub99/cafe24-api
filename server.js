@@ -1,5 +1,4 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit'; // 추가!
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import { config } from './config/env.js';
@@ -10,22 +9,6 @@ const app = express();
 
 // Render나 AWS 클라우드처럼 프록시(Load Balancer) 뒤에 있을 경우 사용자의 진짜 IP를 식별하기 위해 필수
 app.set('trust proxy', 1);
-
-// ===== [고도화 3단계] 과부하 방어막 (Rate Limiter) 장착 =====
-// 10분의 시간(윈도우) 동안 동일한 IP에서 200번 이상 도배성 접속/새로고침이 감지되면 자동 차단
-const apiLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, 
-  max: 200, 
-  message: {
-    error: 'Too Many Requests',
-    message: '도배성 접속이 감지되어 방어막이 켜졌습니다. 10분 후에 다시 시도해 주세요.'
-  },
-  standardHeaders: true, 
-  legacyHeaders: false, 
-});
-
-// 전역으로 방어막 상시 가동
-app.use(apiLimiter);
 
 app.use(express.json());
 app.use(cookieParser());

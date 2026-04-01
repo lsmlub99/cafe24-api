@@ -3,173 +3,146 @@
  * (목적: 라우터 파일의 비대화를 막고, 향후 알고리즘 변경 시 이곳만 수정하도록 격리)
  */
 export const recommendationService = {
-  // 📚 [뷰티 전문 동의어 사전] 사용자가 "건성"이라고 물어븼을 때, 상품명에 "건성"이란 글자가 없어도
-  // "보습, 수분, 촉촉" 같은 관련 단어가 있으면 매칭시켜주는 확장 사전입니다.
+  // 📚 [지능형 동의어 사전] 
+  // 표준어, 줄임말, 오타, 영어 표현을 망라하여 사용자의 의도를 정확히 파악합니다.
   SYNONYMS: {
-    // 피부 타입 동의어
-    '건성': ['보습', '수분', '촉촉', '세라마이드', '장벽', '드라이', '너리싱', '모이스처', '하이루론'],
-    '지성': ['유분', '산뜻', '컨트롤', '블러', '마트', '바란스', '노세범', '피지'],
-    '볅합성': ['수부지', '바란스', '보습', '컨트롤', '크림', '로션'],
-    '민감성': ['진정', '저자극', '병풀', '시카', '판테놀', '알란토인', '센시티브', '트러블', '아쿠아'],
-    // 피부 고민 동의어
-    '트러블': ['여드름', '브레미쉬', '진정', '산뜻', '솜루션', '치성', '스팟'],
-    '진정': ['시카', '병풀', '판테놀', '알로에', '카마', '센시티브', '을트라', '굿몰닝'],
-    '수분': ['보습', '촉촉', '하이루론', '아쿠아', '모이스처', '워터'],
-    '미백': ['비타민', '톤업', '브라이트닝', '나이아신아마이드', '멜라닌', '화이트닝'],
-    '커버': ['비비', '쿠션', '파운데이션', '톤업', '커버력'],
-    '선케어': ['선크림', '선블록', 'spf', 'uv', '자외선', '선베이스', '썬스크린'],
-    '안티에이징': ['주름', '탄력', '콜라겠', '리프팅', '펼타이드', '리주버네이션'],
-    // 카테고리 동의어
-    '크림': ['보습크림', '모이스처라이져', '수분크림', '너리싱', '날크림', '나이트크림', '겔크림'],
-    '앰플': ['세럼', '에센스', '부스터', '오일'],
-    '선크림': ['spf', 'uv', '선베이스', '썬스크린', '선블록', '사스크린', '자외선'],
-    '비비': ['비비크림', '블레미쉬', '톤업', '커버'],
-    '클렌징': ['세안', '폼', '클렌저', '클리닝', '워시'],
-    '마스크': ['팩', '마스크팩', '시트마스크', '패드'],
-    '토너': ['스킨', '토너', '로션', '토너패드'],
+    // 피부 타입
+    '건성': ['보습', '수분', '촉촉', '세라마이드', '장벽', '드라이', '너리싱', '모이스처', '하이루론', '속건조'],
+    '지성': ['유분', '산뜻', '컨트롤', '블러', '매트', '바란스', '노세범', '피지', '오일프리', '프레쉬'],
+    '복합성': ['수부지', '바란스', '보습', '컨트롤', '조절', '밸런스'],
+    '민감성': ['진정', '저자극', '병풀', '시카', '판테놀', '알란토인', '센시티브', '트러블', '아쿠아', '패리어', '안심'],
+    
+    // 피부 고민
+    '트러블': ['여드름', '브레미쉬', '진정', '산뜻', '솔루션', '지성', '스팟', '아크네', 'A.C', '모공'],
+    '진정': ['시카', '병풀', '판테놀', '알로에', '카밍', '센시티브', '울트라', '마데카'],
+    '수분': ['보습', '촉촉', '하이루론', '아쿠아', '모이스처', '워터', '히알루론'],
+    '미백': ['비타민', '톤업', '브라이트닝', '나이아신아마이드', '멜라닌', '화이트닝', '잡티', '광채'],
+    '탄력': ['주름', '콜라겐', '리프팅', '펩타이드', '리주버네이션', '안티에이징', '퍼밍'],
+    
+    // 카테고리 (범용 확장)
+    '선크림': ['선케어', '선블록', 'spf', 'uv', '자외선', '선베이스', '썬스크린', '썬', '차단'],
+    '세럼': ['앰플', '세럼', '에센스', '부스터', '오일', '농축', '액티브'],
+    '크림': ['보습크림', '모이스처라이저', '수분크림', '너리싱', '밤', '스틱밤', '제형'],
+    '토너': ['스킨', '토너패드', '결케어', '닦토', '흡토', '패드'],
+    '클렌징': ['세안', '폼', '클렌저', '워시', '리무버', '오일', '밀크'],
+    '마스크': ['팩', '마스크팩', '시트마스크', '패드', '슬리핑']
   },
 
   // 키워드 + 동의어를 모두 합쳐서 확장 검색어 배열을 만드는 유틸
   _expandKeywords(keyword) {
     if (!keyword) return [];
-    const lower = keyword.toLowerCase();
+    const lower = keyword.toLowerCase().trim();
     const synonyms = this.SYNONYMS[lower] || [];
-    return [lower, ...synonyms];
+    // 만약 "선크림" -> ["선크림", "선케어", "썬스크린", ...]
+    return Array.from(new Set([lower, ...synonyms]));
   },
 
-  scoreAndFilterProducts(products, args, limit = 3) {
+  /**
+   * 추천 채점 알고리즘 (지능형 하이브리드)
+   */
+  scoreAndFilterProducts(products, args, limit = 5) {
     const { skin_type, concerns = [], category } = args;
 
-    // 1. 가져온 상품들에 대해 하나씩 채점 실행
     const scoredProducts = products.map(p => {
         let score = 0;
         let reasons = [];
         
-        // [지능 고도화] 검색 텍스트 합치기 (이름, 요약, 핵심특징, 해시태그)
+        // 🔎 [검색 타겟 통합]
         const searchTarget = [
             p.product_name, 
             p.summary_description, 
-            p.simple_description, // 성분/효능이 들어있을 확률이 높음
+            p.simple_description, 
             ...(Array.isArray(p.product_tag) ? p.product_tag : [])
         ].map(v => (v || '').toLowerCase()).join(' ');
 
-        // [채점 로직] 카테고리 (비중 높음) + 동의어 확장 검색
-        const categoryWords = this._expandKeywords(category);
-        let categoryMatched = false;
+        // 1. 카테고리 매칭 (강력 필터 보정)
         if (category) {
+            const categoryWords = this._expandKeywords(category);
+            let categoryMatched = false;
             for (const kw of categoryWords) {
                 if (searchTarget.includes(kw)) {
-                    score += 5; // 가중치 상향 (3 -> 5)
-                    reasons.push(`[${category}] 카테고리 매칭`);
+                    score += 10; // 카테고리 일치 시 압도적 점수
+                    reasons.push(`[${category}] 일치 ✨`);
                     categoryMatched = true;
                     break;
                 }
             }
-            // 🚫 [강력 필터] 카테고리를 명시했는데 매칭되지 않으면 세럼 대신 마스크가 뜨는 걸 막기 위해 점수를 확 깎음
+            // 🚫 카테고리 미칭 시 패널티 부여 (엉뚱한 상품 방지)
             if (!categoryMatched) {
-                score -= 20; 
+                score -= 15; 
             }
         }
 
-        // [채점 로직] 피부타입 + 동의어 확장 검색
-        const skinWords = this._expandKeywords(skin_type);
-        for (const kw of skinWords) {
-            if (searchTarget.includes(kw)) {
-                score += 2;
-                reasons.push(`${skin_type} 피부 타입 적합`);
-                break;
+        // 2. 피부 타입 매칭
+        if (skin_type) {
+            const skinWords = this._expandKeywords(skin_type);
+            for (const kw of skinWords) {
+                if (searchTarget.includes(kw)) {
+                    score += 3;
+                    reasons.push(`${skin_type} 타입 적합`);
+                    break;
+                }
             }
         }
         
-        // [채점 로직] 피부 고민들 + 동의어 확장 검색
+        // 3. 피부 고민 매칭
         concerns.forEach(c => {
             const cWords = this._expandKeywords(c);
             for (const kw of cWords) {
                 if (searchTarget.includes(kw)) {
                     score += 2;
-                    reasons.push(`'${c}' 고민 해결 도움`);
+                    reasons.push(`'${c}' 고민 해결`);
                     break;
                 }
             }
         });
 
-        // [패널티 로직] 품절 차단
+        // [패널티] 품절/미판매
         if (p.sold_out === 'T' || p.selling === 'F') {
-            score -= 10; 
-            reasons.push(`현재 품절/미판매 상태`);
+            score -= 50; 
+            reasons.push(`품절/미판매`);
         }
 
-        // 키워드 매칭은 안 됐지만 품절도 아니면 쇼핑몰 자체 랭킹/진열순을 위해 0.5점 기본점수 부여
-        let isGenericBestseller = false;
-        if (reasons.length === 0 && score === 0 && p.sold_out === 'F') {
-           score += 0.5;
-           reasons.push("셀퓨전씨 공식 추천 상품");
-           isGenericBestseller = true;
-        }
+        // 기본 점수 가점
+        if (score >= -10) score += 0.1;
 
-        // 👉 [고도의 디테일] 피부 고민 등 맞춤형 추천일 때는 지루함 방지용 랜덤성(Jitter) 부여!
-        // 단, 사용자가 "베스트셀러 아무거나 랭킹 보여줘" 등 조건이 없는 범용 질문일 때는, 카페24 공식 랭킹 순서를 파괴하지 않고 일관된 신뢰도를 주기 위해 난수 개입을 차단합니다!
-        if (score > 0 && !isGenericBestseller) {
-           score += Math.random() * 0.4;
-        }
-
-        // 최종 가공 객체 리턴
         return {
             id: p.product_no,
             name: p.product_name,
-            price: `${parseInt(p.price)}원`,
+            price: `${parseInt(p.price).toLocaleString()}원`,
             product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`,
             thumbnail: (() => {
                 let img = p.list_image || p.detail_image || p.tiny_image;
-                if (!img) return 'https://dummyimage.com/180x180/e0e0e0/555555.png?text=No_Image'; 
-                
-                // HTTP 프로토콜 강제 HTTPS 변환 (AI 브라우저에서 Mixed Content 보안 검열로 인한 엑스박스 방지)
+                if (!img) return 'https://dummyimage.com/180x180/eef2f3/555555.png?text=CellFusionC'; 
                 if (img.startsWith('//')) img = `https:${img}`;
-                if (img.startsWith('http://')) img = img.replace('http://', 'https://');
-                
-                return img;
+                return img.replace('http://', 'https://');
             })(),
-            tags: p.product_tag,
             score,
-            match_reasons: reasons.join(', ') || '정보 없음'
+            match_reasons: reasons.join(', ') || '공식 추천'
         };
     });
 
-    // 2. 가공된 데이터 정렬
+    // 필터링 및 정렬
     const validProducts = scoredProducts.filter(p => p.score > 0);
-    validProducts.sort((a, b) => b.score - a.score); // 높은 점수순
+    validProducts.sort((a, b) => b.score - a.score);
 
-    // 3. 중복 노출 방지 & 기획세트(1+1) 묶어버리기 (Upsell 연관 제안용)
+    // 중복 제거 및 기획세트 그룹화
     const uniqueTopN = [];
-    const baseNameMap = new Map(); // 본명(Base Name) 추적용
+    const baseNameMap = new Map();
     
     for (const p of validProducts) {
-        // 정규식으로 '[1+1]', '(증정)', '기획' 등을 싹 날려버리고 핵심 단어(Base Name)만 추출
         const baseName = p.name.replace(/\[.*?\]|\(.*?\)|1\+1|기획|세트|증정|대용량/g, '').trim();
         
-        // 처음 발견하는 본명이라면 (대표 상품)
         if (!baseNameMap.has(baseName)) {
-            p.upsell_options = []; // 이 상품의 기획/1+1 버전을 담을 연관 상품 바구니
+            p.upsell_options = [];
             baseNameMap.set(baseName, p);
-            
-            if (uniqueTopN.length < limit) {
-                uniqueTopN.push(p);
-            }
+            if (uniqueTopN.length < limit) uniqueTopN.push(p);
         } else {
-            // 이미 1, 2, 3등 자리를 차지한 대표 상품의 '1+1 형제(기획)' 상품이라면? -> 버리지 말고 바구니에 살포시 담기
-            const parentProduct = baseNameMap.get(baseName);
-            // 너무 많이 주렁주렁 달리지 않게 (최대 2개까지만 연관 노출)
-            if (parentProduct.upsell_options.length < 2) {
-                parentProduct.upsell_options.push({
-                    name: p.name,
-                    price: p.price,
-                    product_url: p.product_url
-                });
+            const parent = baseNameMap.get(baseName);
+            if (parent.upsell_options.length < 2) {
+                parent.upsell_options.push({ name: p.name, price: p.price, product_url: p.product_url });
             }
         }
-        
-        // 꽉 차면 종료 (기본 3, 최대 5)
-        if (uniqueTopN.length === limit) break;
     }
 
     return uniqueTopN;

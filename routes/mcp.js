@@ -98,15 +98,12 @@ router.post('/', async (req, res) => {
             console.log("[MCP] 상품 추천 도구 가동 - 카페24 API 실시간 조회 중...");
             response = await cafe24ApiService.getProducts(accessToken, 100);
         } catch (apiError) {
-            // [오류 자동 복구 로직] 만약 카페24에서 401(토큰 만료 Auth 오류)를 뱉으면 멈추지 않고 스마트하게 자동 재발급 진행
             if (apiError.status === 401) {
                 console.log("[MCP] ⚠️ 엑세스 토큰 2시간 만료 감지(401). 자동 복구(Refresh Token)를 시도합니다...");
                 const refreshToken = await tokenStore.getRefreshToken(config.MALL_ID);
                 if (!refreshToken) throw new Error("리프레시 토큰이 소실되어 자동 연장이 불가합니다. 브라우저에서 서버주소/cafe24/start 로 재로그인 해주세요.");
                 
-                // 1. 카페24 측에 리프레시 토큰을 주고, 새 번호판(새 엑세스 토큰)을 발급받아옴
                 const tokenData = await cafe24AuthService.refreshAccessToken(refreshToken);
-                // 2. 받아온 새 토큰들을 MongoDB에 덮어씌워서 안전하게 저장
                 await tokenStore.saveTokens(
                     config.MALL_ID, 
                     tokenData.access_token, 
@@ -114,60 +111,54 @@ router.post('/', async (req, res) => {
                     tokenData.expires_at
                 );
                 accessToken = tokenData.access_token;
-                console.log("[MCP] ✅ 토큰 갱신 성공! 끊긴 접속을 잇고 다시 상품 조회를 이어갑니다!");
+                console.log("[MCP] ✅ 토큰 갱신 성공!");
                 
-                // 3. 발급받은 빳빳한 새 토큰으로 튕겼던 상품 조회(API)를 실패 없이 재시도!
                 response = await cafe24ApiService.getProducts(accessToken, 100);
             } else {
-                throw apiError; // 만료 문제가 아닌 다른 에러(권한없음, 주소잘못됨 등)라면 위로 던져서 에러 메시지로 표출
+                throw apiError;
             }
         }
 
         const products = response.products || [];
 
-        // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임
-        // args.count가 있으면 그만큼(최대 5), 없으면 기본 3개
         const recommendCount = Math.min(args.count || 3, 5); 
         const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
         
-        // 👉 [세로 카드형 레이아웃] 채팅 UI에 최적화된 세로 불릿 켄쿠레이션 작성
-        let preRendered = `✅ **본 추천은 셀퓨전씨 공식몰 실시간 판매 데이터 기반 100% 확실한 정보입니다.**\n\n`;
-        preRendered += `---\n\n`;
-
-        topN.forEach((p, i) => {
-            const medal = ['🥇 1순위 추천','🥈 2순위 추천','🥉 3순위 추천','🏅 4순위','🏅 5순위'][i];
-            const upsellText = p.upsell_options && p.upsell_options.length > 0 
-                ? `\n> 🎁 **연관 혜택:** [관련 세트상품 보기](${p.upsell_options[0].product_url})` 
-                : '';
-            preRendered += `### ${medal}\n`;
-            preRendered += `[![${p.name}](${p.thumbnail})](${p.product_url})\n\n`;
-            preRendered += `> **[${p.name}](${p.product_url})**\n`;
-            preRendered += `> 💳 **${p.price}**   |   💡 ${p.match_reasons.split(',')[0]}\n`;
-            preRendered += `> [🛒 즉시 구매하기](${p.product_url})${upsellText}\n\n`;
-        });
-        preRendered += `---\n`;
+        // [콤팩트 가로 테이블] 이미지 빼고 텍스트 중심으로 한눈에 비교
+        let preRendered = '';
+        preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map(() => ':---:').join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map(p => `**[${p.name.replace(/\|/g, '/')}](${p.product_url})**`).join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map(p => `💳 ${p.price}`).join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map(p => `💡 ${p.match_reasons.split(',')[0]}`).join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map(p => `[🛒 구매](${p.product_url})`).join(' | ') + ' |\n';
+        const getUpsell = (p) => p.upsell_options && p.upsell_options.length > 0 ? `[🎁 세트](${p.upsell_options[0].product_url})` : '-';
+        preRendered += '| ' + topN.map(p => getUpsell(p)).join(' | ') + ' |\n';
 
         result = { 
             content: [{ 
                 type: 'text', 
-                text: `[시스템 핵심 통제 지시사항]
-당신은 셀퓨전씨 VIP 뷰티 큐레이터입니다.
-아래 [완성된 카드 레이아웃] 블록을 "단 한 글자도 수정하지 말고 100% 그대로 복사"하여 가장 먼저 출력하세요.
-그 뒤에, 각 상품이 사용자 고민에 왜 딱 맞는지 상품당 딱 1~2줄로만 따뜻하고 경쾌하게 코멘트해주세요.
-절대로 길게 쓰지 마세요. 간결함이 진짜 실력입니다.
-
-[완성된 카드 레이아웃] (가장 먼저 출력)
-${preRendered}
-
-===== [참고 JSON 데이터] =====
-${JSON.stringify({ recommendations: topN }, null, 2)}
-===== [데이터 끝] =====`
+                text: [
+                  '[시스템 핵심 통제 지시사항]',
+                  '당신은 셀퓨전씨 VIP 뷰티 큐레이터입니다.',
+                  '아래 [완성된 추천 테이블]을 "단 한 글자도 수정하지 말고 100% 그대로 복사"하여 가장 먼저 출력하세요.',
+                  '그 뒤에, 각 상품이 사용자 고민에 왜 딱 맞는지 상품당 딱 1~2줄로만 따뜻하고 경쾌하게 코멘트해주세요.',
+                  '절대로 길게 쓰지 마세요. 간결함이 진짜 실력입니다.',
+                  '',
+                  '[완성된 추천 테이블] (가장 먼저 출력)',
+                  '✅ **셀퓨전씨 공식몰 실시간 판매 데이터 기반 맞춤 추천**',
+                  '',
+                  preRendered,
+                  '',
+                  '===== [참고 JSON 데이터] =====',
+                  JSON.stringify({ recommendations: topN }, null, 2),
+                  '===== [데이터 끝] ====='
+                ].join('\n')
             }] 
         };
 
       } else if (name === 'get_bestseller_ranking') {
         // ====== [베스트셀러 랭킹 전용 파이프라인] ======
-        // 카페24 공식몰 '베스트' 카테고리(47번)의 진열 순서를 그대로 가져옵니다.
         const BEST_CATEGORY_NO = 47;
         let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
         if (!accessToken) {
@@ -193,11 +184,9 @@ ${JSON.stringify({ recommendations: topN }, null, 2)}
             }
         }
 
-        // 카테고리 API는 product_no 목록만 반환하므로, 각 상품의 상세 정보를 가져와야 합니다.
         const productNos = (catResponse.products || []).map(p => p.product_no);
         if (productNos.length === 0) throw new Error("베스트 카테고리에 진열된 상품이 없습니다.");
 
-        // 상품 번호들로 상세 정보 일괄 조회
         const detailUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?product_no=${productNos.join(',')}&fields=product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,product_tag,sold_out`;
         const detailRes = await fetch(detailUrl, {
           method: 'GET',
@@ -206,49 +195,46 @@ ${JSON.stringify({ recommendations: topN }, null, 2)}
         const detailData = await detailRes.json();
         const detailProducts = detailData.products || [];
 
-        // 카테고리 진열 순서를 유지하면서 상세 정보를 매핑
         const rankedProducts = productNos.map(no => detailProducts.find(p => p.product_no === no)).filter(Boolean);
 
-        // 랭킹 전용 세로 카드형 레이아웃 생성 (순서 = 쇼핑몰 공식 진열 순서 그대로!)
+        // 랭킹 전용 콤팩트 가로 테이블
         const rankItems = rankedProducts.map((p, i) => {
             let img = p.list_image || p.detail_image || p.tiny_image;
             if (!img) img = 'https://dummyimage.com/180x180/e0e0e0/555555.png?text=No_Image';
             if (img.startsWith('//')) img = `https:${img}`;
             if (img.startsWith('http://')) img = img.replace('http://', 'https://');
             const url = `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`;
-            return { rank: i + 1, name: p.product_name, price: `${parseInt(p.price)}원`, thumbnail: img, product_url: url, summary: p.summary_description || '' };
+            return { rank: i + 1, name: p.product_name, price: `${parseInt(p.price)}원`, thumbnail: img, product_url: url };
         });
 
-        let preRendered = `🏆 **셀퓨전씨 공식몰 실시간 베스트셀러 TOP ${rankItems.length}**\n`;
-        preRendered += `> 📡 *쇼핑몰 공식 랭킹 데이터 기반 | 매번 동일한 순위를 보장합니다*\n\n`;
-        preRendered += `---\n\n`;
-
-        rankItems.forEach(r => {
-            const medal = ['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1];
-            preRendered += `### ${medal} ${r.rank}위\n`;
-            preRendered += `[![${r.name}](${r.thumbnail})](${r.product_url})\n\n`;
-            preRendered += `> **[${r.name}](${r.product_url})**\n`;
-            preRendered += `> 💳 **${r.price}**   |   [🛒 구매하기](${r.product_url})\n\n`;
-        });
-        preRendered += `---\n`;
+        let preRendered = '';
+        preRendered += '| ' + rankItems.map(r => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1]} **${r.rank}위**`).join(' | ') + ' |\n';
+        preRendered += '| ' + rankItems.map(() => ':---:').join(' | ') + ' |\n';
+        preRendered += '| ' + rankItems.map(r => `**[${r.name.replace(/\|/g, '/')}](${r.product_url})**`).join(' | ') + ' |\n';
+        preRendered += '| ' + rankItems.map(r => `💳 ${r.price}`).join(' | ') + ' |\n';
+        preRendered += '| ' + rankItems.map(r => `[🛒 구매](${r.product_url})`).join(' | ') + ' |\n';
 
         result = {
             content: [{
                 type: 'text',
-                text: `[시스템 핵심 통제 지시사항]
-당신은 셀퓨전씨 공식 랭킹 리포터입니다.
-아래 [완성된 카드 레이아웃]은 카페24 공식몰 베스트 카테고리의 "실제 진열 순서"를 그대로 가져온 것입니다.
-이 순서는 쇼핑몰 관리자가 직접 설정한 공식 랭킹이므로, 절대 순서를 변경하거나 레이아웃을 재구성하지 마세요.
-아래 블록을 단 한 글자도 수정하지 말고 100% 그대로 복사하여 가장 먼저 출력하세요.
-그 뒤에, "현재 셀퓨전씨 공식몰에서 가장 사랑받고 있는 TOP ${rankItems.length} 제품입니다" 라는 한 줄 요약 후, 각 제품당 딱 1줄로만 짧고 위트있게 코멘트하세요.
-장황하게 길게 설명하는 것은 엄격히 금지합니다.
-
-[완성된 카드 레이아웃] (가장 먼저 출력)
-${preRendered}
-
-===== [참고 JSON 데이터] =====
-${JSON.stringify({ ranking: rankItems }, null, 2)}
-===== [데이터 끝] =====`
+                text: [
+                  '[시스템 핵심 통제 지시사항]',
+                  '당신은 셀퓨전씨 공식 랭킹 리포터입니다.',
+                  '아래 [완성된 랭킹 테이블]은 카페24 공식몰 베스트 카테고리의 "실제 진열 순서"를 그대로 가져온 것입니다.',
+                  '이 순서는 쇼핑몰 관리자가 직접 설정한 공식 랭킹이므로, 절대 순서를 변경하거나 레이아웃을 재구성하지 마세요.',
+                  '아래 테이블을 단 한 글자도 수정하지 말고 100% 그대로 복사하여 가장 먼저 출력하세요.',
+                  '그 뒤에, "현재 셀퓨전씨 공식몰에서 가장 사랑받고 있는 TOP ' + rankItems.length + ' 제품입니다" 라는 한 줄 요약 후, 각 제품당 딱 1줄로만 짧고 위트있게 코멘트하세요.',
+                  '장황하게 길게 설명하는 것은 엄격히 금지합니다.',
+                  '',
+                  '[완성된 랭킹 테이블] (가장 먼저 출력)',
+                  '🏆 **셀퓨전씨 공식몰 실시간 베스트셀러 TOP ' + rankItems.length + '** (📡 공식 랭킹 데이터 기반)',
+                  '',
+                  preRendered,
+                  '',
+                  '===== [참고 JSON 데이터] =====',
+                  JSON.stringify({ ranking: rankItems }, null, 2),
+                  '===== [데이터 끝] ====='
+                ].join('\n')
             }]
         };
 

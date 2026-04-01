@@ -1,37 +1,61 @@
-/**
- * [운영 전환 포인트] 다중 상점 확장이 고려된 토큰 저장소
- * mall_id를 기준으로 토큰 정보를 그룹화하여 저장합니다.
- * 실서비스 시 관계형 데이터베이스(MySQL, PostgreSQL 등)나 Redis로 교체가 필요합니다.
- */
-const storeMap = new Map();
+import Token from '../models/Token.js';
 
+/**
+ * [운영 대응 완료] MongoDB Atlas 연동
+ * 더이상 서버가 재시작되거나 Render가 슬립 모드에 빠져도 데이터가 끊기지 않습니다.
+ */
 export const tokenStore = {
-  // 특정 상점(mall_id)의 토큰 정보를 갱신 (DB의 INSERT/UPDATE에 해당)
-  saveTokens: (mall_id, access, refresh, expires) => {
-    storeMap.set(mall_id, {
-      accessToken: access,
-      refreshToken: refresh,
-      expiresAt: expires
-    });
+  // 특정 상점(mall_id)의 토큰 정보를 비동기(DB)로 갱신하고 영구 보관
+  saveTokens: async (mall_id, access, refresh, expires) => {
+    try {
+      await Token.findOneAndUpdate(
+        { mall_id },
+        {
+          accessToken: access,
+          refreshToken: refresh,
+          expiresAt: expires
+        },
+        { upsert: true, new: true } // 없으면 새로 생성, 있으면 업데이트
+      );
+      console.log(`[INFO] MongoDB에 ${mall_id} 토큰 정보가 영구 저장되었습니다.`);
+    } catch (e) {
+      console.error(`[ERROR] MongoDB 토큰 저장 실패:`, e.message);
+    }
   },
-  
-  // 전체 토큰 조회 실패 시 빈 객체 반환 보호 로직
-  getTokens: (mall_id) => {
-    return storeMap.get(mall_id) || {
-      accessToken: null,
-      refreshToken: null,
-      expiresAt: null
-    };
+
+  // 전체 토큰 조회 비동기 처리
+  getTokens: async (mall_id) => {
+    try {
+      const doc = await Token.findOne({ mall_id });
+      if (!doc) return { accessToken: null, refreshToken: null, expiresAt: null };
+      return {
+        accessToken: doc.accessToken,
+        refreshToken: doc.refreshToken,
+        expiresAt: doc.expiresAt
+      };
+    } catch (e) {
+      console.error(`[ERROR] DB 토큰 조회 중 에러:`, e);
+      return { accessToken: null, refreshToken: null, expiresAt: null };
+    }
   },
-  
-  // 개별 토큰 접근 유틸리티
-  getAccessToken: (mall_id) => {
-    const data = storeMap.get(mall_id);
-    return data ? data.accessToken : null;
+
+  // 개별 엑세스 토큰만 조회 (비동기)
+  getAccessToken: async (mall_id) => {
+    try {
+      const doc = await Token.findOne({ mall_id });
+      return doc ? doc.accessToken : null;
+    } catch (e) {
+      return null;
+    }
   },
-  
-  getRefreshToken: (mall_id) => {
-    const data = storeMap.get(mall_id);
-    return data ? data.refreshToken : null;
+
+  // 개별 리프레시 토큰만 조회 (비동기)
+  getRefreshToken: async (mall_id) => {
+    try {
+      const doc = await Token.findOne({ mall_id });
+      return doc ? doc.refreshToken : null;
+    } catch (e) {
+      return null;
+    }
   }
 };

@@ -14,20 +14,20 @@ export const stateStore = {
       createdAt: Date.now()
     });
   },
-  
+
   // 검증과 동시에 사용 처리(삭제)
   verifyAndConsume: (sessionId, state) => {
     const record = stateMap.get(sessionId);
-    
+
     // 데이터 없음 또는 불일치
     if (!record || record.state !== state) return false;
-    
+
     // 타임아웃(유효기간 초과) 확인 여부
     if (Date.now() - record.createdAt > TTL_MS) {
       stateMap.delete(sessionId);
       return false;
     }
-    
+
     // 정상 검증
     stateMap.delete(sessionId);
     return true;

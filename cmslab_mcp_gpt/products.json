@@ -1,0 +1,47 @@
+[
+  {
+    "id": "P001",
+    "brand": "CMS랩",
+    "name": "카밍 배리어 세럼",
+    "category": "세럼",
+    "price": 32000,
+    "skin_types": ["민감성", "건성"],
+    "concerns": ["붉은기", "속건조"],
+    "benefits": ["진정", "보습", "장벽 케어"],
+    "ingredients": ["판테놀", "세라마이드", "병풀추출물"],
+    "texture": "가벼운 젤 세럼",
+    "time_of_use": ["아침", "저녁"],
+    "avoid_if": ["오일리한 마무리를 선호하는 경우 다소 가볍게 느껴질 수 있음"],
+    "url": "https://example.com/p001"
+  },
+  {
+    "id": "P002",
+    "brand": "CMS랩",
+    "name": "하이드라 밸런스 크림",
+    "category": "크림",
+    "price": 35000,
+    "skin_types": ["건성", "민감성"],
+    "concerns": ["속건조", "장벽 약화"],
+    "benefits": ["보습", "장벽 케어"],
+    "ingredients": ["세라마이드", "스쿠알란", "판테놀"],
+    "texture": "쫀쫀한 크림",
+    "time_of_use": ["저녁"],
+    "avoid_if": ["가벼운 젤 타입만 선호하는 경우"],
+    "url": "https://example.com/p002"
+  },
+  {
+    "id": "P003",
+    "brand": "CMS랩",
+    "name": "수딩 토너",
+    "category": "토너",
+    "price": 22000,
+    "skin_types": ["민감성", "복합성"],
+    "concerns": ["붉은기", "열감"],
+    "benefits": ["진정", "수분 공급"],
+    "ingredients": ["병풀추출물", "알란토인", "베타인"],
+    "texture": "워터 타입",
+    "time_of_use": ["아침", "저녁"],
+    "avoid_if": ["점도 있는 토너를 선호하는 경우"],
+    "url": "https://example.com/p003"
+  }
+]

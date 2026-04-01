@@ -121,17 +121,20 @@ router.post('/', async (req, res) => {
 
         const products = response.products || [];
 
-        const recommendCount = Math.min(args.count || 3, 5); 
+        const recommendCount = Math.min(args.count || 5, 10); 
         const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
         
-        // [콤팩트 가로 테이블] 이미지 빼고 텍스트 중심으로 한눈에 비교
+        // 👉 [콤팩트 가로 테이블] 한눈에 비교 가능한 가로 배열 (5개 노출 시 콤팩트하게)
         let preRendered = '';
-        preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
         preRendered += '| ' + topN.map(() => ':---:').join(' | ') + ' |\n';
         preRendered += '| ' + topN.map(p => `[![상품](${p.thumbnail})](${p.product_url})`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `**[${p.name.replace(/\|/g, '/')}](${p.product_url})**`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `💳 **${p.price}**`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `💡 ${p.match_reasons.split(',')[0]}`).join(' | ') + ' |\n';
+        // 상품명이 너무 길면 표가 깨지므로 15자 내외로 자름
+        preRendered += '| ' + topN.map(p => {
+            const shortName = p.name.length > 15 ? p.name.substring(0, 13) + '..' : p.name;
+            return `**[${shortName}](${p.product_url})**`;
+        }).join(' | ') + ' |\n';
+        preRendered += '| ' + topN.map(p => `💳 **${p.price}**<br>💡 ${p.match_reasons.split(',')[0]}`).join(' | ') + ' |\n';
         preRendered += '| ' + topN.map(p => `[🛒 구매하기](${p.product_url})`).join(' | ') + ' |\n';
         const getUpsell = (p) => p.upsell_options && p.upsell_options.length > 0 ? `[🎁 세트상품](${p.upsell_options[0].product_url})` : ' ' ;
         preRendered += '| ' + topN.map(p => getUpsell(p)).join(' | ') + ' |\n';
@@ -216,7 +219,10 @@ router.post('/', async (req, res) => {
         preRendered += '| ' + rankItems.map(r => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1]} **${r.rank}위**`).join(' | ') + ' |\n';
         preRendered += '| ' + rankItems.map(() => ':---:').join(' | ') + ' |\n';
         preRendered += '| ' + rankItems.map(r => `[![상품](${r.thumbnail})](${r.product_url})`).join(' | ') + ' |\n';
-        preRendered += '| ' + rankItems.map(r => `**[${r.name.replace(/\|/g, '/')}](${r.product_url})**`).join(' | ') + ' |\n';
+        preRendered += '| ' + rankItems.map(r => {
+            const shortName = r.name.length > 15 ? r.name.substring(0, 13) + '..' : r.name;
+            return `**[${shortName}](${r.product_url})**`;
+        }).join(' | ') + ' |\n';
         preRendered += '| ' + rankItems.map(r => `💳 **${r.price}**`).join(' | ') + ' |\n';
         preRendered += '| ' + rankItems.map(r => `[🛒 구매하기](${r.product_url})`).join(' | ') + ' |\n';
 

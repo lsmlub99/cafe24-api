@@ -38,7 +38,9 @@ export const cafe24ApiService = {
 
     // 401 권한 없음 (만료), 404 없음, 400 파라미터 에러 등 핸들링
     if (!response.ok) {
-      const error = new Error(`상품 조회 통신 에러 발생`);
+      // 카페24에서 보내준 진짜 원인(만료 에러 등)을 면밀히 추출해서 던짐
+      const detail = data?.error?.message || JSON.stringify(data);
+      const error = new Error(`상품 조회 통신 에러 발생: ${detail}`);
       error.status = response.status;
       error.data = data;
       throw error;

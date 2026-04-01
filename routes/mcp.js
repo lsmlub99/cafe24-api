@@ -1,6 +1,7 @@
 import express from 'express';
 import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
+import { cafe24AuthService } from '../services/cafe24AuthService.js';
 import { recommendationService } from '../services/recommendationService.js';
 import { config } from '../config/env.js';
 
@@ -75,14 +76,41 @@ router.post('/', async (req, res) => {
       const { name, arguments: args } = params;
 
       if (name === 'search_cafe24_real_products') {
-        const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
+        let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
         if (!accessToken) {
             throw new Error("카페24 접근 토큰이 만료되었거나 DB에 없습니다. 시스템 관리자 인증이 우선 필요합니다.");
         }
         
-        // 카페24 API에서 최신 상품 100개를 불러와 넓은 범위에서 검색
-        console.log("[MCP] 상품 추천 도구 가동 - 카페24 API에서 실시간 조회 처리 중...");
-        const response = await cafe24ApiService.getProducts(accessToken, 100);
+        let response;
+        try {
+            console.log("[MCP] 상품 추천 도구 가동 - 카페24 API 실시간 조회 중...");
+            response = await cafe24ApiService.getProducts(accessToken, 100);
+        } catch (apiError) {
+            // [오류 자동 복구 로직] 만약 카페24에서 401(토큰 만료 Auth 오류)를 뱉으면 멈추지 않고 스마트하게 자동 재발급 진행
+            if (apiError.status === 401) {
+                console.log("[MCP] ⚠️ 엑세스 토큰 2시간 만료 감지(401). 자동 복구(Refresh Token)를 시도합니다...");
+                const refreshToken = await tokenStore.getRefreshToken(config.MALL_ID);
+                if (!refreshToken) throw new Error("리프레시 토큰이 소실되어 자동 연장이 불가합니다. 브라우저에서 서버주소/cafe24/start 로 재로그인 해주세요.");
+                
+                // 1. 카페24 측에 리프레시 토큰을 주고, 새 번호판(새 엑세스 토큰)을 발급받아옴
+                const tokenData = await cafe24AuthService.refreshAccessToken(refreshToken);
+                // 2. 받아온 새 토큰들을 MongoDB에 덮어씌워서 안전하게 저장
+                await tokenStore.saveTokens(
+                    config.MALL_ID, 
+                    tokenData.access_token, 
+                    tokenData.refresh_token, 
+                    tokenData.expires_at
+                );
+                accessToken = tokenData.access_token;
+                console.log("[MCP] ✅ 토큰 갱신 성공! 끊긴 접속을 잇고 다시 상품 조회를 이어갑니다!");
+                
+                // 3. 발급받은 빳빳한 새 토큰으로 튕겼던 상품 조회(API)를 실패 없이 재시도!
+                response = await cafe24ApiService.getProducts(accessToken, 100);
+            } else {
+                throw apiError; // 만료 문제가 아닌 다른 에러(권한없음, 주소잘못됨 등)라면 위로 던져서 에러 메시지로 표출
+            }
+        }
+
         const products = response.products || [];
 
         // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임

@@ -1,6 +1,7 @@
 import express from 'express';
 import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
+import { recommendationService } from '../services/recommendationService.js';
 import { config } from '../config/env.js';
 
 const router = express.Router();
@@ -84,68 +85,8 @@ router.post('/', async (req, res) => {
         const response = await cafe24ApiService.getProducts(accessToken, 100);
         const products = response.products || [];
 
-        const { skin_type, concerns = [], category } = args;
-        
-        // 실시간 상품 채점 로직 (태그, 상품명, 상세 설명 텍스트를 모두 통합해서 AI가 준 키워드 포함 여부 판별)
-        const scoredProducts = products.map(p => {
-            let score = 0;
-            let reasons = [];
-            
-            // 검색 대상 텍스트 압축
-            const searchTarget = [
-                p.product_name, 
-                p.summary_description, 
-                ...(Array.isArray(p.product_tag) ? p.product_tag : [])
-            ].join(' ').toLowerCase();
-
-            // 1. 카테고리 일치검사 (비중 높음)
-            if (category && searchTarget.includes(category.toLowerCase())) {
-                score += 3;
-                reasons.push(`[${category}] 카테고리 매칭`);
-            }
-
-            // 2. 피부타입 일치검사
-            if (skin_type && searchTarget.includes(skin_type.toLowerCase())) {
-                score += 2;
-                reasons.push(`${skin_type} 피부 타입 적합`);
-            }
-            
-            // 3. 솔루션(고민) 일치검사
-            concerns.forEach(c => {
-                if (c && searchTarget.includes(c.toLowerCase())) {
-                    score += 2;
-                    reasons.push(`'${c}' 고민 해결 도움`);
-                }
-            });
-
-            // 4. 품절 시 추천 제외 페널티
-            if (p.sold_out === 'T' || p.selling === 'F') {
-                score -= 10; 
-                reasons.push(`현재 품절/미판매 상태`);
-            }
-
-            // 키워드 매칭은 안 됐지만 품절도 아니면 기본 추천점수 부여
-            if (reasons.length === 0 && score === 0 && p.sold_out === 'F') {
-               score += 0.5;
-               reasons.push("셀퓨전씨 추천 베스트 상품");
-            }
-
-            return {
-                id: p.product_no,
-                name: p.product_name,
-                price: `${parseInt(p.price)}원`,
-                product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`,
-                thumbnail: p.list_image,
-                tags: p.product_tag,
-                score,
-                match_reasons: reasons.join(', ') || '정보 없음'
-            };
-        });
-
-        // 점수 기준 내림차순 정렬 후 양수 점수품목만 최대 3개 추출
-        const validProducts = scoredProducts.filter(p => p.score > 0);
-        validProducts.sort((a, b) => b.score - a.score);
-        const top3 = validProducts.slice(0, 3);
+        // 🏆 [Service Layer 호출]: 지저분한 채점 알고리즘을 밖으로 빼고 단 한 줄로 깔끔하게 명령 위임
+        const top3 = recommendationService.scoreAndFilterProducts(products, args);
         
         result = { 
             content: [{ 

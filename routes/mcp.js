@@ -185,6 +185,13 @@ router.post('/', async (req, res) => {
         }
 
         const productNos = (catResponse.products || []).map(p => p.product_no);
+        
+        // 🚫 [방어 로직] 랭킹 데이터가 없을 때 무한 대기 방지
+        if (!productNos || productNos.length === 0) {
+            result = { content: [{ type: 'text', text: "🏆 현재 실시간 베스트셀러 데이터가 집계 중입니다. 잠시 후 다시 시도해 주세요!" }] };
+            return res.json({ jsonrpc: '2.0', id, result });
+        }
+
         const detailUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?product_no=${productNos.join(',')}&fields=product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,product_tag,sold_out`;
         const detailRes = await fetch(detailUrl, {
           method: 'GET',
@@ -235,18 +242,13 @@ router.post('/', async (req, res) => {
       throw new Error(`Unsupported method: ${method}`);
     }
 
-    for (const [connId, connRes] of mcpConnections) {
-      connRes.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id, result })}\n\n`);
-    }
-    res.json({ jsonrpc: '2.0', id, result });
+    // 🏆 [최종 응답] 클라이언트에 결과 반환
+    return res.json({ jsonrpc: '2.0', id, result });
 
   } catch (error) {
     console.error('[MCP Error]:', error.message);
     const errorResponse = { jsonrpc: '2.0', id, error: { code: -32603, message: error.message } };
-    for (const [connId, connRes] of mcpConnections) {
-      connRes.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
-    }
-    res.json(errorResponse);
+    return res.json(errorResponse);
   }
 });
 

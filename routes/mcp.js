@@ -111,13 +111,25 @@ router.post('/', async (req, res) => {
         
         let response;
         try {
-            // 🔍 [검색어 지능형 확장] 
-            let searchKeyword = args.category || '';
-            if (searchKeyword === '선크림' || searchKeyword === '썬크림') searchKeyword = '썬';
-            if (searchKeyword === '스킨' || searchKeyword === '토너') searchKeyword = '토너';
+            // 🔍 [검색어 지능형 확장 & 정규화] 
+            // '선제품' → '썬', '크림류' → '크림' 등 핵심어만 추출해 검색 성공률 극대화
+            let categoryArg = (args.category || '').trim();
+            let searchKeyword = categoryArg;
+            
+            // 핵심 키워드 매핑 (셀퓨전씨 상품명 DB 맞춤형)
+            if (categoryArg.includes('선') || categoryArg.includes('썬') || categoryArg.includes('UV')) {
+                searchKeyword = '썬'; // 셀퓨전씨는 '썬'을 가장 많이 씀
+            } else if (categoryArg.includes('세럼') || categoryArg.includes('앰플')) {
+                searchKeyword = '세럼'; 
+            } else if (categoryArg.includes('토너') || categoryArg.includes('스킨')) {
+                searchKeyword = '토너';
+            } else {
+                // '제품', '류', '종류' 등의 접미사 제거 (예: 크림제품 -> 크림)
+                searchKeyword = categoryArg.replace(/(제품|류|종류|타입|관련)$/, '');
+            }
 
-            const fetchLimit = searchKeyword ? 60 : 100;
-            console.log(`[MCP] 하이브리드 리얼타임 조회 - 쿼리: '${searchKeyword}' (${fetchLimit}개)`);
+            const fetchLimit = searchKeyword ? 80 : 100;
+            console.log(`[MCP] 지능형 하이브리드 조회 - 원본: '${categoryArg}' -> 변환: '${searchKeyword}' (${fetchLimit}개)`);
             response = await cafe24ApiService.getProducts(accessToken, fetchLimit, searchKeyword);
 
             if (!response.products || response.products.length === 0) {

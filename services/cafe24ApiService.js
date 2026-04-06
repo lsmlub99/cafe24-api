@@ -7,17 +7,14 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5분(300,000ms) 유지
 
 /**
  * 접속 토큰을 활용한 상점 API 연동 서비스
- * 향후 주문 조회(orders), 회원 조회 등 카페24 각 도메인 별 API 로직 추가 위치입니다.
  */
 export const cafe24ApiService = {
 
   // ⚡ [정확도 끝판왕] 상품 목록 가져오기 - 키워드 검색 시 카페24 전체 DB에서 100% 찾아옴
   getProducts: async (accessToken, limit = 100, keyword = '') => {
     const fields = 'product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
-    // 카페24 최대 한도인 100개로 상향
     let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=100&display=T&selling=T&fields=${fields}`;
     
-    // 만약 "세럼" 같은 카테고리 키워드가 있다면, 카페24 전체 상품 중 해당 이름이 들어간 것만 골라옵니다.
     if (keyword) {
         url += `&product_name=${encodeURIComponent(keyword)}`;
     }
@@ -25,7 +22,7 @@ export const cafe24ApiService = {
     // 1. 캐시 히트(Cache Hit) 검사
     const cachedData = cacheMem.get(url);
     if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL_MS)) {
-        console.log(`[Cache HIT ⚡] 실시간 통신 생략하고 서버 메모리에서 초고속으로 꺼냅니다!`);
+        console.log(`[Cache HIT ⚡] '${keyword || '전체'}' 리스트를 서버 메모리에서 꺼냅니다.`);
         return cachedData.data;
     }
 
@@ -39,32 +36,27 @@ export const cafe24ApiService = {
     });
 
     const data = await response.json();
-
-    if (!response.ok) {
-      const detail = data?.error?.message || JSON.stringify(data);
-      const error = new Error(`상품 조회 통신 에러 발생: ${detail}`);
-      error.status = response.status;
-      error.data = data;
-      throw error;
+    
+    // ⚡ [고도화] 결과가 1개라도 있을 때만 캐시에 기록 (0개 검색 결과는 캐시하지 않음)
+    if (data.products && data.products.length > 0) {
+        cacheMem.set(url, {
+            timestamp: Date.now(),
+            data
+        });
     }
 
-    // 2. 캐시 세팅
-    cacheMem.set(url, { data: data, timestamp: Date.now() });
     return data;
   },
 
-  // === [고도화 업데이트] 쇼핑몰 공식 "베스트/카테고리" 랭킹 조회 ===
+  // 특정 카테고리의 상품 가져오기 (랭킹용)
   getCategoryProducts: async (accessToken, categoryNo, limit = 10) => {
-    // ⚡ [속도 고도화] 카테고리 상품 목록도 최소한의 필드만 신속하게 조회
-    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${categoryNo}/products?limit=${limit}`;
-
-    const cachedData = cacheMem.get(url);
+    const cacheKey = `cat_${categoryNo}_${limit}`;
+    const cachedData = cacheMem.get(cacheKey);
     if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL_MS)) {
-        console.log(`[Cache HIT ⚡] 카테고리 랭킹 캐시 활용`);
         return cachedData.data;
     }
 
-    console.log(`[INFO] 카테고리 상품 조회 API 통신 (GET ${url})`);
+    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${categoryNo}/products?limit=${limit}`;
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -73,16 +65,12 @@ export const cafe24ApiService = {
       }
     });
 
+    if (response.status === 401) throw { status: 401, message: 'Unauthorized' };
     const data = await response.json();
-
-    if (!response.ok) {
-      const detail = data?.error?.message || JSON.stringify(data);
-      const error = new Error(`카테고리 상품 조회 에러: ${detail}`);
-      error.status = response.status;
-      throw error;
+    
+    if (data.products && data.products.length > 0) {
+        cacheMem.set(cacheKey, { timestamp: Date.now(), data });
     }
-
-    cacheMem.set(url, { data: data, timestamp: Date.now() });
     return data;
   }
 };

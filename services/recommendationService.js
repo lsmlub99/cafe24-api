@@ -20,21 +20,39 @@ export const recommendationService = {
     '탄력': ['주름', '콜라겐', '리프팅', '펩타이드', '리주버네이션', '안티에이징', '퍼밍'],
     
     // 카테고리 (범용 확장)
-    '선크림': ['선케어', '선블록', 'spf', 'uv', '자외선', '선베이스', '썬스크린', '썬', '차단'],
-    '세럼': ['앰플', '세럼', '에센스', '부스터', '오일', '농축', '액티브'],
-    '크림': ['보습크림', '모이스처라이저', '수분크림', '너리싱', '밤', '스틱밤', '제형'],
-    '토너': ['스킨', '토너패드', '결케어', '닦토', '흡토', '패드'],
-    '클렌징': ['세안', '폼', '클렌저', '워시', '리무버', '오일', '밀크'],
-    '마스크': ['팩', '마스크팩', '시트마스크', '패드', '슬리핑']
+    '선크림': ['선제품', '썬제품', '선케어', '썬케어', 'spf', 'uv', '선베이스', '썬스크린', '선블록', '썬크림', '자외선', '자차'],
+    '비비': ['비비크림', '블레미쉬', '톤업', '커버', 'BB'],
+    '클렌징': ['세안', '폼', '클렌저', '워시', '오일', '밀크'],
+    '마스크': ['팩', '마스크팩', '시트마스크', '패드', '마스크'],
+    '토너': ['스킨', '토너', '토너패드', '결케어', '닦토']
   },
 
-  // 키워드 + 동의어를 모두 합쳐서 확장 검색어 배열을 만드는 유틸
+  // [지능형 양방향 확장] 사용자가 어떤 단어를 던지든 사전 내의 모든 연관어를 싹 다 찾아냅니다.
   _expandKeywords(keyword) {
     if (!keyword) return [];
     const lower = keyword.toLowerCase().trim();
-    const synonyms = this.SYNONYMS[lower] || [];
-    // 만약 "선크림" -> ["선크림", "선케어", "썬스크린", ...]
-    return Array.from(new Set([lower, ...synonyms]));
+    const result = new Set([lower]);
+
+    // 1. 사전 전체를 훑으며 입력어가 '키'거나 '값 중 하나'에 포함되는지 전수 조사
+    for (const [standard, variations] of Object.entries(this.SYNONYMS)) {
+        if (lower === standard || variations.some(v => lower.includes(v) || v.includes(lower))) {
+            // 매칭 성공 시 해당 카테고리의 모든 단어를 결과 셋에 추가
+            result.add(standard);
+            variations.forEach(v => result.add(v));
+        }
+    }
+    
+    // 2. 단어 조각 매칭 (예: '선제품'에서 '선'만 있어도 선크림 카테고리 연동)
+    if (lower.length >= 2) {
+        for (const [standard, variations] of Object.entries(this.SYNONYMS)) {
+            if (standard.includes(lower) || variations.some(v => v.includes(lower))) {
+                result.add(standard);
+                variations.forEach(v => result.add(v));
+            }
+        }
+    }
+
+    return Array.from(result);
   },
 
   /**

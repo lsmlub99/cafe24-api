@@ -144,57 +144,57 @@ router.post('/', async (req, res) => {
         
         // 🚫 결과가 정말 하나도 없는 경우 대응
         if (topN.length === 0) {
-            return {
+            result = {
                 content: [{
                     type: 'text',
                     text: "죄송합니다. 현재 조건(피부타입/고민)에 딱 맞는 제품을 찾지 못했습니다. 조금 더 넓은 범위의 추천을 원하시면 '인기 상품 보여줘'라고 말씀해 주세요."
                 }]
             };
+        } else {
+            let preRendered = '';
+            preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(() => ':---:').join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(p => `[![상품](${p.thumbnail})](${p.product_url})`).join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(p => `**[${p.name.length > 15 ? p.name.substring(0, 13) + '..' : p.name}](${p.product_url})**`).join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(p => `💳 **${p.price}**<br>💡 ${p.match_reasons.split(',')[0]}`).join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(p => `[🛒 구매하기](${p.product_url})`).join(' | ') + ' |\n';
+            const getUpsell = (p) => p.upsell_options && p.upsell_options.length > 0 ? `[🎁 세트상품](${p.upsell_options[0].product_url})` : ' ' ;
+            preRendered += '| ' + topN.map(p => getUpsell(p)).join(' | ') + ' |\n';
+
+            // 🚀 [CTO 자문 반영] GPT에게 꼭 필요한 핵심 데이터만 다이어트해서 전달
+            const slimmedTopN = topN.map(p => ({
+                name: p.name,
+                price: p.price,
+                reasons: p.match_reasons,
+                features: p.summary || p.simple_desc || '핵심 정보 제공 중...'
+            }));
+
+            result = { 
+                content: [{ 
+                    type: 'text', 
+                    text: [
+                    '### 👤 [전속 수석 큐레이터 페르소나 매뉴얼]',
+                    '1. 당신은 20년 경력의 셀퓨전씨 수석 메디컬 뷰티 큐레이터입니다.',
+                    '2. 답변은 반드시 전문적이며 따뜻한 톤을 유지하세요.',
+                    '3. [셀퓨전씨 공식 추천 테이블]은 "단 한 글자도 수정 없이" 100% 그대로 복사하여 최상단에 출력하십시오.',
+                    '4. 그 뒤 [🧪 수석 큐레이터의 PICK 분석] 세션을 열어 상품당 딱 2줄씩 분석하십시오.',
+                    '   - 형식: "🧴 [순위] · [상품명] : [전문적 분석 내용]" (이모지 포함 고정 양식)',
+                    '',
+                    '[셀퓨전씨 공식 추천 테이블]',
+                    '✅ **셀퓨전씨 공식몰 실시간 판매 데이터 기반 맞춤 추천**',
+                    '',
+                    preRendered,
+                    '',
+                    '### 🧪 수석 큐레이터의 PICK 분석',
+                    '위 테이블을 고정 출력한 후, 아래 데이터로 전문적인 상세 코멘트를 덧붙이세요.',
+                    '',
+                    '===== [추천 데이터 다이어트 버전] =====',
+                    JSON.stringify(slimmedTopN, null, 2),
+                    '===== [데이터 분석 완료] ====='
+                    ].join('\n')
+                }] 
+            };
         }
-
-        let preRendered = '';
-        preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(() => ':---:').join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `[![상품](${p.thumbnail})](${p.product_url})`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `**[${p.name.length > 15 ? p.name.substring(0, 13) + '..' : p.name}](${p.product_url})**`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `💳 **${p.price}**<br>💡 ${p.match_reasons.split(',')[0]}`).join(' | ') + ' |\n';
-        preRendered += '| ' + topN.map(p => `[🛒 구매하기](${p.product_url})`).join(' | ') + ' |\n';
-        const getUpsell = (p) => p.upsell_options && p.upsell_options.length > 0 ? `[🎁 세트상품](${p.upsell_options[0].product_url})` : ' ' ;
-        preRendered += '| ' + topN.map(p => getUpsell(p)).join(' | ') + ' |\n';
-
-        // 🚀 [CTO 자문 반영] GPT에게 꼭 필요한 핵심 데이터만 다이어트해서 전달
-        const slimmedTopN = topN.map(p => ({
-            name: p.name,
-            price: p.price,
-            reasons: p.match_reasons,
-            features: p.summary || p.simple_desc || '핵심 정보 제공 중...'
-        }));
-
-        result = { 
-            content: [{ 
-                type: 'text', 
-                text: [
-                  '### 👤 [전속 수석 큐레이터 페르소나 매뉴얼]',
-                  '1. 당신은 20년 경력의 셀퓨전씨 수석 메디컬 뷰티 큐레이터입니다.',
-                  '2. 답변은 반드시 전문적이며 따뜻한 톤을 유지하세요.',
-                  '3. [셀퓨전씨 공식 추천 테이블]은 "단 한 글자도 수정 없이" 100% 그대로 복사하여 최상단에 출력하십시오.',
-                  '4. 그 뒤 [🧪 수석 큐레이터의 PICK 분석] 세션을 열어 상품당 딱 2줄씩 분석하십시오.',
-                  '   - 형식: "🧴 [순위] · [상품명] : [전문적 분석 내용]" (이모지 포함 고정 양식)',
-                  '',
-                  '[셀퓨전씨 공식 추천 테이블]',
-                  '✅ **셀퓨전씨 공식몰 실시간 판매 데이터 기반 맞춤 추천**',
-                  '',
-                  preRendered,
-                  '',
-                  '### 🧪 수석 큐레이터의 PICK 분석',
-                  '위 테이블을 고정 출력한 후, 아래 데이터로 전문적인 상세 코멘트를 덧붙이세요.',
-                  '',
-                  '===== [추천 데이터 다이어트 버전] =====',
-                  JSON.stringify(slimmedTopN, null, 2),
-                  '===== [데이터 분석 완료] ====='
-                ].join('\n')
-            }] 
-        };
 
       } else if (name === 'get_bestseller_ranking') {
         let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
@@ -219,52 +219,44 @@ router.post('/', async (req, res) => {
         // 🚫 [방어 로직] 랭킹 데이터가 없을 때 무한 대기 방지
         if (!productNos || productNos.length === 0) {
             result = { content: [{ type: 'text', text: "🏆 현재 실시간 베스트셀러 데이터가 집계 중입니다. 잠시 후 다시 시도해 주세요!" }] };
-            return res.json({ jsonrpc: '2.0', id, result });
+        } else {
+            const detailUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?product_no=${productNos.join(',')}&fields=product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,product_tag,sold_out`;
+            const detailRes = await fetch(detailUrl, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+            });
+            const detailData = await detailRes.json();
+            const rankedProducts = productNos.map(no => (detailData.products || []).find(p => p.product_no === no)).filter(Boolean);
+
+            const rankItems = rankedProducts.map((p, i) => {
+                let img = p.list_image || p.detail_image || p.tiny_image;
+                if (!img) img = 'https://dummyimage.com/180x180/eef2f3/555555.png?text=CellFusionC';
+                if (img.startsWith('//')) img = `https:${img}`;
+                return img.replace('http://', 'https://');
+            });
+
+            let preRendered = '';
+            preRendered += '| ' + rankedProducts.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][i]} **${i+1}위**`).join(' | ') + ' |\n';
+            preRendered += '| ' + rankedProducts.map(() => ':---:').join(' | ') + ' |\n';
+            preRendered += '| ' + rankItems.map(url => `[![상품](${url})](#)`).join(' | ') + ' |\n';
+            preRendered += '| ' + rankedProducts.map(p => `**[${p.product_name.length > 15 ? p.product_name.substring(0, 13) + '..' : p.product_name}](https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no})**`).join(' | ') + ' |\n';
+            preRendered += '| ' + rankedProducts.map(p => `💳 **${parseInt(p.price).toLocaleString()}원**`).join(' | ') + ' |\n';
+            preRendered += '| ' + rankedProducts.map(p => `[🛒 구매하기](https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no})`).join(' | ') + ' |\n';
+
+            result = {
+                content: [{
+                    type: 'text',
+                    text: [
+                    '### 🏆 [셀퓨전씨 공식 베스트셀러 랭킹]',
+                    '전문 랭킹 리포터 모드로 아래 테이블을 수정 없이 그대로 출력하십시오.',
+                    '',
+                    preRendered,
+                    '',
+                    '===== [데이터 분석 완료] ====='
+                    ].join('\n')
+                }]
+            };
         }
-
-        const detailUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?product_no=${productNos.join(',')}&fields=product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,product_tag,sold_out`;
-        const detailRes = await fetch(detailUrl, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
-        });
-        const detailData = await detailRes.json();
-        const rankedProducts = productNos.map(no => (detailData.products || []).find(p => p.product_no === no)).filter(Boolean);
-
-        const rankItems = rankedProducts.map((p, i) => {
-            let img = p.list_image || p.detail_image || p.tiny_image;
-            if (!img) img = 'https://dummyimage.com/180x180/e0e0e0/555555.png?text=No_Image';
-            if (img.startsWith('//')) img = `https:${img}`;
-            if (img.startsWith('http://')) img = img.replace('http://', 'https://');
-            return { rank: i + 1, name: p.product_name, price: `${parseInt(p.price)}원`, thumbnail: img, product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}` };
-        });
-
-        let preRendered = '';
-        preRendered += '| ' + rankItems.map(r => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][r.rank-1]} **${r.rank}위**`).join(' | ') + ' |\n';
-        preRendered += '| ' + rankItems.map(() => ':---:').join(' | ') + ' |\n';
-        preRendered += '| ' + rankItems.map(r => `[![상품](${r.thumbnail})](${r.product_url})`).join(' | ') + ' |\n';
-        preRendered += '| ' + rankItems.map(r => `**[${r.name.length > 15 ? r.name.substring(0, 13) + '..' : r.name}](${r.product_url})**`).join(' | ') + ' |\n';
-        preRendered += '| ' + rankItems.map(r => `💳 **${r.price}**`).join(' | ') + ' |\n';
-        preRendered += '| ' + rankItems.map(r => `[🛒 구매하기](${r.product_url})`).join(' | ') + ' |\n';
-
-        result = {
-            content: [{
-                type: 'text',
-                text: [
-                  '[시스템 핵심 통제 지시사항]',
-                  '당신은 셀퓨전씨 공식 랭킹 리포터입니다.',
-                  '아래 [완성된 랭킹 테이블]을 수정 없이 그대로 출력하세요.',
-                  '',
-                  '[완성된 랭킹 테이블]',
-                  '🏆 **셀퓨전씨 공식몰 실시간 베스트셀러 TOP ' + rankItems.length + '**',
-                  '',
-                  preRendered,
-                  '',
-                  '===== [참고 JSON 데이터] =====',
-                  JSON.stringify({ ranking: rankItems }, null, 2),
-                  '===== [데이터 끝] ====='
-                ].join('\n')
-            }]
-        };
       } else {
         throw new Error(`Unknown tool: ${name}`);
       }

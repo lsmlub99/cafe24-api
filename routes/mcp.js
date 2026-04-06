@@ -162,23 +162,36 @@ router.post('/', async (req, res) => {
         const getUpsell = (p) => p.upsell_options && p.upsell_options.length > 0 ? `[🎁 세트상품](${p.upsell_options[0].product_url})` : ' ' ;
         preRendered += '| ' + topN.map(p => getUpsell(p)).join(' | ') + ' |\n';
 
+        // 🚀 [CTO 자문 반영] GPT에게 꼭 필요한 핵심 데이터만 다이어트해서 전달
+        const slimmedTopN = topN.map(p => ({
+            name: p.name,
+            price: p.price,
+            reasons: p.match_reasons,
+            features: p.summary || p.simple_desc || '핵심 정보 제공 중...'
+        }));
+
         result = { 
             content: [{ 
                 type: 'text', 
                 text: [
-                  '[시스템 핵심 통제 지시사항]',
-                  '당신은 셀퓨전씨 전속 뷰티 컨설턴트입니다. 친근하고 전문적인 말투로 상담하세요.',
-                  '아래 [완성된 추천 테이블]을 단 한 글자도 수정하지 말고 그대로 출력하세요.',
-                  '그 후 [큐레이터 Pick 분석]에서 세부 성분과 사용감을 2줄씩 따뜻하게 분석해 주세요.',
+                  '### 👤 [전속 수석 큐레이터 페르소나 매뉴얼]',
+                  '1. 당신은 20년 경력의 셀퓨전씨 수석 메디컬 뷰티 큐레이터입니다.',
+                  '2. 답변은 반드시 전문적이며 따뜻한 톤을 유지하세요.',
+                  '3. [셀퓨전씨 공식 추천 테이블]은 "단 한 글자도 수정 없이" 100% 그대로 복사하여 최상단에 출력하십시오.',
+                  '4. 그 뒤 [🧪 수석 큐레이터의 PICK 분석] 세션을 열어 상품당 딱 2줄씩 분석하십시오.',
+                  '   - 형식: "🧴 [순위] · [상품명] : [전문적 분석 내용]" (이모지 포함 고정 양식)',
                   '',
-                  '[완성된 추천 테이블]',
+                  '[셀퓨전씨 공식 추천 테이블]',
                   '✅ **셀퓨전씨 공식몰 실시간 판매 데이터 기반 맞춤 추천**',
                   '',
                   preRendered,
                   '',
-                  '===== [참고 JSON 데이터] =====',
-                  JSON.stringify({ recommendations: topN }, null, 2),
-                  '===== [데이터 끝] ====='
+                  '### 🧪 수석 큐레이터의 PICK 분석',
+                  '위 테이블을 고정 출력한 후, 아래 데이터로 전문적인 상세 코멘트를 덧붙이세요.',
+                  '',
+                  '===== [추천 데이터 다이어트 버전] =====',
+                  JSON.stringify(slimmedTopN, null, 2),
+                  '===== [데이터 분석 완료] ====='
                 ].join('\n')
             }] 
         };

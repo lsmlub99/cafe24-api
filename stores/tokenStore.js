@@ -70,5 +70,17 @@ export const tokenStore = {
   getRefreshToken: async (mall_id) => {
     const tokens = await tokenStore.getTokens(mall_id);
     return tokens.refreshToken;
+  },
+
+  // 🕒 [능동적 갱신] 토큰 만료 여부 확인 (만료 5분 전이면 true 반환)
+  isExpired: async (mall_id) => {
+    const tokens = await tokenStore.getTokens(mall_id);
+    if (!tokens.expiresAt) return true;
+    
+    // 현재 시간보다 만료 시간이 이전이거나, 5분(300,000ms) 이내로 남았으면 만료로 간주
+    const BUFFER_MS = 5 * 60 * 1000; 
+    const now = Date.now();
+    
+    return (tokens.expiresAt - now < BUFFER_MS);
   }
 };

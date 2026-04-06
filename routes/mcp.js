@@ -88,32 +88,49 @@ router.post('/', async (req, res) => {
       const { name, arguments: args } = params;
 
       if (name === 'search_cafe24_real_products') {
-        let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
-        if (!accessToken) throw new Error("토큰이 없습니다.");
+        const mallId = config.MALL_ID;
+        let accessToken = await tokenStore.getAccessToken(mallId);
+        
+        // 🕒 [능동적 고속 갱신] 401 에러 나기 5분 전 미리 갱신 서비스
+        if (await tokenStore.isExpired(mallId)) {
+            console.log("[MCP] 🕒 토큰 만료 임박(5분 전) 감지. 선제적 갱신을 시작합니다.");
+            const tokens = await tokenStore.getTokens(mallId);
+            if (tokens.refreshToken) {
+                try {
+                    const tokenData = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
+                    await tokenStore.saveTokens(mallId, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at);
+                    accessToken = tokenData.access_token;
+                    console.log("[MCP] ✅ 능동적 토큰 갱신 성공 (401 대기 시간 0초)");
+                } catch (refreshErr) {
+                    console.error("[MCP] ❌ 능동적 갱신 실패, 401 폴백 대기 중...", refreshErr.message);
+                }
+            }
+        }
+
+        if (!accessToken) throw new Error("토큰이 없습니다. /cafe24/start 로 재인증 하십시오.");
         
         let response;
         try {
-            // 🔍 [검색어 지능형 확장] '선크림' -> '썬스크린/썬/UV' 등으로 자동 변환하여 검색 실패 방지
+            // 🔍 [검색어 지능형 확장] 
             let searchKeyword = args.category || '';
             if (searchKeyword === '선크림' || searchKeyword === '썬크림') searchKeyword = '썬';
-            if (searchKeyword === '세럼') searchKeyword = '세럼';
-            if (searchKeyword === '앰플') searchKeyword = '앰플';
-            if (searchKeyword === '토너' || searchKeyword === '스킨') searchKeyword = '토너';
+            if (searchKeyword === '스킨' || searchKeyword === '토너') searchKeyword = '토너';
 
-            const fetchLimit = searchKeyword ? 60 : 100; // 좀 더 넉넉하게
-            console.log(`[MCP] 하이브리드 검색 가동 - 쿼리: '${searchKeyword}' (${fetchLimit}개)`);
+            const fetchLimit = searchKeyword ? 60 : 100;
+            console.log(`[MCP] 하이브리드 리얼타임 조회 - 쿼리: '${searchKeyword}' (${fetchLimit}개)`);
             response = await cafe24ApiService.getProducts(accessToken, fetchLimit, searchKeyword);
 
-            // ⚠️ [2차 백업] 검색 결과가 0개라면? (사용자 단어와 상품명이 아예 다를 때)
             if (!response.products || response.products.length === 0) {
-                console.log("[MCP] ⚠️ 키워드 검색 결과 없음. 전체 상품 조회로 자동 전환(Fallback)...");
+                console.log("[MCP] ⚠️ 키워드 결과 없음 -> 광역 조회로 자동 보정");
                 response = await cafe24ApiService.getProducts(accessToken, 100, ''); 
             }
         } catch (apiError) {
+            // [폴백 세이프티] 위 선제 갱신이 실패했거나 예상치 못한 이유로 401이 나면 한 번 더 갱신 시도
             if (apiError.status === 401) {
-                const tokens = await tokenStore.getTokens(config.MALL_ID);
+                console.log("[MCP] ⚠️ 401 감지 - 최종 갱신 시도 중...");
+                const tokens = await tokenStore.getTokens(mallId);
                 const tokenData = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
-                await tokenStore.saveTokens(config.MALL_ID, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at);
+                await tokenStore.saveTokens(mallId, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at);
                 accessToken = tokenData.access_token;
                 response = await cafe24ApiService.getProducts(accessToken, 100, '');
             } else {

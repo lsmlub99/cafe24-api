@@ -73,31 +73,31 @@ export const recommendationService = {
             ...(Array.isArray(p.product_tag) ? p.product_tag : [])
         ].map(v => (v || '').toLowerCase()).join(' ');
 
-        // 1. 카테고리 매칭 (강력 필터 보정)
+        // 1. 카테고리 매칭 (유연하게 확대)
         if (category) {
             const categoryWords = this._expandKeywords(category);
             let categoryMatched = false;
             for (const kw of categoryWords) {
                 if (searchTarget.includes(kw)) {
-                    score += 10; // 카테고리 일치 시 압도적 점수
+                    score += 15; // 🎯 만점 기준 가중치 (10 -> 15)
                     reasons.push(`[${category}] 일치 ✨`);
                     categoryMatched = true;
                     break;
                 }
             }
-            // 🚫 카테고리 미칭 시 패널티 부여 (엉뚱한 상품 방지)
+            // 🚫 [완화된 감점] 아예 안 맞는 상품은 -5점만 감점 (차선책 노출 허용)
             if (!categoryMatched) {
-                score -= 15; 
+                score -= 5; 
             }
         }
 
-        // 2. 피부 타입 매칭
+        // 2. 피부 타입 매칭 (가중치 상향)
         if (skin_type) {
             const skinWords = this._expandKeywords(skin_type);
             for (const kw of skinWords) {
                 if (searchTarget.includes(kw)) {
-                    score += 3;
-                    reasons.push(`${skin_type} 타입 적합`);
+                    score += 5;
+                    reasons.push(`${skin_type} 타입 적합 ✅`);
                     break;
                 }
             }
@@ -108,21 +108,21 @@ export const recommendationService = {
             const cWords = this._expandKeywords(c);
             for (const kw of cWords) {
                 if (searchTarget.includes(kw)) {
-                    score += 2;
-                    reasons.push(`'${c}' 고민 해결`);
+                    score += 3;
+                    reasons.push(`'${c}' 고민 해결 🩹`);
                     break;
                 }
             }
         });
 
-        // [패널티] 품절/미판매
+        // [패널티] 품절/미판매 (강력 차단 유지)
         if (p.sold_out === 'T' || p.selling === 'F') {
-            score -= 50; 
-            reasons.push(`품절/미판매`);
+            score -= 100; 
+            reasons.push(`품절`);
         }
 
-        // 기본 점수 가점
-        if (score >= -10) score += 0.1;
+        // 🛡️ [최하점 방어선] 검색어와 안 맞아도 피부타입만 맞으면 추천 목록에 진입시키기 위해 기본 점수 부여
+        score += 10; 
 
         return {
             id: p.product_no,
@@ -136,7 +136,7 @@ export const recommendationService = {
                 return img.replace('http://', 'https://');
             })(),
             score,
-            match_reasons: reasons.join(', ') || '공식 추천'
+            match_reasons: reasons.join(', ') || '공식 베스트'
         };
     });
 

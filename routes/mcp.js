@@ -167,18 +167,22 @@ router.post('/', async (req, res) => {
             preRendered += '| ' + topN.map((_, i) => `${['🥇','🥈','🥉','🏅','🏅','🏅','🏅','🏅','🏅','🏅'][i]} **${i+1}순위**`).join(' | ') + ' |\n';
             preRendered += '| ' + topN.map(() => ':---:').join(' | ') + ' |\n';
             preRendered += '| ' + topN.map(p => `[![상품](${p.thumbnail})](${p.product_url})`).join(' | ') + ' |\n';
-            preRendered += '| ' + topN.map(p => `**[${p.name.length > 15 ? p.name.substring(0, 13) + '..' : p.name}](${p.product_url})**`).join(' | ') + ' |\n';
-            preRendered += '| ' + topN.map(p => `💳 **${p.price}**<br>💡 ${p.match_reasons.split(',')[0]}`).join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(p => `**[${p.name.length > 20 ? p.name.substring(0, 18) + '..' : p.name}](${p.product_url})**`).join(' | ') + ' |\n';
+            preRendered += '| ' + topN.map(p => {
+                const discountTxt = p.discount_rate > 0 ? `<span style="color:red;">(${p.discount_rate}%↓)</span> ` : '';
+                return `💳 ${discountTxt}**${p.price}원**<br>💡 ${p.match_reasons.split(',')[0]}`;
+            }).join(' | ') + ' |\n';
             preRendered += '| ' + topN.map(p => `[🛒 구매하기](${p.product_url})`).join(' | ') + ' |\n';
             const getUpsell = (p) => p.upsell_options && p.upsell_options.length > 0 ? `[🎁 세트상품](${p.upsell_options[0].product_url})` : ' ' ;
             preRendered += '| ' + topN.map(p => getUpsell(p)).join(' | ') + ' |\n';
 
-            // 🚀 [CTO 자문 반영] GPT에게 꼭 필요한 핵심 데이터만 다이어트해서 전달
+            // 🚀 [CTO 자문 반영] GPT에게 꼭 필요한 핵심 데이터 + 세일 정보 다이어트 버전
             const slimmedTopN = topN.map(p => ({
                 name: p.name,
                 price: p.price,
+                sale: p.discount_rate > 0 ? `${p.discount_rate}% 파격 할인 중` : '정가 판매',
                 reasons: p.match_reasons,
-                features: p.summary || p.simple_desc || '핵심 정보 제공 중...'
+                summary: p.summary || '상세 정보 분석 중...'
             }));
 
             result = { 
@@ -187,10 +191,10 @@ router.post('/', async (req, res) => {
                     text: [
                     '### 👤 [전속 수석 큐레이터 페르소나 매뉴얼]',
                     '1. 당신은 20년 경력의 셀퓨전씨 수석 메디컬 뷰티 큐레이터입니다.',
-                    '2. 답변은 반드시 전문적이며 따뜻한 톤을 유지하세요.',
-                    '3. [셀퓨전씨 공식 추천 테이블]은 "단 한 글자도 수정 없이" 100% 그대로 복사하여 최상단에 출력하십시오.',
-                    '4. 그 뒤 [🧪 수석 큐레이터의 PICK 분석] 세션을 열어 상품당 딱 2줄씩 분석하십시오.',
-                    '   - 형식: "🧴 [순위] · [상품명] : [전문적 분석 내용]" (이모지 포함 고정 양식)',
+                    '2. [셀퓨전씨 공식 추천 테이블]을 최상단에 수정 없이 그대로 출력하십시오.',
+                    '3. 그 뒤 [🧪 수석 큐레이터의 PICK 분석] 세션을 열어 상품당 딱 2줄씩 분석하십시오.',
+                    '   - 특히 할인 정보(예: 15% 할인 등)가 있다면 분석에 적극적으로 언급하여 구매를 유도하세요.',
+                    '   - 형식: "🧴 [순위] · [상품명] : [전문적 분석 & 세일 정보 포함 코멘트]"',
                     '',
                     '[셀퓨전씨 공식 추천 테이블]',
                     '✅ **셀퓨전씨 공식몰 실시간 판매 데이터 기반 맞춤 추천**',
@@ -200,7 +204,7 @@ router.post('/', async (req, res) => {
                     '### 🧪 수석 큐레이터의 PICK 분석',
                     '위 테이블을 고정 출력한 후, 아래 데이터로 전문적인 상세 코멘트를 덧붙이세요.',
                     '',
-                    '===== [추천 데이터 다이어트 버전] =====',
+                    '===== [추천 데이터: 세일 정보 포함] =====',
                     JSON.stringify(slimmedTopN, null, 2),
                     '===== [데이터 분석 완료] ====='
                     ].join('\n')

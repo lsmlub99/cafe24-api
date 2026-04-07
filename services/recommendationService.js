@@ -124,10 +124,20 @@ export const recommendationService = {
         // 🛡️ [최하점 방어선] 검색어와 안 맞아도 피부타입만 맞으면 추천 목록에 진입시키기 위해 기본 점수 부여
         score += 10; 
 
+        // [할인율 계산 Engine] 정가 대비 판매가를 분석하여 % 산출
+        const retail = parseInt(p.retail_price) || 0;
+        const current = parseInt(p.price) || 0;
+        let discountRate = 0;
+        if (retail > current) {
+            discountRate = Math.round(((retail - current) / retail) * 100);
+        }
+
         return {
             id: p.product_no,
             name: p.product_name,
-            price: `${parseInt(p.price).toLocaleString()}원`,
+            price: current.toLocaleString(),
+            retail_price: retail.toLocaleString(),
+            discount_rate: discountRate,
             product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`,
             thumbnail: (() => {
                 let img = p.list_image || p.detail_image || p.tiny_image;
@@ -136,6 +146,7 @@ export const recommendationService = {
                 return img.replace('http://', 'https://');
             })(),
             score,
+            summary: p.summary_description || p.simple_description || '',
             match_reasons: reasons.join(', ') || '공식 베스트'
         };
     });

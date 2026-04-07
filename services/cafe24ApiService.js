@@ -8,7 +8,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * 🚀 [Ultra-Fast] 카페24 서비스 코어
  */
 export const cafe24ApiService = {
-  // 📦 [인메모리 싱크 저장소]
+  // 📦 [인메모리 싱크 저장소] 
   _allProductsSync: [],
   _lastSyncTime: 0,
 
@@ -18,7 +18,7 @@ export const cafe24ApiService = {
   async syncAllProducts(accessToken) {
     try {
         console.log(`[Sync] 🔄 백그라운드 싱크 가동...`);
-        const fields = 'product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
+        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
         const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=100&display=T&selling=T&fields=${fields}`;
         
         const res = await fetch(url, {
@@ -28,7 +28,6 @@ export const cafe24ApiService = {
         const data = await res.json();
 
         if (data.products && data.products.length > 0) {
-            // 전역 변수에 직접 할당 (this 문제 방지)
             cafe24ApiService._allProductsSync = data.products;
             cafe24ApiService._lastSyncTime = Date.now();
             console.log(`[Sync] ✅ 동기화 완료! (${data.products.length}개 상품 로드됨)`);
@@ -46,7 +45,6 @@ export const cafe24ApiService = {
   getProducts: async (accessToken, limit = 100, keyword = '') => {
     const syncData = cafe24ApiService._allProductsSync;
 
-    // 1. 메모리에 동기화된 데이터가 있다면 즉시 반환 (0ms)
     if (syncData && syncData.length > 0) {
         console.log(`[Memory Engine 🔥] '${keyword || '전체'}' 통합 분석 시작...`);
         
@@ -59,13 +57,11 @@ export const cafe24ApiService = {
             (p.product_tag && p.product_tag.some(t => t.toLowerCase().includes(lowerKeyword)))
         );
 
-        // 검색 결과가 있으면 필터본, 없으면 전체 리스트를 반환하여 추천 로직에 고루 전달
         return { products: filtered.length > 0 ? filtered : syncData };
     }
 
-    // 2. [Fallback] 메모리가 비어있을 때만 API 호출 (안전 장치)
     console.log(`[API Fallback ⚠️] 실시간 API 호출 중...`);
-    const fields = 'product_no,product_name,price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
+    const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
     let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&fields=${fields}`;
     if (keyword) url += `&product_name=${encodeURIComponent(keyword)}`;
 

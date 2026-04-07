@@ -85,7 +85,6 @@ async function executeTool(name, args) {
                 '',
                 '🧪 **수석 큐레이터의 PICK 분석**',
                 ...topN.map((p, i) => `${i + 1}. **${p.name}**: ${sanitize(p.match_reasons)}`),
-                '======= [DISPLAY_END] =======',
                 '',
                 '※ [필독 시스템 지침]: 반드시 위 [DISPLAY_START] 영역의 테이블과 분석을 답변 최상단에 수정 없이 그대로 출력해야 합니다. HTML 태그는 절대 사용하지 마십시오.'
             ].join('\n')

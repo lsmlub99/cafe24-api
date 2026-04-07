@@ -118,7 +118,8 @@ router.post('/', async (req, res) => {
             
             // 핵심 키워드 매핑 (셀퓨전씨 상품명 DB 맞춤형)
             if (categoryArg.includes('선') || categoryArg.includes('썬') || categoryArg.includes('UV')) {
-                searchKeyword = '썬'; // 셀퓨전씨는 '썬'을 가장 많이 씀
+                searchKeyword = '썬';
+                if (categoryArg.includes('스틱')) searchKeyword = '스틱'; // '선스틱' -> '스틱'으로 검색 (더 정확함)
             } else if (categoryArg.includes('세럼') || categoryArg.includes('앰플')) {
                 searchKeyword = '세럼'; 
             } else if (categoryArg.includes('토너') || categoryArg.includes('스킨')) {

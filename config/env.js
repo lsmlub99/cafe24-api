@@ -9,11 +9,12 @@ export const config = {
   CLIENT_ID: process.env.CLIENT_ID,
   CLIENT_SECRET: process.env.CLIENT_SECRET,
   REDIRECT_URI: process.env.REDIRECT_URI,
-  SCOPE: process.env.SCOPE
+  SCOPE: process.env.SCOPE,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY
 };
 
 // 필수 환경변수 누락 시 즉시 서버 구동 실패 처리 (장애 전파 방지)
-const requiredKeys = ['MALL_ID', 'CLIENT_ID', 'CLIENT_SECRET', 'REDIRECT_URI', 'SCOPE', 'MONGO_URI'];
+const requiredKeys = ['MALL_ID', 'CLIENT_ID', 'CLIENT_SECRET', 'REDIRECT_URI', 'SCOPE', 'MONGO_URI', 'OPENAI_API_KEY'];
 for (const key of requiredKeys) {
   if (!config[key]) {
     console.error(`❌ [FATAL] 필수 환경변수 '${key}'(이)가 설정되지 않았습니다. .env 파일을 작성해주십시오.`);

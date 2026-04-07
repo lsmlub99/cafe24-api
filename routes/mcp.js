@@ -7,11 +7,10 @@ import { recommendationService } from '../services/recommendationService.js';
 const router = express.Router();
 
 /**
- * 🚀 [Indestructible MCP SSE Core] 
- * 외부 SDK 없이 순수 익스프레스로 구현한 진짜 MCP 전송 엔진
+ * 🚀 [Indestructible Pure JSON-RPC Engine]
+ * SSE나 외부 SDK 없이 순수 HTTP POST만으로 동작하는 초고속 MCP 브릿지
+ * [특징] AI가 요청하면 즉시 JSON으로 결과를 리턴하여 딜레이가 없습니다.
  */
-
-let sseResponse = null; // AI가 대답을 기다리는 전용 통로 (SSE Stream)
 
 const TOOLS = [
   {
@@ -20,121 +19,100 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        category: { type: "string", description: "찾는 카테고리 (예: 선크림, 토너, 앰플)" },
-        skin_type: { type: "string", description: "피부 타입 (예: 지성, 건성)" },
-        concerns: { type: "array", items: { type: "string" }, description: "피부 고민 목록" },
-        count: { type: "number", description: "추천 개수" }
+        category: { type: "string" },
+        skin_type: { type: "string" },
+        concerns: { type: "array", items: { type: "string" } }
       }
     }
   }
 ];
 
-// AI에게 보낼 메시지를 정식 규격(event: message)에 맞춰 SSE 통로로 쏴주는 함수
-const sendToAI = (message) => {
-    if (sseResponse && !sseResponse.writableEnded) {
-        console.log(`[MCP SSE 📡] 정규 메시지 송출: (ID: ${message.id || 'N/A'})`);
-        // ⚠️ MCP SSE 표준: 반드시 'event: message' 태그가 선행되어야 함
-        sseResponse.write(`event: message\n`);
-        sseResponse.write(`data: ${JSON.stringify(message)}\n\n`);
-    } else {
-        console.error("[MCP SSE 🚫] 전송 통로가 유실되었거나 닫혀있습니다.");
-    }
-};
+const handleTool = async (name, args) => {
+    if (name !== 'search_cafe24_real_products') return { content: [{ type: 'text', text: 'Unknown tool' }] };
 
-// 실시간 AI 분석 로직
-const runner = async (name, args) => {
-    let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
-    let categoryArg = (args.category || '').trim();
-    let searchKeyword = categoryArg;
-
-    if (categoryArg.includes('선') || categoryArg.includes('썬')) searchKeyword = '썬';
-    else if (categoryArg.includes('앰플') || categoryArg.includes('세럼')) searchKeyword = '앰플';
-    else if (categoryArg.includes('토너') || categoryArg.includes('스킨')) searchKeyword = '토너';
-    else if (categoryArg.includes('크림') || categoryArg.includes('로션')) searchKeyword = '크림';
-
-    let response = await cafe24ApiService.getProducts(accessToken, 60, searchKeyword);
-    let products = response.products || [];
-    if (products.length === 0) {
-        response = await cafe24ApiService.getProducts(accessToken, 80, '');
-        products = response.products || [];
-    }
-
-    // 💎 [High-End Luxury UI 3.0] 절대 깨지지 않는 프리미엄 카드 레이아웃
-    const sanitize = (v) => (v || '').replace(/\r?\n|\r/g, ' ').trim();
-
-    let preRendered = '\n\n';
-    topN.forEach((p, i) => {
-        const medal = ['👑 BEST 1','🥈 SECOND','🥉 THIRD'][i] || '✨ PICK';
-        const discountLabel = p.discount_rate > 0 ? `🔥 **HOT ${p.discount_rate}% OFF**` : '✨ **NEW ARRIVAL**';
+    try {
+        let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
         
-        preRendered += `> ### ${medal} | **${p.name}**\n`;
-        preRendered += `> ${discountLabel}\n`;
-        preRendered += `> ![상품](${p.thumbnail})\n`;
-        preRendered += `> \n`;
-        preRendered += `> 💰 **판매가: ${p.price}원** (정가 대비 최고 혜택)\n`;
-        preRendered += `> 📝 **큐레이터 분석**: *"${sanitize(p.match_reasons)}"* \n`;
-        preRendered += `> \n`;
-        preRendered += `> [**🚀 지금 바로 구매하기 (공식몰 이동)**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})\n\n`;
-        preRendered += `---\n\n`;
-    });
+        // 1. 키워드 지능형 매핑
+        let cat = (args.category || '').trim();
+        let keyword = cat;
+        if (cat.includes('선') || cat.includes('썬')) keyword = '썬';
+        else if (cat.includes('앰플') || cat.includes('세럼')) keyword = '앰플';
+        else if (cat.includes('토너')) keyword = '토너';
+        else if (cat.includes('크림')) keyword = '크림';
 
-    return {
-        content: [{
-            type: "text",
-            text: [
-                '수석 큐레이터가 엄선한 [셀퓨전씨 실시간 AI 추천 리포트]입니다.',
-                '',
-                '[[START_UI]]',
-                preRendered,
-                '[[END_UI]]',
-                '',
-                '※ 필독 지침: 위 [[START_UI]]와 [[END_UI]] 사이의 "카드형 레이아웃"을 단 한 글자도 수정하지 말고 답변 최상단에 그대로 출력하십시오. (이미지 주소 및 링크 절대 보존)',
-                '그 뒤에 아래 데이터를 참고하여 "🧪 수석 큐레이터의 추가 분석"을 덧붙이십시오.',
-                '',
-                '===== [분석 데이터] =====',
-                JSON.stringify(topN.map(p => ({ 상품명: p.name, 혜택: p.discount_rate + '%', 분석: p.match_reasons })), null, 2)
-            ].join('\n')
-        }]
-    };
+        // 2. 통합 상품 조회 (캐시 우선)
+        const response = await cafe24ApiService.getProducts(accessToken, 80, keyword);
+        const products = response.products || [];
+
+        // 3. AI 셀렉터 (Top 3)
+        const topN = await recommendationService.scoreAndFilterProducts(products, args, 3);
+        const sanitize = (v) => (v || '').replace(/\r?\n|\r/g, ' ').trim();
+
+        // 4. 💎 [High-End UI] 카드 생성
+        let ui = '\n\n';
+        topN.forEach((p, i) => {
+            const medal = ['👑 BEST 1','🥈 SECOND','🥉 THIRD'][i] || '✨ PICK';
+            ui += `> ### ${medal} | **${p.name}**\n`;
+            ui += `> ![상품](${p.thumbnail})\n`;
+            ui += `> 💰 **판매가: ${p.price}원**\n`;
+            ui += `> 📝 **큐레이터 분석**: *"${sanitize(p.match_reasons)}"*\n`;
+            ui += `> [**🚀 공식몰에서 보기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})\n\n---\n\n`;
+        });
+
+        return {
+            content: [{
+                type: "text",
+                text: [
+                    '# 🏥 셀퓨전씨 실시간 AI 추천 리포트',
+                    ui,
+                    '',
+                    '🧪 [분석 데이터]',
+                    JSON.stringify(topN.map(p => ({ 상품: p.name, 분석: p.match_reasons })), null, 2),
+                    '',
+                    '※ 지침: 위 카드 UI를 그대로 보여주고 상세 분석을 덧붙이세요.'
+                ].join('\n')
+            }]
+        };
+    } catch (e) {
+        console.error("[Tool Error]", e.message);
+        return { content: [{ type: 'text', text: '추천 서버 일시 지연. 잠시 후 시도해주세요.' }] };
+    }
 };
 
 /**
- * 🛣️ [Express Router] MCP SSE Interface
+ * 🛣️ [Unified Message Handler] - /mcp 또는 /mcp/message 어디로 쏴도 다 받음
  */
-// 1. [GET /mcp] AI가 처음으로 손 잡는 통로 (SSE Stream)
-router.get('/', (req, res) => {
-    console.log("[MCP SSE 🟢] AI 연결 성공!");
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.write(`event: endpoint\ndata: /mcp/message\n\n`); // 필수: 메시지 수신처 안내
-    res.flushHeaders();
-    sseResponse = res; // 전용 통로 보관
-});
-
-// 2. [POST /mcp/message] AI가 명령어를 던질 때 처리 (JSON-RPC 2.0)
-router.post('/message', async (req, res) => {
+const messageHandler = async (req, res) => {
     const { jsonrpc, method, params, id } = req.body;
-    console.log(`[MCP Message 📩] ${method} (id: ${id})`);
+    console.log(`[MCP REQ] ${method} (id:${id})`);
 
-    // 즉시 응답 (MCP 규약: POST는 202나 200 반환 후 답장은 SSE로)
-    res.status(202).send('Accepted');
-
-    if (method === "initialize") {
-        sendToAI({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "cafe24-api", version: "1.0.0" } } });
-    } else if (method === "tools/list") {
-        sendToAI({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
-    } else if (method === "tools/call") {
-        try {
-            const toolResult = await Promise.race([
-                runner(params.name, params.arguments),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 25000))
-            ]);
-            sendToAI({ jsonrpc: "2.0", id, result: toolResult });
-        } catch (e) {
-            sendToAI({ jsonrpc: "2.0", id, error: { message: "추천 서버 지연" } });
+    try {
+        if (method === "initialize") {
+            return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "cafe24-api", version: "1.0.0" } } });
         }
+        if (method === "tools/list") {
+            return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
+        }
+        if (method === "tools/call") {
+            const result = await handleTool(params.name, params.arguments);
+            return res.json({ jsonrpc: "2.0", id, result });
+        }
+        // AI가 도구 호출 후 혹은 초기화 시 보내는 알림 처리
+        if (method?.startsWith('notifications/')) {
+            return res.status(200).json({ jsonrpc: "2.0", id: id || null, result: "OK" });
+        }
+        res.status(404).json({ jsonrpc: "2.0", id, error: { message: `Method '${method}' not found` } });
+    } catch (e) {
+        console.error("[MCP Fatal]", e.message);
+        res.status(500).json({ jsonrpc: "2.0", id, error: { message: e.message } });
     }
-});
+};
+
+router.post('/', messageHandler);
+router.post('/message', messageHandler);
+
+// SSE/GET 요청 대응
+router.get('/', (req, res) => res.send('MCP Bridge is Running (Pure JSON Mode)'));
 
 export default router;

@@ -39,9 +39,9 @@ export const cafe24ApiService = {
         const data = await res.json();
         if (data.products && data.products.length > 0) {
             const currentHash = JSON.stringify(data.products.map(p => p.product_no + p.product_name + p.price));
-            if (currentHash === cafe24ApiService._lastSyncHash) {
+            if (currentHash === this._lastSyncHash) {
                 console.log(`[Sync Skip ✅]`);
-                return { products: cafe24ApiService._allProductsSync };
+                return { products: this._allProductsSync };
             }
 
             const aiTagsResults = await aiTaggingService.tagProducts(data.products);
@@ -50,27 +50,27 @@ export const cafe24ApiService = {
                 return { ...p, ai_tags: foundTags ? foundTags.tags : [] };
             });
 
-            cafe24ApiService._allProductsSync = enhancedProducts;
-            cafe24ApiService._lastSyncHash = currentHash;
-            cafe24ApiService._lastSyncTime = Date.now();
+            this._allProductsSync = enhancedProducts;
+            this._lastSyncHash = currentHash;
+            this._lastSyncTime = Date.now();
             console.log(`[Sync SUCCESS 🚀]`);
         }
         return data;
     } catch (e) {
         console.error(`[Sync Error]:`, e.message);
-        return { products: cafe24ApiService._allProductsSync }; 
+        return { products: this._allProductsSync || [] }; 
     }
   },
 
   /**
    * [Main] 상품 조회 (어떤 상황에서도 0개를 반환하지 않음)
    */
-  getProducts: async (accessToken, limit = 80, keyword = '') => {
+  getProducts: async function(accessToken, limit = 80, keyword = '') {
     try {
-        const syncData = cafe24ApiService._allProductsSync;
+        const syncData = this._allProductsSync;
         // 메모리에 있으면 메모리에서 우선 반환
         if (syncData && syncData.length > 0) {
-            console.log(`[Memory Base 🔥]`);
+            console.log(`[Cache Hit 🔥]`);
             if (!keyword) return { products: syncData.slice(0, limit) };
             const lowerKeyword = keyword.toLowerCase();
             const filtered = syncData.filter(p => 
@@ -109,7 +109,7 @@ export const cafe24ApiService = {
         return data;
     } catch (err) {
         console.error(`[Fatal API Error]`, err.message);
-        return { products: cafe24ApiService._allProductsSync || [] };
+        return { products: this._allProductsSync || [] };
     }
   },
 

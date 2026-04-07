@@ -153,14 +153,16 @@ router.post('/', async (req, res) => {
 
         const products = response.products || [];
         const recommendCount = Math.min(args.count || 5, 10); 
-        const topN = recommendationService.scoreAndFilterProducts(products, args, recommendCount);
+        
+        // 🧠 [실시간 AI 셀렉터 가동] GPT에게 직접 물어봅니다. (1~2초 소요)
+        const topN = await recommendationService.scoreAndFilterProducts(products, args, recommendCount);
         
         // 🚫 결과가 정말 하나도 없는 경우 대응
         if (topN.length === 0) {
             result = {
                 content: [{
                     type: 'text',
-                    text: "죄송합니다. 현재 조건(피부타입/고민)에 딱 맞는 제품을 찾지 못했습니다. 조금 더 넓은 범위의 추천을 원하시면 '인기 상품 보여줘'라고 말씀해 주세요."
+                    text: "죄송합니다. 현재 조건(피부타입/고민)에 딱 맞는 제품을 실시간으로 분석했으나 적합한 모델을 조율하지 못했습니다. 검색어를 조금 완화하거나 '전체 인기 제품'을 물어봐 주세요."
                 }]
             };
         } else {

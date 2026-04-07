@@ -29,13 +29,15 @@ const TOOLS = [
   }
 ];
 
-// AI에게 보낼 메시지를 전용 통로(SSE)로 쏴주는 함수
+// AI에게 보낼 메시지를 정식 규격(event: message)에 맞춰 SSE 통로로 쏴주는 함수
 const sendToAI = (message) => {
-    if (sseResponse) {
-        console.log(`[MCP SSE 📡] 대답 전송 중... (ID: ${message.id})`);
+    if (sseResponse && !sseResponse.writableEnded) {
+        console.log(`[MCP SSE 📡] 정규 메시지 송출: (ID: ${message.id || 'N/A'})`);
+        // ⚠️ MCP SSE 표준: 반드시 'event: message' 태그가 선행되어야 함
+        sseResponse.write(`event: message\n`);
         sseResponse.write(`data: ${JSON.stringify(message)}\n\n`);
     } else {
-        console.error("[MCP SSE 🚫] 전송 통로가 닫혀있습니다.");
+        console.error("[MCP SSE 🚫] 전송 통로가 유실되었거나 닫혀있습니다.");
     }
 };
 

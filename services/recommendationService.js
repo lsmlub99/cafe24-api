@@ -20,32 +20,30 @@ export const recommendationService = {
 
     console.log(`[AI Selector] 🎯 100개 상품 중 최적의 ${limit}개를 실시간으로 선정 중...`);
 
-    // 1. GPT에게 보낼 데이터 초경량화 (토큰 절매 + 속도 향상)
+    // 1. GPT에게 보낼 데이터 (AI 태그 포함하여 판단 능력 향상)
     const simplifiedList = products.map(p => ({
       no: p.product_no,
       name: p.product_name,
+      tags: p.ai_tags || [],
       desc: p.summary_description || p.simple_description || ''
     }));
 
     const userQuery = `
-      [사용자 요청 정보]
-      - 피부타입: ${args.skin_type || '정보 없음'}
-      - 고민: ${ (args.concerns || []).join(', ') || '정보 없음' }
-      - 찾는 카테고리: ${args.category || '전체'}
+      [질문Context]
+      - 피부: ${args.skin_type || '정보 없음'} / 고민: ${ (args.concerns || []).join(', ') }
+      - 찾는것: ${args.category || '전체(스킨케어)'}
     `;
 
     try {
-      // 2. GPT-4o-mini에게 실시간 추천 의뢰 (강력한 가이드라인 추가)
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
-            content: `너는 화장품 전문가야. 아래 100개 상품 중 요청에 가장 적합한 3~5개를 골라.
-            [필수 준수]
-            1. '완벽한 매칭'이 없더라도, 사용자의 고민을 가장 잘 해결해줄 수 있는 '차선책'을 반드시 포함해서 3개 이상 무조건 골라. 절대 빈 결과를 주지 마.
-            2. 추천 이유는 전문적이고 설득력 있게 작성해.
-            3. 결과는 반드시 JSON: { "results": [{ "no": "상품번호", "reason": "이유" }] }`
+            content: `너는 뷰티 큐레이터야. 100개 상품 중 최적의 3~5개를 골라.
+            [규칙]
+            - '스킨케어', '기초', '화장품'은 모든 제품을 포함하는 넓은 범위야. 깐깐하게 굴지 말고 앰플, 크림 등을 적극 추천해.
+            - 반드시 3개 이상은 JSON { "results": [{ "no", "reason" }] } 형식으로 응답해.`
           },
           {
             role: "user",
@@ -58,17 +56,16 @@ export const recommendationService = {
       const parsed = JSON.parse(response.choices[0].message.content);
       let aiResults = parsed.results || [];
 
-      // 🛡️ [하이브리드 백업] 만약 AI가 결과물을 지워버렸거나 실패했다면? 단순 텍스트 매칭으로 강제 복구
+      // 🛡️ [강력한 하위 호환] AI가 0개를 줬거나 필터링이 너무 빡빡할 때 호출
       if (aiResults.length === 0) {
-          console.log("[AI Selector] ⚠️ AI가 결과를 내지 못해 텍스트 매칭 백업 모드 가동");
-          const searchKey = (args.category || args.skin_type || '선').toLowerCase();
-          aiResults = products
-            .filter(p => p.product_name.toLowerCase().includes(searchKey))
-            .slice(0, 3)
-            .map(p => ({ no: p.product_no, reason: "전문가가 엄선한 셀퓨전씨 베스트 추천 제품입니다." }));
+          console.log("[AI Selector] ⚠️ 결과 0건 방지를 위해 베스트 상품으로 강제 매칭");
+          aiResults = products.slice(0, 5).map(p => ({
+              no: p.product_no,
+              reason: "많은 분들이 선택하시는 셀퓨전씨의 베스트셀러 기초 케어 제품입니다."
+          }));
       }
 
-      // 3. 매칭 및 UI 데이터 생성
+      // 3. UI 데이터 생성 
       const finalRecommendations = aiResults.map(res => {
           const p = products.find(prod => String(prod.product_no) === String(res.no));
           if (!p) return null;
@@ -94,7 +91,13 @@ export const recommendationService = {
           };
       }).filter(Boolean);
 
-      return finalRecommendations;
+      // 마지막의 마지막까지 리스트가 비어있다면 생데이터라도 3개 채워서 반환 (바보 소리 안 듣기 위함)
+      return finalRecommendations.length > 0 ? finalRecommendations : products.slice(0, 3).map(p => ({
+          id: p.product_no,
+          name: p.product_name,
+          price: (parseInt(p.price) || 0).toLocaleString(),
+          match_reasons: "셀퓨전씨에서 가장 사랑받는 수분/진정 대표 제품입니다."
+      }));
     } catch (error) {
       console.error("[AI Selector Error]:", error.message);
       // 에러 시 텍스트 매칭으로 평화적 해결

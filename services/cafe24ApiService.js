@@ -75,14 +75,36 @@ export const cafe24ApiService = {
         return { products: filtered.length > 0 ? filtered : syncData };
     }
 
-    // Fallback
+    // [Fallback] 실시간 API 호출 - 키워드 누락 방지!
     const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
     let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&fields=${fields}`;
+    
+    // 키워드가 있으면 상품명 검색 파라미터 추가
+    if (keyword) {
+        url += `&product_name=${encodeURIComponent(keyword)}`;
+    }
+
+    console.log(`[API Fallback 🛰️] 실시간 호출 중: ${url}`);
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
     });
-    return await response.json();
+    
+    const data = await response.json();
+    
+    // 🛡️ [데이터 보장] 만약 특정 키워드로 검색했는데 0개가 나왔다면? 
+    // AI가 멍청해지지 않도록 전체 리스트라도 반환합니다.
+    if (!data.products || data.products.length === 0) {
+        console.log(`[API Fallback ⚠️] '${keyword}' 결과 없음. 전체 데이터로 재시도...`);
+        const allUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&fields=${fields}`;
+        const allRes = await fetch(allUrl, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+        });
+        return await allRes.json();
+    }
+    
+    return data;
   },
 
   getCategoryProducts: async (accessToken, categoryNo, limit = 10) => {

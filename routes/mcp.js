@@ -57,31 +57,40 @@ const runner = async (name, args) => {
         products = response.products || [];
     }
 
-    const topN = await recommendationService.scoreAndFilterProducts(products, args, 3);
+    // 💎 [High-End Luxury UI 3.0] 절대 깨지지 않는 프리미엄 카드 레이아웃
     const sanitize = (v) => (v || '').replace(/\r?\n|\r/g, ' ').trim();
 
-    let preRendered = '\n\n---\n\n';
+    let preRendered = '\n\n';
     topN.forEach((p, i) => {
-        const medal = ['🥇','🥈','🥉'][i] || '✨';
-        const dc = p.discount_rate > 0 ? `<span style="color:red;">(${p.discount_rate}%↓)</span> ` : '';
-        preRendered += `### ${medal} 추천 상품: **${p.name}**\n\n`;
-        preRendered += `![상품](${p.thumbnail})\n\n`;
-        preRendered += `💰 **가격**: ${dc}**${p.price}원**\n\n`;
-        preRendered += `💡 **큐레이터 팁**: ${sanitize(p.match_reasons)}\n\n`;
-        preRendered += `👉 [[🛒 공식몰 상세]](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})\n\n---\n\n`;
+        const medal = ['👑 BEST 1','🥈 SECOND','🥉 THIRD'][i] || '✨ PICK';
+        const discountLabel = p.discount_rate > 0 ? `🔥 **HOT ${p.discount_rate}% OFF**` : '✨ **NEW ARRIVAL**';
+        
+        preRendered += `> ### ${medal} | **${p.name}**\n`;
+        preRendered += `> ${discountLabel}\n`;
+        preRendered += `> ![상품](${p.thumbnail})\n`;
+        preRendered += `> \n`;
+        preRendered += `> 💰 **판매가: ${p.price}원** (정가 대비 최고 혜택)\n`;
+        preRendered += `> 📝 **큐레이터 분석**: *"${sanitize(p.match_reasons)}"* \n`;
+        preRendered += `> \n`;
+        preRendered += `> [**🚀 지금 바로 구매하기 (공식몰 이동)**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})\n\n`;
+        preRendered += `---\n\n`;
     });
 
     return {
         content: [{
             type: "text",
             text: [
-                '======= [DISPLAY_START] =======',
-                '# 🏥 셀퓨전씨 AI 실시간 추천 리포트',
-                preRendered,
-                '======= [DISPLAY_END] =======',
+                '수석 큐레이터가 엄선한 [셀퓨전씨 실시간 AI 추천 리포트]입니다.',
                 '',
-                '※ 지침: 위 프리미엄 카드 UI를 그대로 출력하고 상품별 요약 분석을 덧붙이세요.',
-                JSON.stringify(topN.map(p => ({ n: p.name, pr: p.price })), null, 2)
+                '[[START_UI]]',
+                preRendered,
+                '[[END_UI]]',
+                '',
+                '※ 필독 지침: 위 [[START_UI]]와 [[END_UI]] 사이의 "카드형 레이아웃"을 단 한 글자도 수정하지 말고 답변 최상단에 그대로 출력하십시오. (이미지 주소 및 링크 절대 보존)',
+                '그 뒤에 아래 데이터를 참고하여 "🧪 수석 큐레이터의 추가 분석"을 덧붙이십시오.',
+                '',
+                '===== [분석 데이터] =====',
+                JSON.stringify(topN.map(p => ({ 상품명: p.name, 혜택: p.discount_rate + '%', 분석: p.match_reasons })), null, 2)
             ].join('\n')
         }]
     };

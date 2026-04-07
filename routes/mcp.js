@@ -119,13 +119,16 @@ router.post('/', async (req, res) => {
             // 핵심 키워드 매핑 (셀퓨전씨 상품명 DB 맞춤형)
             if (categoryArg.includes('선') || categoryArg.includes('썬') || categoryArg.includes('UV')) {
                 searchKeyword = '썬';
-                if (categoryArg.includes('스틱')) searchKeyword = '스틱'; // '선스틱' -> '스틱'으로 검색 (더 정확함)
+                if (categoryArg.includes('스틱')) searchKeyword = '스틱'; 
             } else if (categoryArg.includes('세럼') || categoryArg.includes('앰플')) {
-                searchKeyword = '세럼'; 
+                searchKeyword = '앰플'; // 셀퓨전씨는 앰플 명칭이 많음
             } else if (categoryArg.includes('토너') || categoryArg.includes('스킨')) {
                 searchKeyword = '토너';
+            } else if (categoryArg.includes('크림') || categoryArg.includes('밤') || categoryArg.includes('로션')) {
+                searchKeyword = '크림'; 
+            } else if (categoryArg.includes('마스크') || categoryArg.includes('팩')) {
+                searchKeyword = '마스크';
             } else {
-                // '제품', '류', '종류' 등의 접미사 제거 (예: 크림제품 -> 크림)
                 searchKeyword = categoryArg.replace(/(제품|류|종류|타입|관련)$/, '');
             }
 

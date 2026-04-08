@@ -3,7 +3,7 @@ import { config } from '../config/env.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { recommendationService } from '../services/recommendationService.js';
-import { aiTaggingService } from '../services/aiTaggingService.js';
+// 💡 [Fix] aiTaggingService 제거: 라우터에서 서비스 관여 금지
 
 const router = express.Router();
 
@@ -50,31 +50,26 @@ async function executeTool(name, args) {
     // 🎯 1. Cafe24 원천 데이터 확보
     const response = await cafe24ApiService.getProducts(accessToken, 80, searchKeyword);
     const rawProducts = response.products || [];
-    let initialCandidates = rawProducts.map(p => recommendationService.normalizeProduct(p));
 
-    // 🎯 💡 [Performance Patch] 1차 스코어링으로 정예 멤버(20개)만 선별 (태깅 전)
-    const initialIntent = recommendationService.normalizeUserIntent({ ...args, category_aliases: aliases });
-    const preRanked = initialCandidates.map(p => {
-        const { score } = recommendationService.calculateScore(p, initialIntent);
-        return { ...p, _preScore: score };
-    }).sort((a,b) => b._preScore - a._preScore).slice(0, 20);
+    // [Fix] 2. 비즈니스 로직 및 파이프라인 일관화 위임 (라우터 책임 삭제)
+    const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
+        rawProducts, 
+        { ...args, category_aliases: aliases }, 
+        3
+    );
 
-    // 🎯 2. 정예 멤버 20개에 대해서만 AI 정밀 태깅 (속도 4배 향상)
-    const taggingResults = await aiTaggingService.tagProducts(preRanked);
-    const tagMap = new Map(taggingResults.map(t => [String(t.no), t]));
+    const top1 = recommendations[0];
     
-    const enrichedProducts = preRanked.map(p => {
-        const meta = tagMap.get(String(p.id)) || {};
-        return recommendationService.normalizeProduct(p, meta);
-    });
+    // [Fix] 상품을 찾지 못한 경우 방어 추가
+    if (!top1) {
+        return {
+            content: [{ type: "text", text: "해당 조건에 맞는 상품을 찾을 수 없습니다." }]
+        };
+    }
 
-    // 🎯 3. 최종 스코어링 및 고밀도 큐레이션 (Engine 11.8)
-    const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(enrichedProducts, { ...args, category_aliases: aliases }, 3);
-    
-    const top1 = recommendations[0] || { name: "추천 상품", price: "0" };
     const rest = recommendations.slice(1);
 
-    // 🎨 [Premium Card UI]
+    // 🎨 [Premium Card UI] 응답 렌더링 유지
     const header = [
         '---',
         `💡 **이런 피부에 맞아요** : ${summary.strategy || "고객님의 피부 고민을 해결할 최적의 솔루션입니다."}`,
@@ -87,7 +82,6 @@ async function executeTool(name, args) {
     spotlight += `![상품](${img1})\n\n`;
     spotlight += `💰 **판매가: ${top1.price}원**\n`;
     spotlight += `✨ **핵심 태그**: ${(top1.ai_tags || []).slice(0, 3).map(b => `\`#${b}\``).join(' ')}\n`;
-    // 🎯 💡 기획자 요청: 핵심 포인트 추가
     spotlight += `🔥 **핵심 포인트**: **${top1.key_point}**\n`;
     spotlight += `🧪 **수석 큐레이터 가이드**: *"${top1.match_reasons}"*\n\n`;
     spotlight += `[**🚀 전용 혜택으로 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n\n`;

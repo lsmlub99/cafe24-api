@@ -6,21 +6,18 @@ const openai = new OpenAI({
 });
 
 /**
- * 🧠 [실시간 AI 셀렉터 엔진]
- * 인위적인 하드코딩이나 점수 로직을 0%로 만들고, 
- * GPT의 실시간 추론(Reasoning)만으로 최적의 상품을 선정합니다.
+ * 🧠 [Enterprise Recommendation Engine 4.5]
+ * 단순 키워드 매칭을 넘어 설명 가능성(Explainability)과 
+ * 데이터 무결성(Integrity)을 확보한 전문 큐레이션 서비스입니다.
  */
 export const recommendationService = {
-
-  /**
-   * AI가 실시간으로 상품 리스트 100개를 분석하여 최적의 Top 5를 선정합니다.
-   */
+  
   async scoreAndFilterProducts(products, args, limit = 5) {
     if (!products || products.length === 0) return [];
 
-    console.log(`[AI Selector] 🎯 100개 상품 중 최적의 ${limit}개를 실시간으로 선정 중...`);
+    console.log(`[AI Engine] 🎯 전문가 분석 프로토콜 가동 (${products.length}개 대상)`);
 
-    // 1. GPT에게 보낼 데이터 (AI 태그 포함하여 판단 능력 향상)
+    // 1. 데이터 경량화 (필수 정보만 GPT에 전달)
     const simplifiedList = products.map(p => ({
       no: p.product_no,
       name: p.product_name,
@@ -28,10 +25,11 @@ export const recommendationService = {
       desc: p.summary_description || p.simple_description || ''
     }));
 
-    const userQuery = `
-      [질문Context]
-      - 피부: ${args.skin_type || '정보 없음'} / 고민: ${ (args.concerns || []).join(', ') }
-      - 찾는것: ${args.category || '전체(스킨케어)'}
+    const userProfile = `
+      [프로필]
+      - 피부타입: ${args.skin_type || '정보없음'}
+      - 고민: ${(args.concerns || []).join(', ')}
+      - 카테고리: ${args.category || '전체'}
     `;
 
     try {
@@ -40,81 +38,80 @@ export const recommendationService = {
         messages: [
           {
             role: "system",
-            content: `너는 "셀퓨전씨(CellFusionC) 공식몰 수석 큐레이터"야. 사용자의 피부타입에 따라 아래 "시리즈 매뉴얼"을 기준으로 100개 중 최적의 5개를 엄선해.
-            
-            [시리즈별 타겟 매뉴얼]
-            - 아쿠아티카(Aquatica): 수분, 가벼움, 산뜻함 -> 지성/수부지 고객에게 무조건 1순위.
-            - 포스트 알파(Post Alpha): 쿨링, 진정, 붉은기 -> 민감성/예민 피부 고객에게 1순위.
-            - 패리어(Barrier)/레이저(Laser): 깊은 보습, 장벽강화, 재생 -> 건성 고객에게 1순위. (지성에게 절대 금지)
-            - 토닝(Toning): 미백, 잡티케어 -> 토너/세럼 니즈가 있는 모든 타입.
-            
-            [미션]
-            1. 건성 질문에는 '패리어'나 '레이저' 라인이 반드시 포함되어야 함.
-            2. 지성 질문에는 리치한 '크림' 말고 '선세럼', '젤', '스틱' 위주로 배치함.
-            3. 리스트 앞부분에 있다고 대충 고르면 해고야. 전체 리스트에서 가장 핏(Fit)한 제품을 찾아.
-            4. 반드시 JSON { "results": [{ "no", "reason" }] } 형식으로 대답해.`
+            content: `너는 "셀퓨전씨(CellFusionC) 기술 수석 큐레이터"야. 아래 [분석 가이드라인]에 따라 최적의 5개를 엄선해.
+
+            [분석 가이드라인]
+            1. 라인분석: 아쿠아티카(지성/수분), 포스트알파(민감/진정), 패리어/레이저(건성/장벽), 토닝(미백/잡티)
+            2. 제형적합성: 수분/에센스(지성), 크림/밤(건성), 저자극(민감성) 매칭을 엄격히 판별할 것.
+            3. 데이터 근거: 제공된 'tags'와 'desc'를 기반으로 성분과 효과를 전문적으로 추론할 것.
+
+            [출력 JSON 구조]
+            {
+              "summary": { "selection_strategy": "이번 추천의 핵심 전략 (1문장)" },
+              "results": [{
+                "no": "상품번호",
+                "fit_score": "High/Medium",
+                "matched_points": ["매칭 포인트 2개"],
+                "texture_note": "제형의 실제 발림성/마무리감 설명",
+                "curator_comment": "사용자 맞춤 전담 조언 (1문장)",
+                "caution": "주의사항 또는 사용 팁"
+              }]
+            }`
           },
           {
             role: "user",
-            content: `[사용자 질문]\n${userQuery}\n\n[상품 데이터베이스]\n${JSON.stringify(simplifiedList)}`
+            content: `${userProfile}\n\n[상품 데이터]\n${JSON.stringify(simplifiedList)}`
           }
         ],
         response_format: { type: "json_object" }
       });
 
       const parsed = JSON.parse(response.choices[0].message.content);
-      let aiResults = parsed.results || [];
+      const aiResults = parsed.results || [];
 
-      // 🛡️ [강력한 하위 호환] AI가 0개를 줬거나 필터링이 너무 빡빡할 때 호출
-      if (aiResults.length === 0) {
-          console.log("[AI Selector] ⚠️ 결과 0건 방지를 위해 베스트 상품으로 강제 매칭");
-          aiResults = products.slice(0, 5).map(p => ({
-              no: p.product_no,
-              reason: "많은 분들이 선택하시는 셀퓨전씨의 베스트셀러 기초 케어 제품입니다."
-          }));
-      }
-
-      // 3. UI 데이터 생성 
+      // 🛡️ [Post-Filtering Guardrail] 실시간 데이터 결합 및 검증
       const finalRecommendations = aiResults.map(res => {
           const p = products.find(prod => String(prod.product_no) === String(res.no));
           if (!p) return null;
 
           const retail = parseInt(p.retail_price) || 0;
           const current = parseInt(p.price) || 0;
-          const discountRate = retail > current ? Math.round(((retail - current) / retail) * 100) : 0;
+          const discount = retail > current ? Math.round(((retail - current) / retail) * 100) : 0;
 
           return {
               id: p.product_no,
               name: p.product_name,
               price: current.toLocaleString(),
-              discount_rate: discountRate,
-              product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`,
+              discount_rate: discount,
               thumbnail: (() => {
                   let img = p.list_image || p.detail_image || p.tiny_image;
-                  if (!img) return 'https://dummyimage.com/180x180/eef2f3/555555.png?text=CellFusionC'; 
+                  if (!img) return 'https://dummyimage.com/180x180/eef2f3/555555.png';
                   if (img.startsWith('//')) img = `https:${img}`;
                   return img.replace('http://', 'https://');
               })(),
-              summary: p.summary_description || p.simple_description || '',
-              match_reasons: res.reason
+              // 고도화된 메타데이터 (UI 연결용)
+              fit_score: res.fit_score || "Medium",
+              matched_points: res.matched_points || [],
+              texture_note: res.texture_note || "부드러운 제형",
+              match_reasons: res.curator_comment || "추천 상품입니다.",
+              caution: res.caution || "없음",
+              selection_strategy: parsed.summary?.selection_strategy || ""
           };
-      }).filter(Boolean);
+      }).filter(Boolean).slice(0, limit);
 
-      // 마지막의 마지막까지 리스트가 비어있다면 생데이터라도 3개 채워서 반환 (바보 소리 안 듣기 위함)
       return finalRecommendations.length > 0 ? finalRecommendations : products.slice(0, 3).map(p => ({
           id: p.product_no,
           name: p.product_name,
           price: (parseInt(p.price) || 0).toLocaleString(),
-          match_reasons: "셀퓨전씨에서 가장 사랑받는 수분/진정 대표 제품입니다."
+          match_reasons: "셀퓨전씨의 베스트셀러 제품입니다."
       }));
     } catch (error) {
-      console.error("[AI Selector Error]:", error.message);
-      // 에러 시 텍스트 매칭으로 평화적 해결
+      console.error("[AI Engine Error]:", error.message);
       return products.slice(0, 3).map(p => ({
           id: p.product_no,
           name: p.product_name,
           price: (parseInt(p.price) || 0).toLocaleString(),
-          match_reasons: "실시간 추천 서버 점검 중으로 공식 베스트셀러를 제안해 드립니다."
+          match_reasons: "실시간 추천 서버 점검 중으로 인기 제품을 제안합니다."
       }));
     }
   }

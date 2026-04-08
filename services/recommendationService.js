@@ -32,11 +32,11 @@ export const recommendationService = {
 
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o", // 더 정교한 판단을 위해 상위 모델 사용 권장 (또는 gpt-4o-mini 유지)
+        model: "gpt-4o-mini", // 속도와 효율을 위해 고속 모델 사용
         messages: [
           {
             role: "system",
-            content: `너는 "셀퓨전씨(CellFusionC) 공식몰 수석 큐레이터"야. 아래 [브랜드 추천 가이드를] 준수해 5개를 선별해.
+            content: `너는 "셀퓨전씨(CellFusionC) 기술 수석 큐레이터"야. 아래 [분석 가이드라인]에 따라 100개 중 최적의 5개를 엄선해.
 
             [브랜드 시리즈 가이드]
             - Aquatica: 수분, 쿨링, 지성/수부지 전용

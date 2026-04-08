@@ -107,10 +107,30 @@ async function getProducts(accessToken, limit = 80, keyword = '') {
     }
 }
 
-async function getCategoryProducts(accessToken, categoryNo, limit = 10) {
-    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${categoryNo}/products?limit=${limit}`;
-    const response = await fetch(url, { headers: { 'Authorization': `Bearer ${accessToken}` } });
-    return await response.json();
+async function getCategoryProducts(accessToken, categoryNo, limit = 20) {
+    try {
+        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
+        // 카테고리 ID가 속한 상품 리스트를 정확한 fields 포맷으로 조회 (옵션 A 지원 핵심)
+        let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&category=${categoryNo}&fields=${fields}`;
+        
+        let targetToken = accessToken;
+        let response = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}` } });
+
+        // 401 만료 자동 갱신
+        if (response.status === 401) {
+            console.log(`[Re-Auth] 🔑 getCategoryProducts 중 토큰 갱신...`);
+            const tokens = await tokenStore.getTokens(config.MALL_ID);
+            const r = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
+            await tokenStore.saveTokens(config.MALL_ID, r.access_token, r.refresh_token, r.expires_at);
+            targetToken = r.access_token;
+            response = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}` } });
+        }
+        
+        return await response.json();
+    } catch (err) {
+        console.error(`[Fatal API Error] getCategoryProducts:`, err.message);
+        return { products: [] };
+    }
 }
 
 /**

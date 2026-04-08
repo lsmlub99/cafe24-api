@@ -42,20 +42,19 @@ export const recommendationService = {
     let score = 0;
     const meta = p.ai_meta || {};
     
-    // [Fix 2] Category 점수 계산 시 Alias 전체 반영 및 복합 검증
-    // name, summary_description, meta.category_tags 전체를 통합하여 다중 alias로 검사
+    // [옵션 A 체계 대응] 
+    // 라우터 단에서 category_no로 이미 1차 구조적 필터링을 마친 정예 리스트가 넘어옵니다.
+    // 텍스트 부분 일치를 검사하지 않고, 부정어(비비크림 등)에만 걸리지 않으면 기본 카테고리 점수를 부여합니다.
     const textTarget = ((p.name || '') + (p.summary_description || '')).replace(/\s/g, '').toLowerCase();
-    const metaCatTags = meta.category_tags || [];
+    const isCategoryExcluded = (intent.category_excludes || []).some(ex => textTarget.includes(ex.toLowerCase()));
 
-    const hasCategoryMatch = intent.category.some(alias => {
-        const lowerAlias = alias.toLowerCase();
-        // 텍스트에 포함되거나, 메타데이터 태그 풀 안에 존재하면 합격
-        return textTarget.includes(lowerAlias) || metaCatTags.some(t => t.toLowerCase() === lowerAlias);
-    });
+    if (!isCategoryExcluded) {
+        score += 100; // 카테고리 조건 기본 합격
+    } else {
+        score -= 200; // 엉뚱한 폴백 매칭 시 원천적 배제 유도
+    }
 
-    if (hasCategoryMatch) score += 100;
-
-    // 속성 매칭 점수
+    // 속성 매칭 점수 (여기서 변별력이 발생)
     if (intent.skin_types.some(k => (meta.skin_type_tags || []).includes(k))) score += 40;
     
     const lineTags = meta.line_tags || [];
@@ -79,15 +78,14 @@ export const recommendationService = {
     const intent = this.normalizeUserIntent(args);
     const normalizedProducts = rawProducts.map(p => this.normalizeProduct(p));
 
-    // [Fix 1] 카테고리 하드 필터 추가 (엉뚱한 상품 1차 차단)
-    // - 선크림/선세럼 요청인데 비비크림이 섞여오는 오류 방지
-    const matchedCategoryProducts = normalizedProducts.filter(p => {
+    // [옵션 A 체계 반영] 카테고리 하드 필터 완화 및 부정어 원천 차단
+    // 이미 라우터에서 category_no 기반으로 검색해 왔기 때문에, 이름에 '크림'이 없어도 스킨케어 크림(No.24)이면 타겟 풀로 인정해야 함.
+    // 단, 이름 기반 폴백이 동작했을 때를 대비해 부정어(BB크림 등)만 한 번 더 걷어냅니다.
+    const targetPool = normalizedProducts.filter(p => {
        const textTarget = ((p.name || '') + (p.summary_description || '')).replace(/\s/g, '').toLowerCase();
-       return intent.category.some(alias => textTarget.includes(alias.toLowerCase()));
+       const isExcluded = (intent.category_excludes || []).some(ex => textTarget.includes(ex.toLowerCase()));
+       return !isExcluded;
     });
-
-    // 필터 결과가 0개일 때만 전체 후보군으로 Fallback
-    const targetPool = matchedCategoryProducts.length > 0 ? matchedCategoryProducts : normalizedProducts;
 
     // 🎯 [Phase 1] 룰베이스 기반 1차 필터링
     const preCandidates = targetPool.map(p => {
@@ -165,9 +163,21 @@ export const recommendationService = {
       (textureMap[type] || []).forEach(tx => textures.add(tx));
       (avoidMap[type] || []).forEach(av => avoidTextures.add(av));
     });
+    
+    // 💡 [카테고리 예외 부정어(Negative Excludes) 추가]
+    const categoryAliases = args.category_aliases || [args.category].filter(Boolean);
+    let categoryExcludes = [];
+    
+    // 사용자가 '크림'을 요청했을 때 메이크업/바디/선케어 용품이 딸려오는 것 차단
+    if (categoryAliases.includes('크림') || categoryAliases.includes('cream')) {
+        categoryExcludes = ['비비크림', 'bb크림', '선크림', '썬크림', '아이크림', '바디크림', '핸드크림', '넥크림', '톤업크림', '클렌징'];
+    } else if (categoryAliases.includes('세럼') || categoryAliases.includes('앰플')) {
+        categoryExcludes = ['선세럼', '썬세럼', '클렌징'];
+    }
 
     return {
-      category: args.category_aliases || [args.category].filter(Boolean), 
+      category: categoryAliases, 
+      category_excludes: categoryExcludes,
       skin_types: Array.from(skinTypes),
       preferred_lines: preferredLines,
       concerns: args.concerns || [],

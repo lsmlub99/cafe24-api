@@ -17,6 +17,19 @@ const CATEGORY_ALIAS_MAP = {
   '토너': ['토너', '스킨', 'toner', '패드']
 };
 
+/**
+ * 👑 [옵션 A 체계] Cafe24 관리자의 100% 무결한 카테고리 고유 번호(category_no) 매핑
+ * - 이름에 속지 않고 구조적으로 정확한 품목만 가져옵니다. (ex: 선크림/비비크림과 수분크림 강제 분리)
+ * - ❗[필수입력] 쇼핑몰 환경에 맞춰 번호를 수정해주세요.
+ */
+const CATEGORY_ID_MAP = {
+  '세럼': [22],     
+  '앰플': [23],     
+  '선크림': [31],   // 선케어류 전용 ID
+  '크림': [24],     // 기초 스킨케어 크림류 ID
+  '토너': [21]
+};
+
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
@@ -45,13 +58,38 @@ async function executeTool(name, args) {
 
     const rawCat = args.category || '';
     const aliases = CATEGORY_ALIAS_MAP[rawCat] || [rawCat];
-    const searchKeyword = aliases[0];
+    const categoryNos = CATEGORY_ID_MAP[rawCat] || [];
     
-    // 🎯 1. Cafe24 원천 데이터 확보
-    const response = await cafe24ApiService.getProducts(accessToken, 80, searchKeyword);
-    const rawProducts = response.products || [];
+    let rawProducts = [];
 
-    // [Fix] 2. 비즈니스 로직 및 파이프라인 일관화 위임 (라우터 책임 삭제)
+    // 🎯 [옵션 A 반영] 1. 카테고리 ID가 존재하는 경우 최우선으로 정확도 100% 카테고리 상품만 Fetch
+    if (categoryNos.length > 0) {
+        console.log(`[Category Sync] '${rawCat}' (ID: ${categoryNos.join(',')}) 매칭 -> 1급 구조 데이터 직접 조회`);
+        
+        // 다중 ID 병렬 조회 지원
+        const fetchPromises = categoryNos.map(cNo => cafe24ApiService.getCategoryProducts(accessToken, cNo, 30));
+        const resArray = await Promise.all(fetchPromises);
+        
+        const seen = new Set();
+        resArray.forEach(res => {
+            if (res.products) {
+                res.products.forEach(p => {
+                    if (!seen.has(p.product_no)) {
+                        seen.add(p.product_no);
+                        rawProducts.push(p);
+                    }
+                });
+            }
+        });
+    } else {
+        // ID 매핑이 누락된 경우 기존의 이름 기반 부분 일치 검색으로 폴백 (옵션 B 대비용)
+        console.warn(`[Category Fallback] '${rawCat}'에 할당된 ID가 없어 텍스트 기반으로 검색합니다.`);
+        const searchKeyword = aliases[0];
+        const response = await cafe24ApiService.getProducts(accessToken, 80, searchKeyword);
+        rawProducts = response.products || [];
+    }
+
+    // 🎯 2. 비즈니스 로직 및 전체 파이프라인 일관화 위임 (라우터 책임 삭제)
     const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
         rawProducts, 
         { ...args, category_aliases: aliases }, 

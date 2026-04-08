@@ -164,4 +164,42 @@ router.get('/products', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------
+// 6. [개발 & 맵핑용] 쇼핑몰 카테고리 전체 고유 번호(ID) 확인
+// ---------------------------------------------------------
+router.get('/categories', async (req, res) => {
+  const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
+
+  if (!accessToken) {
+    return res.status(401).send(`접근 토큰 없음. <a href="/cafe24/start">인증</a> 진입이 필요합니다.`);
+  }
+
+  try {
+    const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories`;
+    const response = await fetch(url, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+    const data = await response.json();
+    
+    if(!data.categories) {
+       return res.json({ message: "카테고리가 없거나 응답이 잘못되었습니다.", data });
+    }
+
+    // 보기 쉽게 파싱해서 제공
+    const simpleList = data.categories.map(c => ({
+       '설정 번호 (category_no)': c.category_no,
+       '카테고리 이름': c.category_name,
+       '노출 여부': c.display_type
+    }));
+
+    res.json({
+        notice: "여기 나온 번호들을 mcp.js의 CATEGORY_ID_MAP 에 기입해주세요!",
+        total: simpleList.length,
+        categories: simpleList
+    });
+
+  } catch (err) {
+    console.error(`[ERROR] 카테고리 조회 오류:`, err);
+    res.status(500).send("카테고리 목록 조회 실패");
+  }
+});
+
 export default router;

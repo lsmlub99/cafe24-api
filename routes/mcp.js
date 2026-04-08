@@ -47,9 +47,11 @@ async function executeTool(name, args) {
     const aliases = CATEGORY_ALIAS_MAP[rawCat] || [rawCat];
     const searchKeyword = aliases[0];
     
+    // 🎯 Cafe24 상품 조회
     const response = await cafe24ApiService.getProducts(accessToken, 80, searchKeyword);
     const rawProducts = response.products || [];
 
+    // 🎯 상품 정규화 및 AI 태깅 병합
     let candidates = rawProducts.map(p => recommendationService.normalizeProduct(p));
     const taggingResults = await aiTaggingService.tagProducts(candidates);
     const tagMap = new Map(taggingResults.map(t => [String(t.no), t]));
@@ -59,26 +61,31 @@ async function executeTool(name, args) {
         return recommendationService.normalizeProduct(p, meta);
     });
 
-    // 🎯 💡 기획자 요청: 구조화된 결과(recommendations, summary) 수신
+    // 🎯 💡 기획자 요청: 11.7 Engine (복합 피부타입 & 카드 UX 최적화)
     const scoringArgs = { ...args, category_aliases: aliases };
     const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(enrichedProducts, scoringArgs, 3);
     
-    // 🎯 💡 기획자 요청: 자연스러운 한국어 문구로 교정
     const top1 = recommendations[0] || { name: "추천 상품", price: "0" };
     const rest = recommendations.slice(1);
-    const strategy = summary.strategy || "실시간 데이터 분석 기반 맞춤 매칭 리포트입니다.";
-    const conclusion = summary.conclusion || "분석 결과 최적의 매칭 상품을 선별했습니다.";
 
-    // 🏆 Spotlight Card
-    let spotlight = `### 🏆 1순위 | **${top1.name}**\n`;
+    // 🏆 [Card Header]
+    const header = [
+        '---',
+        `📋 **전략** : ${summary.strategy || "피부 맞춤형 최적 분석입니다."}`,
+        `🎯 **결론** : ${summary.conclusion || "검증된 솔루션을 선별했습니다."}`,
+        '---'
+    ].join('\n');
+
+    // 🏆 [Main Spotlight Card]
     const img1 = top1.thumbnail || "https://cellfusionc.co.kr/web/upload/common/no_img.gif";
+    let spotlight = `### 🏆 **${top1.name}**\n`;
     spotlight += `![상품](${img1})\n\n`;
-    spotlight += `💰 **판매가 : ${top1.price}원**\n`;
-    spotlight += `✨ **핵심 태그 :** ${(top1.ai_tags || []).slice(0, 3).map(b => `\`#${b}\``).join(' ')}\n`;
-    spotlight += `🧪 **분석 의견 :** *"${top1.match_reasons || "데이터 기반 추천 제품입니다."}"*\n\n`;
-    spotlight += `[**🚀 공식몰에서 보기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n\n`;
+    spotlight += `💰 **판매가: ${top1.price}원**\n`;
+    spotlight += `✨ **핵심 태그**: ${(top1.ai_tags || []).slice(0, 3).map(b => `\`#${b}\``).join(' ')}\n`;
+    spotlight += `🧪 **큐레이션**: *"${top1.match_reasons}"*\n\n`;
+    spotlight += `[**🚀 공식몰 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n\n`;
 
-    // 🥈🥉 Comparison Table
+    // 🥈🥉 [Comparison Table]
     let restTable = "";
     if (rest.length > 0) {
         let r1 = '| **다음 순위** |', r2 = '| :---: |', r3 = '| **이미지** |', r4 = '| **상세** |';
@@ -94,17 +101,7 @@ async function executeTool(name, args) {
     return {
         content: [{
             type: "text",
-            text: [
-                '---',
-                `## 🏥 [분석 전략] : ${strategy}`,
-                `**🎯 전문가 결론 : ${conclusion}**`,
-                '---',
-                '',
-                spotlight,
-                '---',
-                restTable,
-                '※ 본 리포트는 셀퓨전씨 공식몰 데이터를 기반으로 분석된 실시간 리포트입니다.'
-            ].join('\n')
+            text: [header, '', spotlight, '---', restTable, '※ 본 루틴은 실시간 데이터 분석을 기반으로 제안되었습니다.'].join('\n')
         }]
     };
 }

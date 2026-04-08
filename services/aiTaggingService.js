@@ -52,7 +52,7 @@ export const aiTaggingService = {
         messages: [
           {
             role: "system",
-            content: `너는 임상 뷰티 데이터 라벨러야. 제공된 상품 정보를 분석해 지정된 화이트리스트 태그만 반환해.
+            content: `너는 임상 뷰티 데이터 라벨러야. 제공된 상품 정보를 분석해 지정된 화이트리스트 태그만 반환해. 반드시 JSON 포맷으로 응답해야 해.
             - 유추하지 말고 텍스트 근거가 있을 때만 부여.
             - 식별자는 반드시 'id'를 사용할 것 (no 대신 id).
             - 리스트: ${JSON.stringify(this.WHITELIST)}`

@@ -14,8 +14,9 @@ const openai = new OpenAI({
 export const recommendationService = {
 
   normalizeProduct(p, aiMeta = {}) {
-    // 🎯 가격 파싱 무결성 (소수점이 붙어오는 것에 대한 뻥튀기 400만원 사태 방지)
-    const priceNum = Math.floor(parseFloat(p.price) || 0);
+    // 🎯 가격 파싱 무결성 (쉼표만 제거 후 parseFloat로 소수점 보존, 43원 오류 사태 해결)
+    const cleanPrice = String(p.price || 0).replace(/,/g, '');
+    const priceNum = Math.floor(parseFloat(cleanPrice) || 0);
 
     let thumb = p.thumbnail || p.list_image || p.detail_image || p.tiny_image || '';
     if (thumb.startsWith('//')) thumb = `https:${thumb}`;

@@ -23,11 +23,11 @@ const CATEGORY_ALIAS_MAP = {
  * - ❗[필수입력] 쇼핑몰 환경에 맞춰 번호를 수정해주세요.
  */
 const CATEGORY_ID_MAP = {
-    '세럼': [],     // 예시: [22]
-    '앰플': [],     // 예시: [23]
-    '선크림': [],   // 예시: [31]
-    '크림': [],     // 예시: [24]
-    '토너': []      // 예시: [21]
+    '세럼': [22],
+    '앰플': [23],
+    '선크림': [31],
+    '크림': [24],
+    '토너': [21]
 };
 
 const TOOLS = [
@@ -95,6 +95,15 @@ async function executeTool(name, args) {
         { ...args, category_aliases: aliases },
         3
     );
+
+    // [Fast Verification Log] 빠른 검증용 텔레메트리
+    console.log(`[Fast Verification] rawProducts 개수: ${rawProducts.length}`);
+    console.log(`[Fast Verification] Top 3 상품명: ${recommendations.map(p => p.name).join(', ')}`);
+    console.log(`[Fast Verification] 반환된 shape 검사: recommendations=${!!recommendations}, summary=${!!summary}`);
+    if (recommendations.length > 0) {
+        console.log(`[Fast Verification] top1.key_point 존재: ${!!recommendations[0].key_point}`);
+        console.log(`[Fast Verification] top1.ai_tags 존재: ${!!recommendations[0].ai_tags}`);
+    }
 
     const top1 = recommendations[0];
 

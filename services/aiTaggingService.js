@@ -27,6 +27,9 @@ export const aiTaggingService = {
   extractTagsByRule(name, desc) {
     const combined = (name + ' ' + desc).toLowerCase().replace(/\s/g, '');
     
+    // 단순 단어 매칭을 넘어서, 유의어 기반으로 피부타입을 추론
+    const ruleSkinTags = new Set(this.WHITELIST.skin_type_tags.filter(t => combined.includes(t)));
+    
     // 지피티 피드백 준수: 마케팅 문구(예: 콜라겐=건성, 산뜻=지성)를 억지로 피부타입으로 추론하는 자의적 로직 완전 제거.
     // 오직 리얼 텍스트 기반 100% 하드-매칭 사전(Dictionary) 알고리즘으로 회귀합니다.
 

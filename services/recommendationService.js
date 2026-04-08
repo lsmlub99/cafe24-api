@@ -6,18 +6,108 @@ const openai = new OpenAI({
 });
 
 /**
- * 👑 [Master-Class Recommendation Engine 5.0]
- * 브랜드 정책 준수와 최고의 UX를 위해 설계된 고성능 AI 엔진입니다.
+ * 👑 [Tiered Recommendation Pipeline 6.0]
+ * Stage 1: Candidate Pool (Code-level filtering)
+ * Stage 2: Expert Rerank (LLM-based selection)
+ * Stage 3: Guardrail & UI Mapping
  */
 export const recommendationService = {
-  
+
+  // 1. 텍스트 정규화 (매칭 정확도 향상)
+  normalizeText(text) {
+    return (text || '').toLowerCase().replace(/\s+/g, '').trim();
+  },
+
+  // 2. 카테고리 매칭 로직 (코어 필터)
+  matchesCategory(p, category) {
+    if (!category) return true;
+    const name = this.normalizeText(p.product_name);
+    const cat = this.normalizeText(category);
+    
+    // 카테고리별 유연한 키워드 맵
+    const map = {
+      '선': ['선', '썬', 'sun', '스틱', '스프레이'],
+      '앰플': ['앰플', '세럼', '에센스', 'ampoule', 'serum'],
+      '토너': ['토너', '패드', '스킨', 'toner'],
+      '크림': ['크림', '밤', '보습', 'cream', 'balm'],
+      '클렌징': ['클렌징', '폼', '오일', '워터'],
+      '팩': ['팩', '마스크', 'mask']
+    };
+
+    const keywords = map[cat.slice(0, 2)] || [cat];
+    return keywords.some(k => name.includes(k));
+  },
+
+  // 3. 피부타입별 키워드 사전
+  getSkinTypeKeywords(skinType) {
+    const dict = {
+      '건성': ['laser', 'barrier', '레이저', '패리어', '보습', '장벽', '재생', '크림', '리치', '영양', 'moist'],
+      '지성': ['aquatica', '아쿠아티카', '수분', '산뜻', '젤', '워터리', '가벼', '스틱', '세럼', '물'],
+      '수부지': ['aquatica', '아쿠아티카', '밸런스', '속건조', '산뜻', '수분', '에센스'],
+      '민감성': ['post', 'alpha', '포스트', '알파', '진정', '쿨링', '붉은', '저자극', '시카', 'cica']
+    };
+    return dict[skinType] || [];
+  },
+
+  // 4. 피부고민별 키워드 사전
+  getConcernKeywords(concerns = []) {
+    const dict = {
+      '재생': ['repair', 'regeneration', 'barrier', '레이저', '재생'],
+      '보습': ['moisturizing', 'hydration', 'moisture', '보습', '수분'],
+      '진정': ['soothing', 'calming', 'post', 'cooling', '진정', '시카'],
+      '미백': ['brightening', 'toning', 'blemish', '미백', '잡티', '토닝'],
+      '탄력': ['collagen', 'pdrn', 'firming', 'glow', '탄력', '광채']
+    };
+    let combined = [];
+    concerns.forEach(c => { combined = [...combined, ...(dict[c] || [])]; });
+    return [...new Set(combined)];
+  },
+
+  /**
+   * 🏗️ [Candidate Pool Builder]
+   * 100개 상품 중 관련도가 높은 25개를 선별합니다. (랜덤X, 실력순O)
+   */
+  buildCandidatePool(products, args, targetSize = 25) {
+    const { category, skin_type, concerns } = args;
+    const skinKeywords = this.getSkinTypeKeywords(skin_type);
+    const concernKeywords = this.getConcernKeywords(concerns);
+
+    const scored = products.map(p => {
+      let score = 0;
+      const text = this.normalizeText(p.product_name + (p.summary_description || '') + (p.ai_tags || []).join(''));
+
+      // 1) 카테고리 일치 (+5)
+      if (this.matchesCategory(p, category)) score += 5;
+
+      // 2) 피부타입 라인/키워드 일치 (+3)
+      if (skinKeywords.some(k => text.includes(k))) score += 3;
+
+      // 3) 고민 키워드 일치 (+2)
+      if (concernKeywords.some(k => text.includes(k))) score += 2;
+
+      // 4) 태그 내 매칭 보너스 (+1)
+      if ((p.ai_tags || []).some(t => skinKeywords.includes(t) || concernKeywords.includes(t))) score += 1;
+
+      return { ...p, _score: score };
+    });
+
+    // 점수 높은 순 정렬 후 중복 제거 및 슬라이싱
+    return scored
+      .sort((a, b) => b._score - a._score)
+      .slice(0, targetSize);
+  },
+
   async scoreAndFilterProducts(products, args, limit = 5) {
     if (!products || products.length === 0) return [];
 
-    console.log(`[AI Engine] 🔍 ${args.skin_type || '전체'} 대상 정밀 큐레이션 가동...`);
+    console.log(`[AI Engine] 🏗️ ${args.skin_type || '전체'} 후보군 빌딩 시작...`);
 
-    // 1. 데이터 전처리 (입력 제한 및 품질 확보)
-    const simplifiedList = products.map(p => ({
+    // 🔥 Stage 1: 후보군 축소 (100개 -> 25개)
+    const candidatePool = this.buildCandidatePool(products, args, 25);
+    console.log(`[AI Engine] 🎯 엄선된 ${candidatePool.length}개의 후보로 심층 면접 진행`);
+
+    // GPT 전달용 데이터 경량화
+    const simplifiedList = candidatePool.map(p => ({
       no: p.product_no,
       name: p.product_name,
       tags: p.ai_tags || [],
@@ -31,40 +121,22 @@ export const recommendationService = {
     `;
 
     try {
+      // 🔥 Stage 2: GPT Reranking
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini", // 속도와 효율을 위해 고속 모델 사용
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
-            content: `너는 "셀퓨전씨(CellFusionC) 기술 수석 큐레이터"야. 아래 [분석 가이드라인]에 따라 100개 중 최적의 5개를 엄선해.
-
-            [브랜드 시리즈 가이드]
-            - Aquatica: 수분, 쿨링, 지성/수부지 전용
-            - Post Alpha: 진정, 민감성 전용
-            - Barrier/Laser: 고보습, 장벽강화, 건성 전용 (지성 추천 금지)
-            - Toning: 미백, 잡티케어
-            
-            [출력 규칙]
-            1. selection_strategy: 피부타입 + 고민 + 선별 기준을 포함한 자연스러운 한 줄 요약
-            2. conclusion: 전체 추천 상품 중 1순위 제품을 고른 이유와 함께 제시 (예: 건성+재생 기준 1순위는 X예요)
-            3. results[].badges: 상품의 핵심 장점 2~3개 (예: "보습 집중", "민감성 적합")
-            4. texture_note & caution: 반드시 데이터(tags, desc)에 근거할 것. 추정/환각 금지. 없을 경우 빈값.
-
+            content: `너는 "셀퓨전씨 테크니컬 큐레이터"야. 25개의 후보 중 5개를 엄선해.
+            [출력구조]
             {
-              "summary": { "selection_strategy": "", "conclusion": "" },
-              "results": [{
-                "no": "",
-                "fit_score": "High/Medium",
-                "badges": ["보습", "진정"],
-                "texture_note": "가벼운 젤 / 리치한 크림 등",
-                "curator_comment": "사용자 맞춤 조언",
-                "caution": "주의사항 또는 팁 (없으면 빈값)"
-              }]
+              "summary": { "selection_strategy": "한줄전략", "conclusion": "한줄결론" },
+              "results": [{ "no", "fit_score", "badges":[], "texture_note":"", "curator_comment":"", "caution":"" }]
             }`
           },
           {
             role: "user",
-            content: `${userProfile}\n\n[상품 리스트]\n${JSON.stringify(simplifiedList)}`
+            content: `${userProfile}\n\n[엄선된 후보군]\n${JSON.stringify(simplifiedList)}`
           }
         ],
         response_format: { type: "json_object" }
@@ -73,51 +145,36 @@ export const recommendationService = {
       const parsed = JSON.parse(response.choices[0].message.content);
       const aiResults = parsed.results || [];
 
-      // 🛡️ [Brand Guardrail Pipe] 코드 레벨 후처리
+      // 🔥 Stage 3: 후처리 가드레일
       let finalRecommendations = aiResults.map(res => {
-          const p = products.find(prod => String(prod.product_no) === String(res.no));
+          const p = candidatePool.find(prod => String(prod.product_no) === String(res.no));
           if (!p) return null;
 
-          // 1단계: 카테고리 검증 (요청 카테고리와 현격히 다를 경우 필터링)
-          if (args.category && !p.product_name.includes(args.category.slice(0, 2)) && products.length > 30) {
-              return null; 
-          }
-
-          const retail = parseInt(p.retail_price) || 0;
           const current = parseInt(p.price) || 0;
-          const discount = retail > current ? Math.round(((retail - current) / retail) * 100) : 0;
-
           return {
               id: p.product_no,
               name: p.product_name,
               price: current.toLocaleString(),
-              discount_rate: discount,
-              thumbnail: (() => {
-                  let img = p.list_image || p.detail_image || p.tiny_image;
-                  if (!img) return 'https://dummyimage.com/180x180/eef2f3/555555.png';
-                  if (img.startsWith('//')) img = `https:${img}`;
-                  return img.replace('http://', 'https://');
-              })(),
+              discount_rate: p.discount_rate || 0,
+              thumbnail: p.thumbnail || p.list_image || '',
               fit_score: res.fit_score || "Medium",
               badges: res.badges || [],
               texture_note: res.texture_note || "",
               match_reasons: res.curator_comment || "추천 상품입니다.",
-              caution: (res.caution && res.caution !== "없음" && res.caution !== "빈값") ? res.caution : "",
+              caution: (res.caution && res.caution !== "없음") ? res.caution : "",
               selection_strategy: parsed.summary?.selection_strategy || "",
               conclusion: parsed.summary?.conclusion || ""
           };
       }).filter(Boolean);
 
-      // 2단계: 다양성 및 시퀀스 보정 (동일 라인/유사 SKU 과다 노출 시 절삭)
+      // 마지막 다양성 보정
       const seenNames = new Set();
       finalRecommendations = finalRecommendations.filter(p => {
-          const baseName = p.name.split(' ')[0]; // 앞단어 기준 유사성 판단
+          const baseName = p.name.split(' ')[0];
           if (seenNames.has(baseName)) return false;
           seenNames.add(baseName);
           return true;
       }).slice(0, limit);
-
-      // 3단계: 피부타입별 강제 가이드라인 체크 (건성인데 Laser/Barrier가 1개도 없으면 베스트셀러라도 강제 삽입 로직 등 가능)
 
       return finalRecommendations.length > 0 ? finalRecommendations : this.getPersonalizedFallback(products, args);
 
@@ -127,23 +184,14 @@ export const recommendationService = {
     }
   },
 
-  /**
-   * 🛡️ [Personalized Fallback]
-   * 에러 시에도 사용자의 피부타입별 대표 라인을 반환하여 전문성 유지
-   */
   getPersonalizedFallback(products, args) {
-      console.log(`[Fallback] ⚠️ ${args.skin_type} 기준 개인화된 베스트셀러 매칭`);
-      let filtered = products;
-      if (args.skin_type === '건성') filtered = products.filter(p => p.product_name.includes('레이저') || p.product_name.includes('패리어'));
-      if (args.skin_type === '지성' || args.skin_type === '수부지') filtered = products.filter(p => p.product_name.includes('아쿠아티카'));
-
-      const targets = filtered.length > 0 ? filtered : products;
-      return targets.slice(0, 3).map(p => ({
+      const candidates = this.buildCandidatePool(products, args, 5);
+      return candidates.map(p => ({
           id: p.product_no,
           name: p.product_name,
           price: (parseInt(p.price) || 0).toLocaleString(),
-          match_reasons: `${args.skin_type} 피부에 가장 사랑받는 셀퓨전씨 베스트셀러 제품입니다.`,
-          selection_strategy: `${args.skin_type} 피부 타입을 고려한 가장 안전한 선택지를 제안합니다.`
+          match_reasons: `${args.skin_type} 타입 베스트셀러 상품입니다.`,
+          selection_strategy: `데이터 통신 중 지연이 발생하여 ${args.skin_type} 피부용 상위 제품을 제안합니다.`
       }));
   }
 };

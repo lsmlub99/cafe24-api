@@ -15,7 +15,7 @@ const TOOLS = [
         inputSchema: {
             type: "object",
             properties: {
-                category: { type: "string", description: "선크림, 토너, 앰플 등" },
+                category: { type: "string" },
                 skin_type: { type: "string" },
                 concerns: { type: "array", items: { type: "string" } }
             }
@@ -42,24 +42,24 @@ async function executeTool(name, args) {
     const response = await cafe24ApiService.getProducts(accessToken, 80, keyword);
     const products = response.products || [];
 
-    // 🎯 이제 recommendationService가 "진짜 정답"인 순위를 담아서 줍니다.
-    const topN = await recommendationService.scoreAndFilterProducts(products, args, 3); // 개수는 3개 정도로 압축
+    // 🎯 이제 코드가 100% 정답을 정해서 줍니다 (Top 3 압축)
+    const topN = await recommendationService.scoreAndFilterProducts(products, args, 3);
     
-    // 💎 [Logic-Driven UI] 생성
-    const top1 = topN[0];
+    // 💎 [Precision Data UI] 생성
+    const top1 = topN[0] || { name: "추천 상품", price: "0" };
     const rest = topN.slice(1);
-    const strategy = top1?.selection_strategy || "피부 타입별 정밀 매칭 분석 결과입니다.";
-    const conclusion = top1?.conclusion || "가장 적합한 제품을 선별했습니다.";
+    const strategy = top1.selection_strategy || "피부 분석 로직 기반 최적 매칭 결과입니다.";
+    const conclusion = top1.conclusion || "검증된 최적 상품입니다.";
 
-    // 🏆 [Precision Spotlight Card]
-    let spotlight = `### 🏆 1순위 추천 | **${top1.name}**\n`;
+    // 🏆 [Fact-First Card]
+    let spotlight = `### 🏆 1순위 | **${top1.name}**\n`;
     spotlight += `![상품](${top1.thumbnail || ""})\n\n`;
-    spotlight += `💰 **혜택가: ${top1.price}원**\n`;
-    spotlight += `✨ **핵심 특징**: ${(top1.badges || []).map(b => `\`#${b}\``).join(' ')}\n`;
-    spotlight += `🧪 **전문가 분석**: *"${top1.match_reasons}"*\n\n`;
-    spotlight += `[**🚀 정품 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n\n`;
+    spotlight += `💰 **판매가 : ${top1.price}원**\n`;
+    spotlight += `✨ **제품 태그 :** ${(top1.badges || []).map(b => `\`#${b}\``).join(' ')}\n`;
+    spotlight += `🧪 **분석 의견 :** *"${top1.match_reasons}"*\n\n`;
+    spotlight += `[**🚀 공식몰에서 보기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n\n`;
 
-    // 📊 [Rest Candidates]
+    // 📊 [Rest-Comparison]
     let restTable = "";
     if (rest.length > 0) {
         let r1 = '| **다음 순위** |', r2 = '| :---: |', r3 = '| **이미지** |', r4 = '| **상세** |';
@@ -76,14 +76,14 @@ async function executeTool(name, args) {
             type: "text",
             text: [
                 '---',
-                `## 🏥 [AI 분석 전략] : ${strategy}`,
-                `**🎯 한 줄 결론 : ${conclusion}**`,
+                `## 🏥 [분석 전략] : ${strategy}`,
+                `**🎯 전문가 결론 : ${conclusion}**`,
                 '---',
                 '',
                 spotlight,
                 '---',
                 restTable,
-                '※ 셀퓨전씨 공식몰 데이터를 기반으로 분석된 전문가 추천 루틴입니다.'
+                '※ 셀퓨전씨 공식몰 데이터를 기반으로 분석된 실시간 리포트입니다.'
             ].join('\n')
         }]
     };

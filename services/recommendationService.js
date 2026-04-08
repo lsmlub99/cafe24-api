@@ -6,112 +6,132 @@ const openai = new OpenAI({
 });
 
 /**
- * 👑 [Universal Logic Engine 10.0]
- * 하드코딩 없이 모든 케이스를 동일한 '범용 스코어링 시스템'으로 처리합니다.
+ * 👑 [Clean Meta Engine 11.3]
+ * 상품 데이터와 요약 메타데이터를 분리하여 데이터 구조의 완결성을 확보한 최종 버전입니다.
  */
 export const recommendationService = {
 
-  // 1. 범용 스코어링 엔진 (Logic Only)
-  calculateUniversalScore(p, args) {
-    let score = 0;
-    const { skin_type, concerns, category } = args;
-    const text = (p.product_name + (p.summary_description || '') + (p.ai_tags || []).join('')).toLowerCase();
+  normalizeProduct(p, aiMeta = {}) {
+    let thumb = p.list_image || p.detail_image || p.tiny_image || '';
+    if (thumb.startsWith('//')) thumb = `https:${thumb}`;
+    thumb = thumb.replace('http:', 'https:');
 
-    // A. [카테고리] 가중치 (최우선)
-    if (category && text.includes(category.toLowerCase().slice(0, 2))) {
-      score += 100;
-    }
-
-    // B. [피부 타입 & 고민] 긍정 매칭 (가산점)
-    const positiveKeywords = [skin_type, ...(concerns || [])];
-    positiveKeywords.forEach(k => {
-      if (k && text.includes(k.toLowerCase())) score += 20;
-    });
-
-    // C. [피부 타입별 상충 속성] 감점 로직 (Conflict Map)
-    // 수부지/지성에게 '오일/리치/고영양/밤'은 상충 속성임
-    const conflictMap = {
-      '지성': ['리치', '고영양', '오일', '밤', 'balm', 'creme', 'pdrn', '콜라겐'], // PDRN/콜라겐은 대개 제형이 무거워 지성과 상충
-      '수부지': ['리치', '고영양', '오일', '밤', 'balm', 'pdrn', '콜라겐'],
-      '건성': ['산뜻', '가벼운', '워터리', '젤'] // 건성에게 너무 가벼운 제형은 상충
+    return {
+      id: String(p.product_no || p.id),
+      name: p.product_name || p.name,
+      price: (parseInt(p.price) || 0).toLocaleString(),
+      retail_price: (parseInt(p.retail_price) || 0).toLocaleString(),
+      discount_rate: p.discount_rate || 0,
+      thumbnail: thumb,
+      summary_description: p.summary_description || p.simple_description || '',
+      ai_meta: aiMeta,
+      ai_tags: aiMeta.all_tags || []
     };
-
-    const conflicts = conflictMap[skin_type] || [];
-    conflicts.forEach(c => {
-      if (text.includes(c.toLowerCase())) score -= 50; // 자연스럽게 하위권으로 밀어냄
-    });
-
-    return score;
   },
 
-  async scoreAndFilterProducts(products, args, limit = 3) {
-    if (!products || products.length === 0) return [];
+  calculateScore(p, intent) {
+    let score = 0;
+    const meta = p.ai_meta || {};
+    const breakdown = { category: 0, skin_type: 0, concern: 0, line: 0, texture: 0, conflict: 0 };
 
-    console.log(`[Universal Engine] 🚀 ${args.skin_type} 분석을 위한 범용 스코어링 기동...`);
+    if (intent.category.some(k => (meta.category_tags || []).includes(k))) {
+      score += 100; breakdown.category = +100;
+    }
+    if (intent.skin_types.some(k => (meta.skin_type_tags || []).includes(k))) {
+      score += 40; breakdown.skin_type = +40;
+    }
+    if (intent.preferred_lines.some(k => (meta.line_tags || []).includes(k))) {
+      score += 30; breakdown.line = +30;
+    }
+    const matchedConcerns = (meta.concern_tags || []).filter(k => intent.concerns.includes(k));
+    if (matchedConcerns.length > 0) {
+      const s = matchedConcerns.length * 30;
+      score += s; breakdown.concern = s;
+    }
+    const matchedTextures = (meta.texture_tags || []).filter(k => intent.textures.includes(k));
+    if (matchedTextures.length > 0) {
+      const s = matchedTextures.length * 20;
+      score += s; breakdown.texture = s;
+    }
+    if (intent.avoid_textures.some(k => (meta.texture_tags || []).includes(k))) {
+      score -= 50; breakdown.conflict = -50;
+    }
 
-    // 1. 전 품목 스코어링 및 정렬
-    const ranked = products.map(p => ({
-      ...p,
-      _score: recommendationService.calculateUniversalScore(p, args)
-    })).sort((a, b) => b._score - a._score);
+    return { score, breakdown };
+  },
 
-    // 2. 최종 후보 확정 (순수 로직 결과)
-    const topChoices = ranked.slice(0, limit);
+  normalizeUserIntent(args) {
+    const skinMap = { '수부지': ['수부지', '복합성', '지성'], '지성': ['지성', '수부지'], '건성': ['건성'] };
+    const lineMap = { '건성': ['레이저', '패리어'], '지성': ['아쿠아티카'], '수부지': ['아쿠아티카'], '민감성': ['포스트알파'] };
+    const textureMap = { '지성': ['가벼움', '산뜻함', '워터리'], '수부지': ['가벼움', '산뜻함', '워터리'], '건성': ['리치함', '크림타입'] };
+    const avoidMap = { '지성': ['리치함', '밤타입', '오일타입'], '수부지': ['리치함', '밤타입', '오일타입'], '건성': ['가벼움', '젤타입'] };
 
-    // 3. GPT는 '팩트 기술' 및 '요약'만 담당
-    const gptInput = topChoices.map((p, i) => ({
-      rank: i + 1,
-      name: p.product_name,
+    return {
+      category: args.category_aliases || [args.category], 
+      skin_types: skinMap[args.skin_type] || [args.skin_type],
+      preferred_lines: lineMap[args.skin_type] || [],
+      concerns: args.concerns || [],
+      textures: textureMap[args.skin_type] || [],
+      avoid_textures: avoidMap[args.skin_type] || []
+    };
+  },
+
+  async scoreAndFilterProducts(normalizedProducts, args, limit = 3) {
+    if (!normalizedProducts || normalizedProducts.length === 0) return { recommendations: [], summary: {} };
+
+    const intent = recommendationService.normalizeUserIntent(args);
+
+    const finalRanked = normalizedProducts.map(p => {
+      const { score, breakdown } = recommendationService.calculateScore(p, intent);
+      return { ...p, _score: score, _breakdown: breakdown };
+    }).sort((a, b) => b._score - a._score);
+
+    console.log(`[Engine 11.3] 🎯 Top1: ${finalRanked[0]?.name} (Score: ${finalRanked[0]?._score})`);
+    
+    const topChoices = finalRanked.slice(0, limit);
+
+    const gptInput = topChoices.map(p => ({
+      id: p.id,
+      name: p.name,
       tags: p.ai_tags || [],
-      desc: (p.summary_description || '').slice(0, 150)
+      desc: p.summary_description.slice(0, 150)
     }));
 
     try {
-      const response = await openai.chat.completions.create({
+      const resp = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `너는 "셀퓨전씨 데이터 큐레이터"야. 주해는 금지하고, 주어진 팩트 데이터를 바탕으로 추천 사유를 한글로 작성해.
-            [규칙]
-            - 순위(Rank)를 유지하며 팩트 위주로 작성.
-            - 데이터(tags, desc)에 없는 형용사나 적합성 판단 금지.
-            - 결과 형식은 반드시 JSON으로.
-            
-            [JSON] { "summary": { "strategy":"", "conclusion":"" }, "results": [{ "name", "comment": "" }] }`
-          },
-          {
-            role: "user",
-            content: `[대상] ${JSON.stringify(args)}\n[팩트 데이터]\n${JSON.stringify(gptInput)}`
-          }
-        ],
+        messages: [{
+          role: "system",
+          content: `너는 "데이터 팩트 큐레이터"야. 기결정된 순위를 유지하며 사실 근거 요약만 한국어로 작성해.
+          [JSON] { "summary": { "strategy":"", "conclusion":"" }, "results": [{ "id", "comment": "" }] }`
+        }, {
+          role: "user",
+          content: JSON.stringify(gptInput)
+        }],
         response_format: { type: "json_object" }
       });
 
-      const parsed = JSON.parse(response.choices[0].message.content);
+      const parsed = JSON.parse(resp.choices[0].message.content);
       
-      return topChoices.map((p, idx) => {
-        const aiInfo = (parsed.results || []).find(r => r.name === p.product_name) || {};
+      const recommendations = topChoices.map(p => {
+        const aiInfo = (parsed.results || []).find(r => String(r.id) === String(p.id)) || {};
         return {
-          id: p.product_no,
-          name: p.product_name,
-          price: (parseInt(p.price) || 0).toLocaleString(),
-          thumbnail: p.thumbnail || p.list_image || '',
-          badges: p.ai_tags || ["임상완료"],
-          match_reasons: aiInfo.comment || "데이터 분석에 기반한 상위 매칭 제품입니다.",
-          selection_strategy: parsed.summary?.strategy || "피부 고민 및 속성 분석 리포트입니다.",
-          conclusion: parsed.summary?.conclusion || `오늘의 분석 결과 1순위는 ${topChoices[0].product_name}입니다.`
+          ...p,
+          match_reasons: aiInfo.comment || "데이터 속성 일치도 기반의 추천 품목입니다."
         };
       });
 
+      return {
+        recommendations,
+        summary: {
+          strategy: parsed.summary?.strategy || "데이터 기반 맞춤 솔루션 분석입니다.",
+          conclusion: parsed.summary?.conclusion || `오늘의 분석 결과 1순위는 ${topChoices[0].name}입니다.`
+        }
+      };
+
     } catch (e) {
-      console.error("[Universal Engine GPT Error]", e.message);
-      return topChoices.map(p => ({
-        id: p.product_no,
-        name: p.product_name,
-        price: (parseInt(p.price) || 0).toLocaleString(),
-        match_reasons: "데이터 속성 일치도가 높은 추천 상품입니다."
-      }));
+      console.error("[GPT Unified Fail]", e.message);
+      return { recommendations: topChoices, summary: { strategy: "분석 리포트", conclusion: "추천 상품 리스트" } };
     }
   }
 };

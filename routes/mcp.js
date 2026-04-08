@@ -51,21 +51,21 @@ async function executeTool(name, args) {
     const sanitize = (v) => (v || '').replace(/\r?\n|\r/g, ' ').trim();
 
     // 4. 💎 [User-Centric Hierarchy UI] 생성
-    const top1 = topN[0];
+    const top1 = topN[0] || { name: "추천 상품", price: "0", badges: [], match_reasons: "선별 중입니다." };
     const rest = topN.slice(1);
     const strategy = top1?.selection_strategy || "사용자 맞춤형 분석 결과입니다.";
     const conclusion = top1?.conclusion || "가장 적합한 제품을 선별했습니다.";
 
     // 🏆 [Top 1] Spotlight Card
     let spotlight = `> ### 🏆 1순위 | **${top1.name}**\n`;
-    spotlight += `> ![이미지](${top1.thumbnail})\n`;
-    spotlight += `> 💰 **${top1.price}원** (${top1.discount_rate}%↓)\n`;
+    spotlight += `> ![이미지](${top1.thumbnail || ""})\n`;
+    spotlight += `> 💰 **${top1.price}원** (${top1.discount_rate || 0}%↓)\n`;
     spotlight += `> ✨ **핵심 배지**: ${(top1.badges || []).map(b => `\`#${b}\``).join(' ')}\n`;
     spotlight += `> 💡 **수석 큐레이터 코멘트**: *"${top1.match_reasons}"*\n`;
-    if (top1.caution && top1.caution !== "" && top1.caution !== "없음") spotlight += `> ⚠️ **주의**: ${top1.caution}\n`;
+    if (top1.caution) spotlight += `> ⚠️ **주의**: ${top1.caution}\n`;
     spotlight += `> [**🚀 지금 바로 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n`;
 
-    // 📊 [Rest 2~5] Comparison Table
+    // 📊 [Rest 2~5] Compact Comparison Table
     let r1 = '| **순위** |', r2 = '| :---: |', r3 = '| **이미지** |', r4 = '| **상세** |';
     rest.forEach((p, i) => {
         const medal = ['🥈 2위','🥉 3위','✨ 4위','✨ 5위'][i] || '✨ PICK';

@@ -54,8 +54,14 @@ export const recommendationService = {
         score -= 200; // 엉뚱한 폴백 매칭 시 원천적 배제 유도
     }
 
-    // 속성 매칭 점수 (여기서 변별력이 발생)
-    if (intent.skin_types.some(k => (meta.skin_type_tags || []).includes(k))) score += 40;
+    // 피부타입 검증 (변별력 핵심)
+    const hasSkinMatch = intent.skin_types.some(k => (meta.skin_type_tags || []).includes(k));
+    if (hasSkinMatch) {
+        score += 80; // 내 피부에 딱 맞음
+    } else if ((meta.skin_type_tags || []).length > 0) {
+        // 내 피부가 아닌 다른 피부(정반대 타입) 타겟인 경우 페널티 부여
+        score -= 80;
+    }
     
     const lineTags = meta.line_tags || [];
     if (intent.preferred_lines.has(lineTags[0] || '')) score += 30;
@@ -87,11 +93,14 @@ export const recommendationService = {
        return !isExcluded;
     });
 
-    // 🎯 [Phase 1] 룰베이스 기반 1차 필터링
+    // 🎯 [Phase 1] 룰베이스 기반 1차 정밀 필터링 (가장 중요한 부분)
     const preCandidates = targetPool.map(p => {
-        const { score } = this.calculateScore(p, intent);
+        // [중요] 아직 AI 정밀 태그가 없으므로 상품명/설명 기반 룰베이스 임시 태그를 붙여서 사전 점수를 계산합니다. (장님 정렬 방지)
+        const tempTags = aiTaggingService.extractTagsByRule(p.name, p.summary_description || '');
+        const tempP = this.normalizeProduct(p, tempTags);
+        const { score } = this.calculateScore(tempP, intent);
         return { ...p, _preScore: score };
-    }).sort((a,b) => b._preScore - a._preScore).slice(0, 15); // 정예 후보 선별
+    }).sort((a,b) => b._preScore - a._preScore).slice(0, 15); // 알짜배기 정제 후보 선별
 
     // 🎯 [Phase 2] 정예 후보 AI 정밀 태깅
     const tags = await aiTaggingService.tagProducts(preCandidates);
@@ -115,9 +124,11 @@ export const recommendationService = {
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: `너는 "수석 임상 큐레이터"야. 사실 기반의 짧고 강렬한 코멘트 작성.
-          [가이드] 1. 핵심 포인트(point) 7자 내외. 2. 결론은 "최종 추천은 OOO입니다." 고정.
-          [JSON] { "summary": { "strategy":"", "conclusion":"" }, "results": [{ "id", "point": "", "comment": "" }] }`
+          content: `너는 "수석 임상 큐레이터"야. 주어진 상품들이 고객의 조건에 가장 완벽하게 부합하는 최고의 선택이라고 100% 확신하고 매력적으로 세일즈 포인트를 작성해.
+          [필수 가이드]
+          1. "최적은 아니다", "부족할 수 있다" 같은 부정적/방어적 코멘트 절대 금지. 무조건 고객 조건에 완벽히 부합하는 장점만 강조.
+          2. 결론(conclusion)은 "최종 추천은 OOO입니다."로 고정하되, OOO은 반드시 '상품정보' 리스트의 첫 번째 1위 상품 이름을 정확히 그대로 쓸 것. 없는 이름을 새로 지어내면 절대 안 됨.
+          [JSON] { "summary": { "strategy":"15자 내외", "conclusion":"" }, "results": [{ "id":"", "point": "7자 내외", "comment": "20자 내외" }] }`
         }, {
           role: "user", content: `고객상태: ${JSON.stringify(args)}\n상품정보: ${JSON.stringify(topChoices.map(t => ({id: t.id, name: t.name, tags: t.ai_tags})))}`
         }],

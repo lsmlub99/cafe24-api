@@ -10,11 +10,11 @@ const router = express.Router();
 let clientStream = null;
 
 const CATEGORY_ALIAS_MAP = {
-  '세럼': ['세럼', '앰플', 'serum', 'ampoule'],
-  '앰플': ['앰플', '세럼', 'ampoule', 'serum'],
-  '선크림': ['선크림', '선세럼', '썬', '선', 'sunscreen', 'sun'],
-  '크림': ['크림', 'cream', '밤', 'balm'],
-  '토너': ['토너', '스킨', 'toner', '패드']
+    '세럼': ['세럼', '앰플', 'serum', 'ampoule'],
+    '앰플': ['앰플', '세럼', 'ampoule', 'serum'],
+    '선크림': ['선크림', '선세럼', '썬', '선', 'sunscreen', 'sun'],
+    '크림': ['크림', 'cream', '밤', 'balm'],
+    '토너': ['토너', '스킨', 'toner', '패드']
 };
 
 /**
@@ -23,11 +23,11 @@ const CATEGORY_ALIAS_MAP = {
  * - ❗[필수입력] 쇼핑몰 환경에 맞춰 번호를 수정해주세요.
  */
 const CATEGORY_ID_MAP = {
-  '세럼': [],     // 예시: [22]
-  '앰플': [],     // 예시: [23]
-  '선크림': [],   // 예시: [31]
-  '크림': [],     // 예시: [24]
-  '토너': []      // 예시: [21]
+    '세럼': [],     // 예시: [22]
+    '앰플': [],     // 예시: [23]
+    '선크림': [],   // 예시: [31]
+    '크림': [],     // 예시: [24]
+    '토너': []      // 예시: [21]
 };
 
 const TOOLS = [
@@ -59,17 +59,17 @@ async function executeTool(name, args) {
     const rawCat = args.category || '';
     const aliases = CATEGORY_ALIAS_MAP[rawCat] || [rawCat];
     const categoryNos = CATEGORY_ID_MAP[rawCat] || [];
-    
+
     let rawProducts = [];
 
     // 🎯 [옵션 A 반영] 1. 카테고리 ID가 존재하는 경우 최우선으로 정확도 100% 카테고리 상품만 Fetch
     if (categoryNos.length > 0) {
         console.log(`[Category Sync] '${rawCat}' (ID: ${categoryNos.join(',')}) 매칭 -> 1급 구조 데이터 직접 조회`);
-        
+
         // 다중 ID 병렬 조회 지원
         const fetchPromises = categoryNos.map(cNo => cafe24ApiService.getCategoryProducts(accessToken, cNo, 30));
         const resArray = await Promise.all(fetchPromises);
-        
+
         const seen = new Set();
         resArray.forEach(res => {
             if (res.products) {
@@ -91,13 +91,13 @@ async function executeTool(name, args) {
 
     // 🎯 2. 비즈니스 로직 및 전체 파이프라인 일관화 위임 (라우터 책임 삭제)
     const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
-        rawProducts, 
-        { ...args, category_aliases: aliases }, 
+        rawProducts,
+        { ...args, category_aliases: aliases },
         3
     );
 
     const top1 = recommendations[0];
-    
+
     // [Fix] 상품을 찾지 못한 경우 방어 추가
     if (!top1) {
         return {
@@ -128,7 +128,7 @@ async function executeTool(name, args) {
     if (rest.length > 0) {
         let r1 = '| **제안 순위** |', r2 = '| :---: |', r3 = '| **이미지** |', r4 = '| **상세** |';
         rest.forEach((p, i) => {
-            const medal = ['🥈 2위','🥉 3위'][i] || '✨ PICK';
+            const medal = ['🥈 2위', '🥉 3위'][i] || '✨ PICK';
             const buyUrl = `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`;
             const img = p.thumbnail || "https://cellfusionc.co.kr/web/upload/common/no_img.gif";
             r1 += ` ${medal} |`; r2 += ` :---: |`; r3 += ` [![상품](${img})](${buyUrl}) |`; r4 += ` [**구매**](${buyUrl}) |`;

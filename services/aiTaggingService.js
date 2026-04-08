@@ -27,27 +27,8 @@ export const aiTaggingService = {
   extractTagsByRule(name, desc) {
     const combined = (name + ' ' + desc).toLowerCase().replace(/\s/g, '');
     
-    // 단순 단어 매칭을 넘어서, 유의어 기반으로 피부타입을 똑똑하게 추론
-    const ruleSkinTags = new Set(this.WHITELIST.skin_type_tags.filter(t => combined.includes(t)));
-    
-    // 지성/수부지
-    if (combined.includes('가벼운') || combined.includes('산뜻') || combined.includes('젤') || combined.includes('피지') || combined.includes('번들')) {
-       ruleSkinTags.add('지성');
-       ruleSkinTags.add('수부지');
-    }
-    // 건성
-    if (combined.includes('콜라겐') || combined.includes('영양') || combined.includes('고보습') || combined.includes('리치') || combined.includes('건조') || combined.includes('장벽')) {
-       ruleSkinTags.add('건성');
-    }
-    // 민감성
-    if (combined.includes('진정') || combined.includes('시카') || combined.includes('병풀') || combined.includes('마일드') || combined.includes('순한') || combined.includes('저자극') || combined.includes('레드블레미쉬')) {
-       ruleSkinTags.add('민감성');
-    }
-    // 복합성/수부지 심화
-    if (combined.includes('수분') || combined.includes('속건조') || combined.includes('유수분') || combined.includes('밸런스')) {
-       ruleSkinTags.add('수부지');
-       ruleSkinTags.add('복합성');
-    }
+    // 지피티 피드백 준수: 마케팅 문구(예: 콜라겐=건성, 산뜻=지성)를 억지로 피부타입으로 추론하는 자의적 로직 완전 제거.
+    // 오직 리얼 텍스트 기반 100% 하드-매칭 사전(Dictionary) 알고리즘으로 회귀합니다.
 
     return {
       skin_type_tags: [...ruleSkinTags],
@@ -59,74 +40,26 @@ export const aiTaggingService = {
   },
 
   async tagProducts(products) {
-    // [Fix] 1. 빈 배열 및 잘못된 입력 방어
     if (!products || !Array.isArray(products) || products.length === 0) return [];
 
-    // [Fix] 2. OpenAI 전송 전 ID 체계 통일 (no -> id)
-    const candidates = products.map(p => ({
-      id: String(p.id),
-      name: p.name || '',
-      desc: (p.summary_description || '').slice(0, 80), // 80자만 분석
-      rule_tags: this.extractTagsByRule(p.name || '', p.summary_description || '')
-    }));
-
-    try {
-      console.log(`[AI Tagging 12.1] 🔍 정예 후보 ${candidates.length}개 정밀 분석 중...`);
-      
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `너는 임상 뷰티 데이터 라벨러야. 제공된 상품 정보를 분석해 지정된 화이트리스트 태그만 반환해. 반드시 JSON 포맷으로 응답해야 해.
-            - 유추하지 말고 텍스트 근거가 있을 때만 부여.
-            - 식별자는 반드시 'id'를 사용할 것 (no 대신 id).
-            - 리스트: ${JSON.stringify(this.WHITELIST)}`
-          },
-          { role: "user", content: JSON.stringify(candidates) }
-        ],
-        response_format: { type: "json_object" }
-      });
-
-      // [Fix] 3. 엄격한 JSON 파싱 예외 처리
-      let parsed = [];
-      try {
-        parsed = JSON.parse(response.choices[0].message.content).results || [];
-      } catch (parseErr) {
-        console.warn("[AI Tagging Parsing Error] AI 응답 파싱 실패", parseErr.message);
-      }
-      
-      return candidates.map(c => {
-        // [Fix] 4. 문자열화 된 id 값을 기준으로 단일화 조인
-        const aiMatch = parsed.find(r => String(r.id) === String(c.id)) || {};
-        
-        // 룰베이스 태그와 AI 태그 합집합 처리
+    console.log(`[Tagging Baseline] 🔍 ${products.length}개 상품 룰베이스 하드코드 정밀 필터링...`);
+    
+    // 지피티 피드백 준수: AI 개입을 전면 차단하고 100% 룰베이스 하드코딩으로 회귀합니다. (AI 장애 0%, 환각 0%)
+    return products.map(p => {
+        const rule = this.extractTagsByRule(p.name || '', p.summary_description || '');
         const merged = {
-          id: c.id,
-          category_tags: [...new Set([...c.rule_tags.category_tags, ...(aiMatch.category_tags || [])])],
-          line_tags: [...new Set([...c.rule_tags.line_tags, ...(aiMatch.line_tags || [])])],
-          skin_type_tags: aiMatch.skin_type_tags || [],
-          concern_tags: aiMatch.concern_tags || [],
-          texture_tags: aiMatch.texture_tags || []
+            id: String(p.id),
+            category_tags: rule.category_tags || [],
+            line_tags: rule.line_tags || [],
+            skin_type_tags: rule.skin_type_tags || [],
+            concern_tags: rule.concern_tags || [],
+            texture_tags: rule.texture_tags || []
         };
-
-        // 💡 코드 레벨에서 all_tags 최종 합성 (무결성 보장)
         merged.all_tags = [...new Set([
-          ...merged.category_tags, ...merged.line_tags, 
-          ...merged.skin_type_tags, ...merged.concern_tags, ...merged.texture_tags
+            ...merged.category_tags, ...merged.line_tags, 
+            ...merged.skin_type_tags, ...merged.concern_tags, ...merged.texture_tags
         ])].filter(t => typeof t === 'string' && t.length > 0);
-
         return merged;
-      });
-    } catch (e) {
-      console.warn("[AI Tagging Fail] ⚠️ 장애 발생. 룰베이스 모드로 전환합니다.", e.message);
-      // AI 장애 시 룰베이스 태그라도 반환하여 서비스 유지 (장애 허용성)
-      return candidates.map(c => ({
-        id: c.id,
-        ...c.rule_tags,
-        skin_type_tags: [], concern_tags: [], texture_tags: [],
-        all_tags: [...c.rule_tags.category_tags, ...c.rule_tags.line_tags]
-      }));
-    }
+    });
   }
 };

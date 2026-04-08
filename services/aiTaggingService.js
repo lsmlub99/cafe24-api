@@ -3,8 +3,8 @@ import { config } from '../config/env.js';
 
 const openai = new OpenAI({
   apiKey: config.OPENAI_API_KEY,
-  timeout: 8000,      // 🛑 성능 방어: 8초 이상 지연 시 타임아웃
-  maxRetries: 2,      // 실패 시 자동 재시도
+  timeout: 30000,      // 🛑 100개 분석 시 8초는 부족하므로 30초로 넉넉하게 확장
+  maxRetries: 2,
 });
 
 /**
@@ -25,8 +25,34 @@ export const aiTaggingService = {
    * 🎯 룰베이스 태깅: 상품명/설명에서 화이트리스트 키워드 즉시 추출 (비용 0, 속도 0ms)
    */
   extractTagsByRule(name, desc) {
-    const combined = (name + desc).replace(/\s/g, '');
+    const combined = (name + ' ' + desc).toLowerCase().replace(/\s/g, '');
+    
+    // 단순 단어 매칭을 넘어서, 유의어 기반으로 피부타입을 똑똑하게 추론
+    const ruleSkinTags = new Set(this.WHITELIST.skin_type_tags.filter(t => combined.includes(t)));
+    
+    // 지성/수부지
+    if (combined.includes('가벼운') || combined.includes('산뜻') || combined.includes('젤') || combined.includes('피지') || combined.includes('번들')) {
+       ruleSkinTags.add('지성');
+       ruleSkinTags.add('수부지');
+    }
+    // 건성
+    if (combined.includes('콜라겐') || combined.includes('영양') || combined.includes('고보습') || combined.includes('리치') || combined.includes('건조') || combined.includes('장벽')) {
+       ruleSkinTags.add('건성');
+    }
+    // 민감성
+    if (combined.includes('진정') || combined.includes('시카') || combined.includes('병풀') || combined.includes('마일드') || combined.includes('순한') || combined.includes('저자극') || combined.includes('레드블레미쉬')) {
+       ruleSkinTags.add('민감성');
+    }
+    // 복합성/수부지 심화
+    if (combined.includes('수분') || combined.includes('속건조') || combined.includes('유수분') || combined.includes('밸런스')) {
+       ruleSkinTags.add('수부지');
+       ruleSkinTags.add('복합성');
+    }
+
     return {
+      skin_type_tags: [...ruleSkinTags],
+      concern_tags: this.WHITELIST.concern_tags.filter(t => combined.includes(t)),
+      texture_tags: this.WHITELIST.texture_tags.filter(t => combined.includes(t)),
       category_tags: this.WHITELIST.category_tags.filter(t => combined.includes(t)),
       line_tags: this.WHITELIST.line_tags.filter(t => combined.includes(t))
     };

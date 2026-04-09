@@ -21,7 +21,7 @@ let lastSyncHash = '';
 async function syncAllProducts(accessToken) {
     try {
         console.log(`[Sync] 🔄 전 품목 풀스캔 시작...`);
-        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display,category';
+        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display,categories';
 
         let targetToken = accessToken;
         let allFetched = [];
@@ -112,7 +112,7 @@ function getProductsFromCache(filters = {}) {
     // 1. category_no 기반 필터 (가장 정확)
     if (categoryNos && categoryNos.length > 0) {
         results = results.filter(p => {
-            const productCategories = Array.isArray(p.category) ? p.category.map(c => c.category_no) : [];
+            const productCategories = Array.isArray(p.categories) ? p.categories.map(c => c.category_no) : [];
             return categoryNos.some(cNo => productCategories.includes(cNo));
         });
         console.log(`[Cache Filter] category_no ${categoryNos.join(',')} -> ${results.length}개 매칭`);

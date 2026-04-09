@@ -131,7 +131,7 @@ export const recommendationService = {
 { "summary": { "strategy": "15자 이내", "conclusion": "최종 추천은 OOO입니다." }, "results": [{ "id": "", "point": "7자 이내", "comment": "25자 이내" }] }`
         }, {
           role: 'user',
-          content: `고객: ${JSON.stringify(args)}\n상품: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, keywords: t.keywords })))}`
+          content: `고객: ${JSON.stringify(args)}\n상품: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, keywords: t.keywords, summary_description: t.summary_description, attributes: t.attributes })))}`
         }],
         response_format: { type: 'json_object' }
       });

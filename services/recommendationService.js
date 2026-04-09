@@ -137,36 +137,36 @@ export const recommendationService = {
     }
 
     // ── Phase 4: AI 프리미엄 문구 생성 ──
-    // ── Phase 4: 프리미엄 마크다운 엔진 (초고속/고정 템플릿) ──
+    // ── Phase 4: 프리미엄 마크다운 엔진 (Carousel UI) ──
     const skinType = args.skin_type || '모든 피부';
     
-    // 🎨 [Premium Card Generator]
-    // AI 호출 없이 즉시 생성하여 속도와 디자인 무결성 보장
-    const finalMd = topChoices.map((p, idx) => {
-        const medal = idx === 0 ? '🥇 BEST' : idx === 1 ? '🥈 PICK' : '🥉 CHOICE';
-        const dealBadge = p.name.includes('1+1') ? '🔥 **[1+1 혜택상품]**' : p.name.includes('기획') ? '🎁 **[한정기획]**' : '';
+    // 🎨 [Carousel Card Generator]
+    // 롯데시네마 스타일의 가로형 카드 리스트 생성
+    const carouselItems = topChoices.map((p, idx) => {
+        const medal = idx === 0 ? '🥇 BEST' : idx === 1 ? '🥈 PICK' : '🥉 Choice';
+        const dealBadge = p.name.includes('1+1') ? '🔥 [1+1 혜택]' : p.name.includes('기획') ? '🎁 [한정기획]' : '';
         
         return `
----
-### **${medal} ${idx + 1}위: ${p.name}**
+### **${medal} ${idx + 1}위**
 ![Product](${p.thumbnail})
+
+**${p.name}**
 ${dealBadge ? `> ${dealBadge}` : ''}
 
 💰 **판매가**: \`${p.price}원\`
-✨ **핵심 태그**: ${p.keywords.slice(0, 3).map(k => `#${k}`).join(' ')}
-🧪 **뷰티 전문가 가이드**:
-고객님의 **${skinType}** 타입에 맞춰 엄선된 최적의 솔루션입니다. 
-${p.summary_description || '풍부한 영양과 보습 성분으로 피부 본연의 건강함을 되찾아주는 제품입니다.'}
+🧪 **큐레이션**:
+고객님의 **${skinType}** 피부를 위한 최적의 선택! 
+${p.summary_description || '촉촉하고 산뜻한 제형으로 피부를 편안하게 지켜줍니다.'}
 
-[**🚀 지금 바로 전용 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})
----
-`;
-    }).join('\n');
+[**🚀 지금 바로 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})`;
+    }).join('\n<!-- slide -->\n');
+
+    const finalMd = `\`\`\`carousel\n${carouselItems}\n\`\`\``;
 
     return {
-        custom_markdown: `${finalMd}\n\n*※ 본 큐레이션은 실시간 SKU 분석 및 피부 타입 매칭 엔진에 의해 생성되었습니다.*`,
+        custom_markdown: `${finalMd}\n\n*※ 실시간 SKU 분석 기반 가로형 큐레이션 카드입니다.*`,
         recommendations: topChoices,
-        summary: { conclusion: '전문 분석 엔진을 통한 정밀 추천이 완료되었습니다.' }
+        summary: { conclusion: '전문 분석 엔진을 통한 가로형 카드 제안이 완료되었습니다.' }
     };
   },
 

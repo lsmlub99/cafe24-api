@@ -203,7 +203,6 @@ export const recommendationService = {
     const rawQuery = (args.q || args.query || '').toLowerCase();
     const rawTypes = String(args.skin_type || '').split(/[,\s]+/).filter(Boolean);
     
-    // 🔍 키워드 기반 카테고리 추출 사전
     const categoryKeywords = {
         '선크림': ['선크림', '썬크림', '자외선', '선케어', 'sunscreen', 'sun'],
         '선스틱': ['선스틱', '썬스틱', '스틱', 'stick'],
@@ -215,19 +214,17 @@ export const recommendationService = {
         '비비크림': ['비비', 'bb']
     };
 
-    // 🔍 키워드 기반 고민 추출 사전
     const concernKeywords = {
-        '진정': ['진정', '붉은', '예민', '달래', 'calm'],
-        '보습': ['촉촉', '건조', '당김', '수분', 'moist'],
-        '커버': ['커버', '흉터', '잡티', '가림'],
-        '시원': ['시원', '쿨링', '열감', '화끈'],
-        '모공': ['모공', '피지', '기름', '지성', 'pore']
+        '진정': ['진정', '붉은', '예민', '달래', 'calm', '시카', '병풀'],
+        '보습': ['촉촉', '건조', '당김', '수분', 'moist', '아쿠아'],
+        '커버': ['커버', '흉터', '잡티', '가림', '비비', '톤업'],
+        '시원': ['시원', '쿨링', '열감', '화끈', '얼음'],
+        '모공': ['모공', '피지', '기름', '지성', 'pore', '피지']
     };
 
     let detectedCategories = new Set(args.category_aliases || [args.category].filter(Boolean));
     let detectedConcerns = new Set(args.concerns || []);
 
-    // 질문 전체에서 키워드 탐색
     if (rawQuery) {
         Object.entries(categoryKeywords).forEach(([cat, keys]) => {
             if (keys.some(k => rawQuery.includes(k))) detectedCategories.add(cat);
@@ -237,33 +234,28 @@ export const recommendationService = {
         });
     }
 
-    const lineMap = { '건성': '레이저', '민감성': '포스트알파', '지성': '아쿠아티카', '수부지': '아쿠아티카' };
     const preferredLines = new Set();
     const textures = new Set();
     const avoidTextures = new Set();
 
+    if (detectedConcerns.has('진정')) preferredLines.add('포스트알파');
+    if (detectedConcerns.has('보습')) preferredLines.add('레이저');
+    if (detectedConcerns.has('모공')) preferredLines.add('아쿠아티카');
+    if (detectedConcerns.has('커버')) preferredLines.add('토닝');
+
     rawTypes.forEach(t => {
       const type = t.trim();
-      if (lineMap[type]) preferredLines.add(lineMap[type]);
       if (type === '지성' || type === '수부지') {
           ['가벼움', '산뜻함', '워터리'].forEach(tx => textures.add(tx));
-          ['리치함', '밤타입', '오일타입'].forEach(av => avoidTextures.add(av));
       } else if (type === '건성') {
           textures.add('리치함');
-          avoidTextures.add('가벼움');
       }
     });
-
-    // 카테고리 부정어 사전
-    let categoryExcludes = [];
-    if (Array.from(detectedCategories).some(a => ['크림', 'cream'].includes(a))) {
-      categoryExcludes = ['비비크림', 'bb크림', '선크림', '썬크림', '아이크림', '바디크림', '핸드크림', '넥크림', '톤업크림', '클렌징'];
-    }
 
     return {
       query: rawQuery,
       target_categories: Array.from(detectedCategories),
-      category_excludes: categoryExcludes,
+      category_excludes: [],
       concerns: Array.from(detectedConcerns),
       preferred_lines: preferredLines,
       textures: Array.from(textures),

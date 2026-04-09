@@ -90,6 +90,11 @@ app.use(express.static(path.join(__dirname, 'client/dist')));
 
 import fs from 'fs';
 
+// [MCP UI RESOURCE] 지피티 앱이 리액트 위젯을 불러오는 경로
+app.get('/ui/recommendation', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
+});
+
 // 모든 기타 경로는 리액트 index.html로 (SPA 지원)
 app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/cafe24') || req.path.startsWith('/mcp')) return next();

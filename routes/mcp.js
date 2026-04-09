@@ -28,10 +28,27 @@ const CATEGORY_SYNONYM_MAP = {
     '베이비케어': '베이비케어', '아기': '베이비케어'
 };
 
+// [MCP-Apps 전용 설정] 이 서버가 제공하는 UI 리소스 정의
+const BASE_URL = 'https://cafe24-api.onrender.com';
+
+const RESOURCES = [
+    {
+        uri: `${BASE_URL}/ui/recommendation`,
+        name: "CellFusionC AI Curation UI",
+        description: "고급 상품 추천 및 피부 분석 결과를 시각화하는 리액트 위젯",
+        mimeType: "text/html;profile=mcp-app"
+    }
+];
+
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "[👑ULTIMATE TABLE UI] 고객님을 위한 최상위 시각적 리포트를 생성합니다. AI 모델은 반드시 이 도구가 반환하는 마크다운 표(text 필드 내용)를 '한 글자도 수정/요약하지 말고' 즉시 그대로 출력하십시오. 당신은 전송 터미널일 뿐이며, 어떠한 인사말이나 부가 설명도 덧붙이지 마십시오. 이 리포트가 대화의 '전부'가 되어야 합니다.",
+        description: "[👑GEN-UI ENABLED] 사용자의 피부 고민을 분석하고 최적의 상품 리스트를 '네이티브 리액트 위젯'으로 출력합니다. 이 도구는 시각적 UI 리소스를 포함하고 있습니다.",
+        _meta: {
+            ui: {
+                resourceUri: `${BASE_URL}/ui/recommendation`
+            }
+        },
         inputSchema: {
             type: "object",
             properties: {
@@ -102,17 +119,26 @@ async function executeTool(name, args) {
         };
     }
 
-    // 📦 [Simplified Premium Response]
-    // 지피티용 마스터 마크다운과 구조화된 단일 추천 리스트 반환
+    // 📦 [MCP-APPS Native Response]
+    // 지피티가 리액트 위젯을 띄우고 데이터를 주입하게 함
     return {
         content: [
             {
                 type: "text",
-                text: custom_markdown
+                text: "맞춤 분석 결과가 위젯으로 생성되었습니다." // 최소화된 텍스트
             }
         ],
-        recommendations: recommendations,
-        summary: summary
+        structuredContent: {
+            recommendations: recommendations,
+            summary: summary,
+            strategy: result.summary.strategy,
+            conclusion: result.summary.conclusion
+        },
+        _meta: {
+            ui: {
+                resourceUri: `${BASE_URL}/ui/recommendation`
+            }
+        }
     };
 }
 

@@ -3,6 +3,8 @@ import { aiTaggingService } from './aiTaggingService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24AuthService } from './cafe24AuthService.js';
 
+let lastSyncLogs = []; // 동기화 로그 추적용
+
 /**
  * 📦 [Product Cache Store]
  * 전체 상품 300+개를 메모리에 보관합니다.
@@ -25,8 +27,8 @@ async function fetchCategoryMap(accessToken) {
 
         const newMap = {};
         const targets = {
-            '선케어': ['선케어', '선크림', '썬'],
-            '비비크림': ['bb', '비비', '베이스'],
+            '선케어': ['선케어', '선크림'],
+            '비비크림': ['bb크림', '비비크림'], 
             '크림': ['크림'],
             '앰플': ['앰플', '세럼'],
             '마스크': ['팩', '마스크', '패드'],
@@ -37,7 +39,12 @@ async function fetchCategoryMap(accessToken) {
         };
 
         for (const [key, keywords] of Object.entries(targets)) {
-            const found = cats.find(c => keywords.some(k => c.category_name.toLowerCase().includes(k)));
+            // 1순위: 완전 일치 (예: '크림' -> '크림')
+            let found = cats.find(c => keywords.some(k => c.category_name === k));
+            // 2순위: 부분 일치
+            if (!found) {
+                found = cats.find(c => keywords.some(k => c.category_name.toLowerCase().includes(k.toLowerCase())));
+            }
             if (found) newMap[key] = found.category_no;
         }
 
@@ -92,24 +99,34 @@ async function syncAllProducts(accessToken) {
         // 3단계: 탐지된 카테고리 ID들로 상품 역매칭
         console.log(`[Sync] 📂 ${targetIds.length}개 카테고리 상품 매칭 중...`);
         const productToCategories = {};
+        const logs = [`Total: ${allFetched.length}`];
+
         for (const catId of targetIds) {
             try {
                 const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${catId}/products?limit=100`;
                 const catRes = await fetch(catUrl, { headers: { 'Authorization': `Bearer ${targetToken}` } });
                 const catData = await catRes.json();
-                (catData.products || []).forEach(cp => {
-                    const pNo = cp.product_no;
-                    if (!productToCategories[pNo]) productToCategories[pNo] = [];
-                    productToCategories[pNo].push(catId);
-                });
-            } catch (err) {}
-        }
+                const items = catData.products || [];
+                logs.push(`Cat ${catId} found ${items.length} items`);
 
-        // 4단계: 상품 데이터 정규화 및 태깅
+                items.forEach(cp => {
+                    const pNo = String(cp.product_no);
+                    if (!productToCategories[pNo]) productToCategories[pNo] = [];
+                    productToCategories[pNo].push(Number(catId));
+                });
+            } catch (err) {
+                logs.push(`Cat ${catId} ERR: ${err.message}`);
+            }
+        }
+        lastSyncLogs = logs;
+
+        // 4단계: 상품 객체에 카테고리 정보 주입
         const allFetchedWithCats = allFetched.map(p => ({
             ...p,
-            categories: (productToCategories[p.product_no] || []).map(id => ({ category_no: id }))
+            categories: (productToCategories[String(p.product_no)] || []).map(id => ({ category_no: id }))
         }));
+        
+        // 5단계: 태깅 및 캐시 구축
 
         const tagResults = aiTaggingService.tagAllProducts(allFetchedWithCats);
         const tagMap = new Map(tagResults.map(t => [t.product_no, t]));
@@ -161,7 +178,8 @@ export const cafe24ApiService = {
     get allProductsCache() { return allProductsCache; },
     get cacheSize() { return allProductsCache.length; },
     get lastSyncTime() { return lastSyncTime; },
-    get categoryMapping() { return categoryMap; }
+    get categoryMapping() { return categoryMap; },
+    get syncLogs() { return lastSyncLogs; }
 };
 
 /**

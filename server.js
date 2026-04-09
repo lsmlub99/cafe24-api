@@ -110,6 +110,7 @@ app.get('/debug/cache', async (req, res) => {
         return sunCareId && cNos.includes(sunCareId);
     }).length,
     "categories_필드_존재율": `${cache.filter(p => p.categories !== undefined).length}/${cache.length}`,
+    "sync_report": cafe24ApiService.syncLogs || [],
     "samples": sample
   });
 });

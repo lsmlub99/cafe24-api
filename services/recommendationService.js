@@ -91,6 +91,18 @@ export const recommendationService = {
 
     const intent = this.normalizeUserIntent(args);
 
+    // ── Phase 1.5: 의도 없음 처리 (일상 대화 등) ──
+    if (!intent.has_intent) {
+        return {
+            recommendations: [],
+            summary: {
+                skin_type: 'Unknown',
+                total_count: 0,
+                message: '안녕하세요! 피부 타입(건성, 지성 등)이나 고민, 혹은 찾으시는 카테고리(선크림, 크림 등)를 말씀해 주시면 딱 맞는 제품을 찾아드릴게요. 😊'
+            }
+        };
+    }
+
     // ── Phase 1: 정규화 ──
     const normalized = cachedProducts.map(p => this.normalizeProduct(p));
 
@@ -154,8 +166,28 @@ export const recommendationService = {
         };
     });
 
+    // 🎨 [Master-level Markdown Engine]
+    // 지피티 채팅창에서 '가로형 카드' 느낌을 내기 위한 고밀도 테이블 레이아웃
+    const mdHeader = `### 🧴 **고객님을 위한 맞춤형 피부 분석 리포트**\n\n`;
+    const row1 = `| 🥇 **1위 (BEST)** | 🥈 **2위 (PICK)** | 🥉 **3위 (Choice)** |`;
+    const row2 = `| :---: | :---: | :---: |`;
+    const row3 = `| ![Img](${recommendations[0]?.image}) | ![Img](${recommendations[1]?.image || ''}) | ![Img](${recommendations[2]?.image || ''}) |`;
+    const row4 = `| **${recommendations[0]?.name}** | **${recommendations[1]?.name || '-'}** | **${recommendations[2]?.name || '-'}** |`;
+    const row5 = `| \`${recommendations[0]?.price}원\` | \`${recommendations[1]?.price || '-'}원\` | \`${recommendations[2]?.price || '-'}원\` |`;
+    const row6 = `| [**[구매하기]**](${recommendations[0]?.buy_url}) | ${recommendations[1] ? `[**[구매하기]**](${recommendations[1].buy_url})` : '-'} | ${recommendations[2] ? `[**[구매하기]**](${recommendations[2].buy_url})` : '-'} |`;
+
+    const tableCards = `${row1}\n${row2}\n${row3}\n${row4}\n${row5}\n${row6}`;
+
+    const detailedGuides = recommendations.map((p, idx) => `
+**[${idx + 1}위 전문가 코멘트]**
+> "${p.key_point} 포인트를 가진 제품으로, 고객님의 피부 고민을 즉각적으로 해결해 드릴 수 있는 최적의 선택입니다."
+`).join('\n');
+
+    const finalMd = `${mdHeader}${tableCards}\n\n---\n${detailedGuides}\n\n*※ 실시간 데이터 분석 엔진에 의해 생성된 프리미엄 큐레이션입니다.*`;
+
     return {
         recommendations,
+        custom_markdown: finalMd,
         summary: {
             skin_type: args.skin_type || '모든 피부',
             total_count: topChoices.length,
@@ -168,11 +200,44 @@ export const recommendationService = {
    * 🧠 normalizeUserIntent: 사용자 입력을 룰베이스 검색 조건으로 변환
    */
   normalizeUserIntent(args) {
+    const rawQuery = (args.q || args.query || '').toLowerCase();
     const rawTypes = String(args.skin_type || '').split(/[,\s]+/).filter(Boolean);
-    const lineMap = { '건성': '레이저', '민감성': '포스트알파', '지성': '아쿠아티카', '수부지': '아쿠아티카' };
-    const textureMap = { '지성': ['가벼움', '산뜻함', '워터리', '쿨링'], '수부지': ['가벼움', '산뜻함', '워터리'], '건성': ['리치함'], '민감성': [] };
-    const avoidMap = { '지성': ['리치함', '밤타입', '오일타입'], '수부지': ['리치함', '밤타입', '오일타입'], '건성': ['가벼움'], '민감성': [] };
+    
+    // 🔍 키워드 기반 카테고리 추출 사전
+    const categoryKeywords = {
+        '선크림': ['선크림', '썬크림', '자외선', '선케어', 'sunscreen', 'sun'],
+        '선스틱': ['선스틱', '썬스틱', '스틱', 'stick'],
+        '크림': ['크림', '보습', '수분', 'cream'],
+        '세럼': ['세럼', '에센스', 'serum', '앰플', 'ampoule'],
+        '토너': ['토너', '스킨', 'toner'],
+        '클렌징': ['클렌징', '세안', '폼', 'cleansing'],
+        '마스크팩': ['팩', '마스크', 'mask'],
+        '비비크림': ['비비', 'bb']
+    };
 
+    // 🔍 키워드 기반 고민 추출 사전
+    const concernKeywords = {
+        '진정': ['진정', '붉은', '예민', '달래', 'calm'],
+        '보습': ['촉촉', '건조', '당김', '수분', 'moist'],
+        '커버': ['커버', '흉터', '잡티', '가림'],
+        '시원': ['시원', '쿨링', '열감', '화끈'],
+        '모공': ['모공', '피지', '기름', '지성', 'pore']
+    };
+
+    let detectedCategories = new Set(args.category_aliases || [args.category].filter(Boolean));
+    let detectedConcerns = new Set(args.concerns || []);
+
+    // 질문 전체에서 키워드 탐색
+    if (rawQuery) {
+        Object.entries(categoryKeywords).forEach(([cat, keys]) => {
+            if (keys.some(k => rawQuery.includes(k))) detectedCategories.add(cat);
+        });
+        Object.entries(concernKeywords).forEach(([con, keys]) => {
+            if (keys.some(k => rawQuery.includes(k))) detectedConcerns.add(con);
+        });
+    }
+
+    const lineMap = { '건성': '레이저', '민감성': '포스트알파', '지성': '아쿠아티카', '수부지': '아쿠아티카' };
     const preferredLines = new Set();
     const textures = new Set();
     const avoidTextures = new Set();
@@ -180,27 +245,30 @@ export const recommendationService = {
     rawTypes.forEach(t => {
       const type = t.trim();
       if (lineMap[type]) preferredLines.add(lineMap[type]);
-      (textureMap[type] || []).forEach(tx => textures.add(tx));
-      (avoidMap[type] || []).forEach(av => avoidTextures.add(av));
+      if (type === '지성' || type === '수부지') {
+          ['가벼움', '산뜻함', '워터리'].forEach(tx => textures.add(tx));
+          ['리치함', '밤타입', '오일타입'].forEach(av => avoidTextures.add(av));
+      } else if (type === '건성') {
+          textures.add('리치함');
+          avoidTextures.add('가벼움');
+      }
     });
 
     // 카테고리 부정어 사전
-    const categoryAliases = args.category_aliases || [args.category].filter(Boolean);
     let categoryExcludes = [];
-
-    if (categoryAliases.some(a => ['크림', 'cream'].includes(a))) {
+    if (Array.from(detectedCategories).some(a => ['크림', 'cream'].includes(a))) {
       categoryExcludes = ['비비크림', 'bb크림', '선크림', '썬크림', '아이크림', '바디크림', '핸드크림', '넥크림', '톤업크림', '클렌징'];
-    } else if (categoryAliases.some(a => ['세럼', '앰플'].includes(a))) {
-      categoryExcludes = ['선세럼', '썬세럼', '클렌징'];
     }
 
     return {
-      category: categoryAliases,
+      query: rawQuery,
+      target_categories: Array.from(detectedCategories),
       category_excludes: categoryExcludes,
-      concerns: args.concerns || [],
+      concerns: Array.from(detectedConcerns),
       preferred_lines: preferredLines,
       textures: Array.from(textures),
-      avoid_textures: Array.from(avoidTextures)
+      avoid_textures: Array.from(avoidTextures),
+      has_intent: detectedCategories.size > 0 || detectedConcerns.size > 0 || rawTypes.length > 0
     };
   }
 };

@@ -148,8 +148,13 @@ router.get('/products', async (req, res) => {
   }
 
   try {
-    const data = await cafe24ApiService.getProducts(accessToken, 5);
-    res.json(data);
+    // 실시간 API 대신 초고속 캐시에서 데이터 반환
+    const data = cafe24ApiService.getProductsFromCache({ limit: 5 });
+    res.json({
+        source: "Memory Cache",
+        count: data.length,
+        products: data
+    });
   } catch (err) {
     // 상품 조회 시 401 권한 만료가 확인된다면 자동으로 리프레시를 유도
     if (err.status === 401) {

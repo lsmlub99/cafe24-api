@@ -68,7 +68,15 @@ app.get('/', (req, res) => {
 });
 
 // ── 🔍 임시 진단 엔드포인트 (검증 후 삭제) ──
-app.get('/debug/cache', (req, res) => {
+app.get('/debug/cache', async (req, res) => {
+  // ?force=true 가 붙으면 즉시 전체 싱크 돌림
+  if (req.query.force === 'true') {
+    const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
+    if (accessToken) {
+      await cafe24ApiService.syncAllProducts(accessToken);
+    }
+  }
+  
   const cache = cafe24ApiService.getProductsFromCache({});
   const sample = cache.slice(0, 3).map(p => ({
     product_no: p.product_no,

@@ -143,35 +143,31 @@ export const recommendationService = {
         messages: [{
           role: 'system',
           content: `너는 셀퓨전씨 플래그십 스토어의 수석 뷰티 큐레이터야.
-확정된 상품 리스트를 바탕으로 고객 전용 **프리미엄 큐레이션 보고서**를 작성해.
+확정된 상품 리스트를 바탕으로 고객님께 감동을 줄 **'프리미엄 큐레이션 개별 카드'**들을 작성해.
 
 [⚠️ 절대 규칙]
-- AI인 네가 대화하듯 말하지 말고, 도달한 결과물인 **'마크다운 카드'**만 리턴해.
-- 상세페이지 링크: https://cellfusionc.co.kr/product/detail.html?product_no={id}
-- 이미지: 제공된 {img} 절대 그대로 사용할 것.
+- 절대로 요약하거나 사족을 붙이지 말고, 아래의 마크다운 카드 레이아웃만 리턴할 것.
+- 모든 추천 상품(1~3위)을 각각 거대한 독립 카드로 정성스럽게 그려야 함.
+- 카드 사이는 마크다운 구분선(---)을 사용하여 시각적으로 분리할 것.
 
-[레이아웃 가이드]
-1. 모든 상품(1~3위)을 각각 독립된 **'프리미엄 큐레이션 카드'**로 작성할 것.
-2. 각 카드마다 번호와 랭킹 뱃지(🥇, 🥈, 🥉)를 달고 이미지, 가격, 상세가이드를 충실히 포함할 것.
-3. 카드 사이는 마크다운 구분선(---)을 사용하여 명확히 구분할 것.
-
-[카드 필수 구조 - 상품별 반복]
+[카드 구조 가이드]
 ---
 ### **[순위뱃지] [순위]위: [상품명]**
-![Product](이미지URL)
-> "한 줄 큐레이션"
+![Product](제공된 {img} URL)
+> "이 상품만이 가진 독보적인 솔루션 한 줄 평"
 
 💰 **판매가**: \`가격원\`
-✨ **핵심 태그**: #태그 #태그
-🧪 **큐레이터 가이드**: 추천 사유 (100자 내외)
+✨ **핵심 태그**: #태그 #태그 #태그
+🧪 **큐레이터 가이드**: 이 제품이 왜 고객님께 최적의 선택인지에 대한 전문적인 분석 (150자 이내)
 
-[**🚀 지금 바로 혜택받고 구매하기**](상세페이지URL)
+[**🚀 지금 바로 전용 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=id)
 ---
 `
         }, {
           role: 'user',
-          content: `고객 상황: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map((t, idx) => ({ 
+          content: `고객 고민: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map((t, idx) => ({ 
               rank: idx + 1, 
+              badge: idx === 0 ? '🥇 BEST' : idx === 1 ? '🥈 PICK' : '🥉 CHOICE',
               id: t.id, 
               name: t.name, 
               price: t.price, 
@@ -185,21 +181,30 @@ export const recommendationService = {
       return {
         custom_markdown: resp.choices[0].message.content,
         recommendations: topChoices,
-        summary: { conclusion: `최종 추천은 ${topChoices[0]?.name}입니다.` }
+        summary: { conclusion: `고객님을 위한 ${topChoices.length}건의 고정밀 분석 추천이 완료되었습니다.` }
       };
     } catch (e) {
-      console.warn('[Curation AI Fail] 폴백 문구 사용:', e.message);
+      console.warn('[Curation AI Fail] 폴백 가동:', e.message);
+      
+      // 🎨 [Sincerity Fallback] AI가 실패해도 '성의 있는' 카드 자동 생성
+      const fallbackMd = topChoices.map((p, idx) => `
+---
+### **${idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'} ${idx + 1}순위 추천: ${p.name}**
+![Product](${p.thumbnail})
+> "실시간 피부 분석 엔진이 선정한 최적의 솔루션입니다."
+
+💰 **판매가**: \`${p.price}원\`
+✨ **핵심 태그**: ${p.keywords.slice(0, 3).map(k => `#${k}`).join(' ')}
+🧪 **뷰티 가이드**: 고객님의 피부 타입과 고민에 맞춰 엄선한 제품입니다. 공식몰 전용 혜택을 통해 지금 바로 확인해 보세요!
+
+[**🚀 상세 정보 및 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})
+---
+`).join('\n');
+
       return {
-        recommendations: topChoices.map(p => ({
-          ...p,
-          ai_tags: p.keywords,
-          key_point: '베스트 추천',
-          match_reasons: '고객님의 피부 타입에 맞춘 최적 상품입니다.'
-        })),
-        summary: {
-          strategy: '데이터 기반 분석',
-          conclusion: `최종 추천은 ${topChoices[0]?.name}입니다.`
-        }
+        custom_markdown: fallbackMd,
+        recommendations: topChoices,
+        summary: { conclusion: '전문 분석 엔진을 통한 추천 결과입니다.' }
       };
     }
   },

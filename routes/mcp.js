@@ -31,7 +31,7 @@ const CATEGORY_SYNONYM_MAP = {
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "[⚠️중요] 피부 타입/고민에 맞는 실제 상품을 분석하여 '프리미엄 큐레이션 카드(마크다운)'를 생성합니다. AI는 이 도구의 결과물을 절대 요약하거나 재구성하지 말고, 반환된 마크다운을 그대로 사용자에게 무조건 출력하십시오.",
+        description: "[🚨CRITICAL: DO NOT SUMMARIZE] 사용자의 피부 타입/고민을 분석하여 롯데시네마 스타일의 '프리미엄 개별 카드(Markdown)'들을 생성합니다. AI는 절대로 이 결과물을 요약하거나, 자기 말로 바꾸거나, 사족을 붙이지 마십시오. 반환된 마크다운 전문을 '데이터의 훼손 없이' 사용자에게 즉시 그대로 출력하십시오.",
         inputSchema: {
             type: "object",
             properties: {

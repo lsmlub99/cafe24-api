@@ -7,37 +7,61 @@ function App() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [widgetData, setWidgetData] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const [widgetData, setWidgetData] = useState(null);
-
-  // 🛰️ [MCP Apps Bridge] 지피티로부터 전송된 데이터 수신
+  // 🛰️ [ULTIMATE DATA BRIDGE] 지피티의 모든 데이터 주입 방식을 감지
   useEffect(() => {
+    const applyWidgetData = (payload) => {
+      if (!payload) return;
+
+      // 지피티 버전에 따라 다를 수 있는 구조적 유연성 확보
+      const structured =
+        payload.structuredContent ||
+        payload.output ||
+        payload.data ||
+        payload;
+
+      if (structured && (Array.isArray(structured.recommendations) || structured.items)) {
+        setWidgetData({
+          recommendations: structured.recommendations || structured.items || [],
+          summary: structured.summary || {},
+          strategy: structured.strategy || structured.summary?.strategy || '',
+          conclusion: structured.conclusion || structured.summary?.conclusion || ''
+        });
+      }
+    };
+
     const handleMessage = (event) => {
       const data = event.data;
-      if (data && data.type === 'ui/notifications/tool-result' && data.payload) {
-        const payload = data.payload;
-        if (payload.structuredContent) {
-          setWidgetData(payload.structuredContent);
-        }
+      if (!data) return;
+
+      // 1. 공식 GenUI 알림 감지
+      if (data.type === 'ui/notifications/tool-result' && data.payload) {
+        applyWidgetData(data.payload);
+      } 
+      // 2. 다이렉트 데이터 전송 감지
+      else if (data.structuredContent || data.recommendations || data.items) {
+        applyWidgetData(data);
       }
     };
 
     window.addEventListener('message', handleMessage);
 
-    // [Fallback] 초기 데이터 체크
-    if (window.mcpData) {
-        setWidgetData(window.mcpData.structuredContent);
-    }
-    
+    // 3. 글로벌 변수 3중 체크 (가장 확실한 수단)
+    if (window.mcpData) applyWidgetData(window.mcpData);
+    if (window.__INITIAL_DATA__) applyWidgetData(window.__INITIAL_DATA__);
+    if (window.__MCP_DATA__) applyWidgetData(window.__MCP_DATA__);
+    if (window.openai?.appData) applyWidgetData(window.openai.appData);
+
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
@@ -77,32 +101,56 @@ function App() {
     }
   };
 
-  // 🎨 [Widget Mode] 지피티 내부 위젯으로 로드되었을 때 전용 UI
-  if (widgetData) {
+  // 🎨 [👑WIDGET MODE] 지피티 내부 위젯 확정 렌더링
+  if (widgetData && Array.isArray(widgetData.recommendations) && widgetData.recommendations.length > 0) {
     return (
-      <div className="widget-container" style={{padding: '16px', background: '#fff', borderRadius: '12px'}}>
-         <h3 style={{display:'flex', alignItems:'center', gap: '8px', fontSize: '1.1rem', marginBottom: '16px', color: '#B31312'}}>
-           <Sparkles size={18} fill="#B31312" /> 셀퓨전씨 AI 맞춤 솔루션
-         </h3>
-         <div className="strategy-box" style={{background: '#f9f9f9', padding: '12px', borderRadius: '8px', marginBottom: '16px', borderLeft: '4px solid #B31312', fontSize: '0.9rem'}}>
-           {widgetData.strategy}
-         </div>
-         <div className="product-carousel" style={{display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px'}}>
-           {widgetData.recommendations.map((p, idx) => (
-             <div key={idx} className="product-card" style={{minWidth: '220px', border: '1px solid #eee', borderRadius: '12px', padding: '12px', background: '#fff'}}>
-               <div style={{fontSize: '0.75rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px'}}>{idx === 0 ? '🏆 1위' : `${idx+1}위`}</div>
-               <img src={p.image} alt={p.name} style={{width: '100%', height: '140px', objectFit: 'contain', marginBottom: '12px'}} />
-               <div style={{fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px', height: '2.4em', overflow: 'hidden'}}>{p.name}</div>
-               <div style={{color: '#666', fontSize: '0.85rem', marginBottom: '12px'}}>{p.price}원</div>
-               <a href={p.buy_url} target="_blank" rel="noreferrer" className="buy-button" style={{display: 'block', textAlign: 'center', background: '#B31312', color: '#fff', padding: '8px', borderRadius: '6px', fontSize: '0.85rem', textDecoration: 'none'}}>지금 구매하기</a>
-             </div>
-           ))}
-         </div>
-         <div className="conclusion-box" style={{marginTop: '16px', fontSize: '0.85rem', color: '#444', fontStyle: 'italic'}}>
-           {widgetData.conclusion}
-         </div>
+      <div className="widget-container" style={{ padding: '16px', background: '#fff', borderRadius: '12px', fontFamily: 'inherit' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '16px', color: '#B31312' }}>
+          <Sparkles size={18} fill="#B31312" /> 셀퓨전씨 AI 맞춤 솔루션
+        </h3>
+
+        {!!widgetData.strategy && (
+          <div style={{ background: '#f9f9f9', padding: '12px', borderRadius: '8px', marginBottom: '16px', borderLeft: '4px solid #B31312', fontSize: '0.9rem', lineHeight: '1.5' }}>
+            {widgetData.strategy}
+          </div>
+        )}
+
+        <div className="product-carousel" style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
+          {widgetData.recommendations.map((p, idx) => (
+            <div key={p.id || idx} className="product-card" style={{ minWidth: '220px', border: '1px solid #eee', borderRadius: '12px', padding: '12px', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>
+                {idx === 0 ? '🏆 1위(BEST)' : `${idx + 1}위`}
+              </div>
+              <img
+                src={p.image}
+                alt={p.name}
+                style={{ width: '100%', height: '140px', objectFit: 'contain', marginBottom: '12px' }}
+              />
+              <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px', minHeight: '2.4em', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical' }}>
+                {p.name}
+              </div>
+              <div style={{ color: '#666', fontSize: '0.85rem', marginBottom: '12px' }}>
+                {p.price}원
+              </div>
+              <a
+                href={p.buy_url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'block', textAlign: 'center', background: '#B31312', color: '#fff', padding: '10px', borderRadius: '8px', fontSize: '0.85rem', textDecoration: 'none', fontWeight: 'bold' }}
+              >
+                지금 구매하기
+              </a>
+            </div>
+          ))}
+        </div>
+
+        {!!widgetData.conclusion && (
+          <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#444', fontStyle: 'italic', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+            {widgetData.conclusion}
+          </div>
+        )}
       </div>
-    )
+    );
   }
 
   return (

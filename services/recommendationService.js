@@ -169,10 +169,21 @@ export const recommendationService = {
 
     const detailGuides = recommendations.map(p => `> **[${p.rank}]** ${p.key_point}`).join('\n');
 
+    // [ISSUE 해결] 위젯 렌더링에 필수적인 strategy, conclusion 데이터 생성 복구
+    const strategy = intent.target_categories.length > 0 
+        ? `${intent.target_categories.join(', ')} 카테고리 내에서 고객님의 피부 고민에 가장 부합하는 제품군을 선별하였습니다.`
+        : `고객님의 피부 타입 분석을 통해 자극은 최소화하고 효과는 극대화할 수 있는 베스트셀러 라인업을 구성하였습니다.`;
+
+    const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 고객님께 가장 필요한 최적의 솔루션으로 판단됩니다.`;
+
     return {
         recommendations,
         custom_markdown: `### 🧴 **맞춤 분석 솔루션**\n${finalMdContent}\n${detailGuides}\n\n---`,
-        summary: { message: '' } // AI 사족 방지
+        summary: { 
+            message: '고객님을 위한 최적 상품입니다.',
+            strategy: strategy,
+            conclusion: conclusion
+        }
     };
   },
 

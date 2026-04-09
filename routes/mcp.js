@@ -30,26 +30,26 @@ const CATEGORY_SYNONYM_MAP = {
     '베이비케어': '베이비케어', '아기': '베이비케어'
 };
 
-// [MCP-Apps 전용 설정] 이 서버가 제공하는 UI 리소스 정의
+// [MCP-Apps 핵심 설정] 지피티 네이티브 위젯용 URI 및 리소스
 const BASE_URL = 'https://cafe24-api.onrender.com';
+const WIDGET_URI = "ui://widget/recommendation.html";
 
 const RESOURCES = [
     {
-        uri: `${BASE_URL}/ui/recommendation`,
+        uri: WIDGET_URI,
         name: "CellFusionC AI Curation UI",
         description: "고급 상품 추천 및 피부 분석 결과를 시각화하는 리액트 위젯",
-        mimeType: "text/html;profile=mcp-app"
+        mimeType: "text/html"
     }
 ];
 
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "[👑GEN-UI ENABLED] 사용자의 피부 고민을 분석하고 최적의 상품 리스트를 '네이티브 리액트 위젯'으로 출력합니다. 이 도구는 시각적 UI 리소스를 포함하고 있습니다.",
+        description: "[👑GEN-UI ENABLED] 사용자의 피부 고민을 분석하고 최적의 상품 리스트를 '네이티브 리액트 위젯'으로 출력합니다.",
         _meta: {
-            ui: {
-                resourceUri: `${BASE_URL}/ui/recommendation`
-            }
+            "openai/outputTemplate": WIDGET_URI,
+            ui: { resourceUri: WIDGET_URI } // 하이브리드 지원
         },
         inputSchema: {
             type: "object",
@@ -121,25 +121,24 @@ async function executeTool(name, args) {
         };
     }
 
-    // 📦 [MCP-APPS Native Response]
-    // 지피티가 리액트 위젯을 띄우고 데이터를 주입하게 함
+    // 📦 [OpenAI Apps Native Response]
+    // 지피티가 리액트 위젯(outputTemplate)을 띄우고 데이터를 주입함
     return {
         content: [
             {
                 type: "text",
-                text: "맞춤 분석 결과가 위젯으로 생성되었습니다." // 최소화된 텍스트
+                text: "추천 결과를 보여드릴게요. (위젯 리포트 생성 중)"
             }
         ],
         structuredContent: {
             recommendations: recommendations,
             summary: summary,
-            strategy: result.summary.strategy,
-            conclusion: result.summary.conclusion
+            strategy: summary?.strategy || "",
+            conclusion: summary?.conclusion || ""
         },
         _meta: {
-            ui: {
-                resourceUri: `${BASE_URL}/ui/recommendation`
-            }
+            "openai/outputTemplate": WIDGET_URI,
+            ui: { resourceUri: WIDGET_URI }
         }
     };
 }
@@ -174,23 +173,22 @@ router.post('/message', async (req, res) => {
             sendToClient({ jsonrpc: "2.0", id, result: { resources: RESOURCES } });
         } else if (method === "resources/read") {
             const { uri } = params;
-            const resource = RESOURCES.find(r => r.uri === uri);
-            if (resource) {
-                sendToClient({
-                    jsonrpc: "2.0",
-                    id,
-                    result: {
-                        contents: [{
-                            uri: resource.uri,
-                            mimeType: resource.mimeType,
-                            text: (()=>{
-                                const indexPath = path.join(process.cwd(), 'client/dist/index.html');
-                                let h = fs.readFileSync(indexPath, 'utf8');
-                                return h.replace(/src="\//g, `src="${BASE_URL}/`).replace(/href="\//g, `href="${BASE_URL}/`);
-                            })()
-                        }]
-                    }
-                });
+            if (uri === WIDGET_URI) {
+                try {
+                    const indexPath = path.join(process.cwd(), 'client/dist/index.html');
+                    let html = fs.readFileSync(indexPath, 'utf8');
+                    // 상대 경로를 절대 경로로 치환 (지피티 내부 렌더링용)
+                    html = html.replace(/src="\//g, `src="${BASE_URL}/`).replace(/href="\//g, `href="${BASE_URL}/`);
+                    sendToClient({
+                        jsonrpc: "2.0", id,
+                        result: {
+                            contents: [{ uri: WIDGET_URI, mimeType: "text/html", text: html }]
+                        }
+                    });
+                } catch (err) {
+                    console.error('[Resource Read Error]', err);
+                    sendToClient({ jsonrpc: "2.0", id, error: { message: "리소스 로딩 실패" } });
+                }
             }
         } else if (method === "tools/list") {
             sendToClient({ jsonrpc: "2.0", id, result: { tools: TOOLS } });

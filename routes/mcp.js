@@ -3,37 +3,52 @@ import { config } from '../config/env.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { recommendationService } from '../services/recommendationService.js';
-// 💡 [Fix] aiTaggingService 제거: 라우터에서 서비스 관여 금지
 
 const router = express.Router();
 
 let clientStream = null;
 
-const CATEGORY_ALIAS_MAP = {
-    '세럼': ['세럼', '앰플', 'serum', 'ampoule'],
-    '앰플': ['앰플', '세럼', 'ampoule', 'serum'],
-    '선크림': ['선크림', '선세럼', '썬', '선', 'sunscreen', 'sun'],
-    '크림': ['크림', 'cream', '밤', 'balm'],
-    '토너': ['토너', '스킨', 'toner', '패드']
+// ══════════════════════════════════════════════════════════════
+//  📌 카테고리 고유번호 매핑 (실제 Cafe24 관리자 기준 확정값)
+//  - 이 번호로 캐시에서 category_no 기반 구조적 필터링을 수행합니다.
+//  - 텍스트 검색에 의존하지 않으므로 오분류가 원천 차단됩니다.
+// ══════════════════════════════════════════════════════════════
+const CATEGORY_ID_MAP = {
+    '선크림':   [29],   // 선케어
+    '선케어':   [29],
+    'bb크림':   [159],  // BB크림/베이스
+    '비비크림': [159],
+    '크림':     [49],   // 크림
+    '세럼':     [58],   // 앰플/세럼
+    '앰플':     [58],
+    '마스크팩': [59],   // 마스크팩/패드
+    '패드':     [59],
+    '클렌징':   [30],   // 클렌징
+    '토너':     [31],   // 토너
+    '세트':     [60],   // 세트
+    '이너뷰티': [145],  // 이너뷰티
+    '베이비케어': [174] // 베이비케어
 };
 
-/**
- * 👑 [옵션 A 체계] Cafe24 관리자의 100% 무결한 카테고리 고유 번호(category_no) 매핑
- * - 이름에 속지 않고 구조적으로 정확한 품목만 가져옵니다. (ex: 선크림/비비크림과 수분크림 강제 분리)
- * - ❗[필수입력] 쇼핑몰 환경에 맞춰 번호를 수정해주세요.
- */
-const CATEGORY_ID_MAP = {
-    '세럼': [],
-    '앰플': [],
-    '선크림': [],
-    '크림': [],
-    '토너': []
+// 동의어 매핑 (지시서 2️⃣: 동의어는 룰로 처리)
+const CATEGORY_SYNONYM_MAP = {
+    '선크림': '선크림', '썬크림': '선크림', '자외선차단': '선크림', '선세럼': '선크림', 'sunscreen': '선크림', 'sun': '선크림',
+    '크림': '크림', 'cream': '크림', '보습크림': '크림', '수분크림': '크림',
+    '세럼': '세럼', '에센스': '세럼', 'serum': '세럼',
+    '앰플': '앰플', 'ampoule': '앰플',
+    '토너': '토너', '스킨': '토너', 'toner': '토너',
+    '클렌징': '클렌징', '세안': '클렌징',
+    '마스크팩': '마스크팩', '팩': '마스크팩', '패드': '패드',
+    '비비크림': '비비크림', 'bb크림': '비비크림', 'bb': '비비크림',
+    '세트': '세트', '기획세트': '세트',
+    '이너뷰티': '이너뷰티',
+    '베이비케어': '베이비케어', '아기': '베이비케어'
 };
 
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "피부 타입, 고민, 카테고리에 맞는 셀퓨전씨 실제 상품을 실시간 분석 및 추천합니다.",
+        description: "피부 타입, 고민, 카테고리에 맞는 셀퓨전씨 실제 상품을 분석 및 추천합니다.",
         inputSchema: {
             type: "object",
             properties: {
@@ -52,62 +67,56 @@ const sendToClient = (msg) => {
     }
 };
 
+/**
+ * 🎯 executeTool: 추천 파이프라인 실행
+ * 
+ * 흐름 (지시서 5️⃣ 준수):
+ *   1. 사용자 입력에서 카테고리 동의어 → 표준 카테고리명 변환
+ *   2. 표준 카테고리명 → category_no 매핑
+ *   3. 캐시에서 category_no 기반 즉시 필터링 (실시간 API 호출 없음)
+ *   4. recommendationService로 룰베이스 점수 계산 + AI 문구 생성
+ *   5. 결과 반환
+ */
 async function executeTool(name, args) {
-    console.log(`[Tool Exec] 🛠️ ${name} 기동 (UX Impact Mode)...`);
-    let accessToken = await tokenStore.getAccessToken(config.MALL_ID);
+    console.log(`[Tool Exec] 🛠️ ${name} 기동...`);
 
-    const rawCat = args.category || '';
-    const aliases = CATEGORY_ALIAS_MAP[rawCat] || [rawCat];
-    const categoryNos = CATEGORY_ID_MAP[rawCat] || [];
+    // ── Step 1: 카테고리 동의어 → 표준명 변환 ──
+    const rawCat = (args.category || '').toLowerCase().trim();
+    const standardCat = CATEGORY_SYNONYM_MAP[rawCat] || rawCat;
+    const categoryNos = CATEGORY_ID_MAP[standardCat] || [];
 
+    console.log(`[Category] 입력: '${rawCat}' → 표준: '${standardCat}' → ID: [${categoryNos.join(',')}]`);
+
+    // ── Step 2: 캐시에서 즉시 필터링 (실시간 API 호출 절대 없음) ──
     let rawProducts = [];
 
-    // 🎯 [옵션 A 반영] 1. 카테고리 ID가 존재하는 경우 최우선으로 정확도 100% 카테고리 상품만 Fetch
     if (categoryNos.length > 0) {
-        console.log(`[Category Sync] '${rawCat}' (ID: ${categoryNos.join(',')}) 매칭 -> 1급 구조 데이터 직접 조회`);
-
-        // 다중 ID 병렬 조회 지원
-        const fetchPromises = categoryNos.map(cNo => cafe24ApiService.getCategoryProducts(accessToken, cNo, 30));
-        const resArray = await Promise.all(fetchPromises);
-
-        const seen = new Set();
-        resArray.forEach(res => {
-            if (res.products) {
-                res.products.forEach(p => {
-                    if (!seen.has(p.product_no)) {
-                        seen.add(p.product_no);
-                        rawProducts.push(p);
-                    }
-                });
-            }
-        });
+        // category_no 기반 구조적 필터링 (가장 정확)
+        rawProducts = cafe24ApiService.getProductsFromCache({ categoryNos });
+        console.log(`[Cache Hit] category_no ${categoryNos.join(',')} → ${rawProducts.length}개 매칭`);
     } else {
-        // ID 매핑이 누락된 경우 기존의 이름 기반 부분 일치 검색으로 폴백 (옵션 B 대비용)
-        console.warn(`[Category Fallback] '${rawCat}'에 할당된 ID가 없어 텍스트 기반으로 검색합니다.`);
-        const searchKeyword = aliases[0];
-        const response = await cafe24ApiService.getProducts(accessToken, 80, searchKeyword);
-        rawProducts = response.products || [];
+        // 매핑되지 않은 카테고리는 키워드 폴백
+        rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
+        console.log(`[Cache Fallback] 키워드 '${rawCat}' → ${rawProducts.length}개 매칭`);
     }
 
-    // 🎯 2. 비즈니스 로직 및 전체 파이프라인 일관화 위임 (라우터 책임 삭제)
+    // ── Step 3: 룰베이스 점수 + AI 문구 → 최종 결과 ──
+    const categoryAliases = [standardCat];
     const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
         rawProducts,
-        { ...args, category_aliases: aliases },
+        { ...args, category_aliases: categoryAliases },
         3
     );
 
-    // [Fast Verification Log] 빠른 검증용 텔레메트리
-    console.log(`[Fast Verification] rawProducts 개수: ${rawProducts.length}`);
-    console.log(`[Fast Verification] Top 3 상품명: ${recommendations.map(p => p.name).join(', ')}`);
-    console.log(`[Fast Verification] 반환된 shape 검사: recommendations=${!!recommendations}, summary=${!!summary}`);
+    // [Fast Verification Log]
+    console.log(`[Verification] rawProducts: ${rawProducts.length}, Top3: ${recommendations.map(p => p.name).join(' | ')}`);
+    console.log(`[Verification] shape: recommendations=${!!recommendations}, summary=${!!summary}`);
     if (recommendations.length > 0) {
-        console.log(`[Fast Verification] top1.key_point 존재: ${!!recommendations[0].key_point}`);
-        console.log(`[Fast Verification] top1.ai_tags 존재: ${!!recommendations[0].ai_tags}`);
+        console.log(`[Verification] top1.key_point=${!!recommendations[0].key_point}, top1.ai_tags=${!!recommendations[0].ai_tags}`);
     }
 
     const top1 = recommendations[0];
 
-    // [Fix] 상품을 찾지 못한 경우 방어 추가
     if (!top1) {
         return {
             content: [{ type: "text", text: "해당 조건에 맞는 상품을 찾을 수 없습니다." }]
@@ -116,11 +125,11 @@ async function executeTool(name, args) {
 
     const rest = recommendations.slice(1);
 
-    // 🎨 [Premium Card UI] 응답 렌더링 유지
+    // 🎨 Premium Card UI 렌더링
     const header = [
         '---',
-        `💡 **이런 피부에 맞아요** : ${summary.strategy || "고객님의 피부 고민을 해결할 최적의 솔루션입니다."}`,
-        `🏆 **그래서 이걸 추천합니다** : ${summary.conclusion || "검증된 베스트 아이템을 선별했습니다."}`,
+        `💡 **이런 피부에 맞아요** : ${summary.strategy || "고객님의 피부 고민 해결 솔루션"}`,
+        `🏆 **그래서 이걸 추천합니다** : ${summary.conclusion || "검증된 베스트 아이템"}`,
         '---'
     ].join('\n');
 
@@ -168,7 +177,7 @@ router.post('/message', async (req, res) => {
     res.status(202).send('Accepted');
     try {
         if (method === "initialize") {
-            sendToClient({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "cafe24-mcp", version: "1.0.0" } } });
+            sendToClient({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "cafe24-mcp", version: "2.0.0" } } });
         } else if (method === "tools/list") {
             sendToClient({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
         } else if (method === "tools/call") {

@@ -4,133 +4,135 @@ import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24AuthService } from './cafe24AuthService.js';
 
 /**
- * 📦 [Indestructible Module Memory] 
- * 객체 내부가 아닌 파일 레벨에 변수를 두어 'this' 참조 에러를 완벽하게 차단합니다.
+ * 📦 [Product Cache Store]
+ * 전체 상품 300+개를 메모리에 보관합니다.
+ * 실시간 외부 API 호출 없이 캐시에서 즉시 응답합니다. (지시서 2️⃣ 준수)
  */
-let allProductsSync = [];
+let allProductsCache = [];
 let lastSyncTime = 0;
 let lastSyncHash = '';
 
 /**
- * [Sync] 백그라운드 싱크 (자동 토큰 갱신 포함)
+ * 🔄 [Sync] 전체 상품 풀스캔 + 페이징 + 룰베이스 태깅
+ * Cafe24 API를 offset 기반으로 100개씩 페이징하여 전 품목을 수집합니다.
+ * 수집 후 aiTaggingService.tagAllProducts()로 룰베이스 태그를 일괄 부여합니다.
+ * 10~15분마다 호출되어 신상품/변경사항을 반영합니다.
  */
 async function syncAllProducts(accessToken) {
     try {
-        console.log(`[Sync] 🔄 동기화 가동...`);
-        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
-        const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=100&display=T&selling=T&fields=${fields}`;
-        
+        console.log(`[Sync] 🔄 전 품목 풀스캔 시작...`);
+        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display,category';
+
         let targetToken = accessToken;
-        let res = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${targetToken}`, 'Content-Type': 'application/json' }
-        });
+        let allFetched = [];
+        let offset = 0;
+        const pageSize = 100;
 
-        // [401 자동 복구]
-        if (res.status === 401) {
-            console.log(`[Sync] 🔑 토큰 만료 감지 -> 즉시 갱신 시도`);
-            const tokens = await tokenStore.getTokens(config.MALL_ID);
-            const refreshData = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
-            await tokenStore.saveTokens(config.MALL_ID, refreshData.access_token, refreshData.refresh_token, refreshData.expires_at);
-            targetToken = refreshData.access_token;
-            res = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}`, 'Content-Type': 'application/json' } });
-        }
-
-        const data = await res.json();
-        if (data.products && data.products.length > 0) {
-            const currentHash = JSON.stringify(data.products.map(p => p.product_no + p.product_name + p.price));
-            if (currentHash === lastSyncHash) {
-                console.log(`[Sync Skip ✅]`);
-                return { products: allProductsSync };
-            }
-
-            const aiTagsResults = await aiTaggingService.tagProducts(data.products);
-            const enhancedProducts = data.products.map(p => {
-                const foundTags = aiTagsResults.find(r => r.no === p.product_no);
-                return { ...p, ai_tags: foundTags ? foundTags.tags : [] };
+        // 페이징 루프: 100개씩 끊어서 전부 가져옴
+        while (true) {
+            const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${pageSize}&offset=${offset}&display=T&selling=T&fields=${fields}`;
+            let res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${targetToken}`, 'Content-Type': 'application/json' }
             });
 
-            allProductsSync = enhancedProducts;
-            lastSyncHash = currentHash;
-            lastSyncTime = Date.now();
-            console.log(`[Sync SUCCESS 🚀]`);
+            // 401 토큰 만료 자동 갱신
+            if (res.status === 401) {
+                console.log(`[Sync] 🔑 토큰 만료 -> 갱신`);
+                const tokens = await tokenStore.getTokens(config.MALL_ID);
+                const refreshData = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
+                await tokenStore.saveTokens(config.MALL_ID, refreshData.access_token, refreshData.refresh_token, refreshData.expires_at);
+                targetToken = refreshData.access_token;
+                res = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}`, 'Content-Type': 'application/json' } });
+            }
+
+            const data = await res.json();
+            const page = data.products || [];
+            if (page.length === 0) break;
+
+            allFetched.push(...page);
+            if (page.length < pageSize) break;
+            offset += pageSize;
         }
-        return data;
+
+        console.log(`[Sync] 📦 총 ${allFetched.length}개 상품 수집 완료`);
+
+        if (allFetched.length === 0) {
+            console.warn(`[Sync] ⚠️ 상품 0개 수집됨. 기존 캐시 유지.`);
+            return { products: allProductsCache };
+        }
+
+        // 변동 없으면 스킵
+        const currentHash = JSON.stringify(allFetched.map(p => p.product_no + p.product_name + p.price));
+        if (currentHash === lastSyncHash) {
+            console.log(`[Sync Skip ✅] ${allFetched.length}개 상품 변동 없음`);
+            return { products: allProductsCache };
+        }
+
+        // 룰베이스 태그 일괄 부여 (AI 미사용, 0ms)
+        const tagResults = aiTaggingService.tagAllProducts(allFetched);
+        const tagMap = new Map(tagResults.map(t => [t.product_no, t]));
+
+        // 최종 캐시 데이터 구축
+        allProductsCache = allFetched.map(p => {
+            const tags = tagMap.get(p.product_no) || {};
+            return {
+                ...p,
+                // 지시서 1️⃣ 필수 필드
+                product_id: p.product_no,
+                keywords: tags.all_tags || [],
+                attributes: {
+                    category_tags: tags.category_tags || [],
+                    line_tags: tags.line_tags || [],
+                    concern_tags: tags.concern_tags || [],
+                    texture_tags: tags.texture_tags || []
+                }
+            };
+        });
+
+        lastSyncHash = currentHash;
+        lastSyncTime = Date.now();
+        console.log(`[Sync SUCCESS 🚀] 전 품목 ${allProductsCache.length}개 캐싱 + 태깅 완료!`);
+        return { products: allProductsCache };
     } catch (e) {
         console.error(`[Sync Error]:`, e.message);
-        return { products: allProductsSync || [] }; 
+        return { products: allProductsCache || [] };
     }
 }
 
 /**
- * [Main] 상품 조회 (어떤 상황에서도 0개를 반환하지 않음)
+ * 🔍 [getProductsFromCache] 캐시에서 즉시 상품 검색
+ * 
+ * ❌ 실시간 외부 API 호출 금지 (지시서 2️⃣ 준수)
+ * ✅ 캐시 데이터에서 category_no 기반 또는 키워드 기반으로 즉시 반환
  */
-async function getProducts(accessToken, limit = 80, keyword = '') {
-    try {
-        const syncData = allProductsSync;
-        if (syncData && syncData.length > 0) {
-            console.log(`[Cache Hit 🔥]`);
-            if (!keyword) return { products: syncData.slice(0, limit) };
-            const lowerKeyword = keyword.toLowerCase();
-            const filtered = syncData.filter(p => 
-                p.product_name.toLowerCase().includes(lowerKeyword) || 
-                (p.ai_tags && p.ai_tags.some(t => t.toLowerCase().includes(lowerKeyword)))
-            );
-            if (filtered.length > 0) return { products: filtered };
-        }
+function getProductsFromCache(filters = {}) {
+    const { categoryNos, keyword, limit } = filters;
+    let results = [...allProductsCache];
 
-        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
-        let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&fields=${fields}`;
-        if (keyword) url += `&product_name=${encodeURIComponent(keyword)}`;
-
-        let targetToken = accessToken;
-        let response = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}` } });
-
-        if (response.status === 401) {
-            console.log(`[Re-Auth] 🔑 실시간 호출 중 토큰 갱신...`);
-            const tokens = await tokenStore.getTokens(config.MALL_ID);
-            const r = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
-            await tokenStore.saveTokens(config.MALL_ID, r.access_token, r.refresh_token, r.expires_at);
-            targetToken = r.access_token;
-            response = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}` } });
-        }
-
-        const data = await response.json();
-        if (!data.products || data.products.length === 0) {
-            const fallbackUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&fields=${fields}`;
-            const fRes = await fetch(fallbackUrl, { headers: { 'Authorization': `Bearer ${targetToken}` } });
-            return await fRes.json();
-        }
-        return data;
-    } catch (err) {
-        console.error(`[Fatal API Error]`, err.message);
-        return { products: allProductsSync || [] };
+    // 1. category_no 기반 필터 (가장 정확)
+    if (categoryNos && categoryNos.length > 0) {
+        results = results.filter(p => {
+            const productCategories = Array.isArray(p.category) ? p.category.map(c => c.category_no) : [];
+            return categoryNos.some(cNo => productCategories.includes(cNo));
+        });
+        console.log(`[Cache Filter] category_no ${categoryNos.join(',')} -> ${results.length}개 매칭`);
     }
-}
 
-async function getCategoryProducts(accessToken, categoryNo, limit = 20) {
-    try {
-        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
-        // 카테고리 ID가 속한 상품 리스트를 정확한 fields 포맷으로 조회 (옵션 A 지원 핵심)
-        let url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?limit=${limit}&display=T&selling=T&category=${categoryNo}&fields=${fields}`;
-        
-        let targetToken = accessToken;
-        let response = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}` } });
-
-        // 401 만료 자동 갱신
-        if (response.status === 401) {
-            console.log(`[Re-Auth] 🔑 getCategoryProducts 중 토큰 갱신...`);
-            const tokens = await tokenStore.getTokens(config.MALL_ID);
-            const r = await cafe24AuthService.refreshAccessToken(tokens.refreshToken);
-            await tokenStore.saveTokens(config.MALL_ID, r.access_token, r.refresh_token, r.expires_at);
-            targetToken = r.access_token;
-            response = await fetch(url, { headers: { 'Authorization': `Bearer ${targetToken}` } });
-        }
-        
-        return await response.json();
-    } catch (err) {
-        console.error(`[Fatal API Error] getCategoryProducts:`, err.message);
-        return { products: [] };
+    // 2. 키워드 기반 보조 필터 (category_no가 없을 때 폴백)
+    if (keyword) {
+        const lower = keyword.toLowerCase();
+        results = results.filter(p =>
+            (p.product_name || '').toLowerCase().includes(lower) ||
+            (p.keywords || []).some(t => t.toLowerCase().includes(lower))
+        );
+        console.log(`[Cache Filter] 키워드 '${keyword}' -> ${results.length}개 매칭`);
     }
+
+    if (limit && limit > 0) {
+        results = results.slice(0, limit);
+    }
+
+    return results;
 }
 
 /**
@@ -138,7 +140,8 @@ async function getCategoryProducts(accessToken, categoryNo, limit = 20) {
  */
 export const cafe24ApiService = {
     syncAllProducts,
-    getProducts,
-    getCategoryProducts,
-    get allProductsSync() { return allProductsSync; } // 외부 참조용 getter
+    getProductsFromCache,
+    get allProductsCache() { return allProductsCache; },
+    get cacheSize() { return allProductsCache.length; },
+    get lastSyncTime() { return lastSyncTime; }
 };

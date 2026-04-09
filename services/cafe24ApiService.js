@@ -14,14 +14,16 @@ let lastSyncHash = '';
 
 /**
  * 🔄 [Sync] 전체 상품 풀스캔 + 페이징 + 룰베이스 태깅
- * Cafe24 API를 offset 기반으로 100개씩 페이징하여 전 품목을 수집합니다.
- * 수집 후 aiTaggingService.tagAllProducts()로 룰베이스 태그를 일괄 부여합니다.
- * 10~15분마다 호출되어 신상품/변경사항을 반영합니다.
+ * 
+ * [변경사항] Cafe24 Admin API의 /products는 categories 필드를 주지 않으므로,
+ * /categories/{id}/products를 순회하여 product_no -> [category_no] 역맵을 만듭니다.
  */
+const TARGET_CATEGORY_IDS = [29, 159, 49, 58, 59, 30, 31, 60, 145, 174];
+
 async function syncAllProducts(accessToken) {
     try {
         console.log(`[Sync] 🔄 전 품목 풀스캔 시작...`);
-        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display,categories';
+        const fields = 'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,product_tag,sold_out,selling,display';
 
         let targetToken = accessToken;
         let allFetched = [];
@@ -68,12 +70,41 @@ async function syncAllProducts(accessToken) {
             return { products: allProductsCache };
         }
 
+        // ── 🆕 Step 1.5: 카테고리 역맵 구축 ──
+        console.log(`[Sync] 📂 카테고리별 상품 목록 수집 중...`);
+        const productToCategories = {}; // { product_no: [category_no, ...] }
+
+        for (const catId of TARGET_CATEGORY_IDS) {
+            try {
+                const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${catId}/products`;
+                const catRes = await fetch(catUrl, {
+                    headers: { 'Authorization': `Bearer ${targetToken}`, 'Content-Type': 'application/json' }
+                });
+                const catData = await catRes.json();
+                const productsInCat = catData.products || [];
+                
+                productsInCat.forEach(cp => {
+                    const pNo = cp.product_no;
+                    if (!productToCategories[pNo]) productToCategories[pNo] = [];
+                    productToCategories[pNo].push(catId);
+                });
+            } catch (catErr) {
+                console.warn(`[Sync Warning] 카테고리 ${catId} 수집 실패:`, catErr.message);
+            }
+        }
+
+        // 각 상품 객체에 categories 정보 주입
+        const allFetchedWithCats = allFetched.map(p => ({
+            ...p,
+            categories: (productToCategories[p.product_no] || []).map(id => ({ category_no: id }))
+        }));
+
         // 룰베이스 태그 일괄 부여 (AI 미사용, 0ms)
-        const tagResults = aiTaggingService.tagAllProducts(allFetched);
+        const tagResults = aiTaggingService.tagAllProducts(allFetchedWithCats);
         const tagMap = new Map(tagResults.map(t => [t.product_no, t]));
 
         // 최종 캐시 데이터 구축
-        allProductsCache = allFetched.map(p => {
+        allProductsCache = allFetchedWithCats.map(p => {
             const tags = tagMap.get(p.product_no) || {};
             return {
                 ...p,

@@ -25,15 +25,30 @@ const WHITELIST = {
  * ❌ 금지: 마케팅 문구로 피부타입을 추론하지 않음 (예: 콜라겐=건성 같은 자의적 판단 없음)
  * ✅ 허용: 텍스트에 "지성", "건성" 등이 실제로 적혀있을 때만 태그 부여
  */
-function extractTagsByRule(name, desc) {
+function extractTagsByRule(name, desc, categoryNos = []) {
   const combined = (name + ' ' + desc).toLowerCase();
 
-  return {
+  const tags = {
     category_tags: WHITELIST.category_tags.filter(t => combined.includes(t)),
     line_tags: WHITELIST.line_tags.filter(t => combined.includes(t)),
     concern_tags: WHITELIST.concern_tags.filter(t => combined.includes(t)),
     texture_tags: WHITELIST.texture_tags.filter(t => combined.includes(t))
   };
+
+  // ⚠️ [보수적 보정] 선세럼 오탐 방지 (지시서 3️⃣ 반영)
+  // '선세럼' 단어가 단순히 설명에 있다고 다 붙이지 않음.
+  // 카테고리가 29(선케어)이거나, 이름에 '선' 혹은 '선세럼'이 직접 포함된 경우에만 최종 태그 유지.
+  if (tags.category_tags.includes('선세럼')) {
+    const isCategorySun = categoryNos.includes(29);
+    const isNameSun = name.toLowerCase().includes('선세럼') || name.toLowerCase().includes('선크림') || name.toLowerCase().includes('sun');
+    
+    if (!isCategorySun && !isNameSun) {
+      // 강한 근거가 없으면 '선세럼' 태그 제거
+      tags.category_tags = tags.category_tags.filter(t => t !== '선세럼');
+    }
+  }
+
+  return tags;
 }
 
 /**
@@ -48,7 +63,8 @@ function tagAllProducts(products) {
   return products.map(p => {
     const name = p.product_name || '';
     const desc = p.summary_description || p.simple_description || '';
-    const tags = extractTagsByRule(name, desc);
+    const categoryNos = Array.isArray(p.categories) ? p.categories.map(c => c.category_no) : [];
+    const tags = extractTagsByRule(name, desc, categoryNos);
 
     return {
       product_no: p.product_no,

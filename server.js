@@ -102,20 +102,15 @@ app.get('/debug/cache', async (req, res) => {
   );
 
   res.json({
-    총_캐시_수: cache.length,
-    샘플_3개_raw: sample,
-    category_no_29_매칭수: cat29.length,
-    category_no_29_상품명: cat29.map(p => p.product_name),
-    선세럼_키워드_매칭수: sunSerum.length,
-    선세럼_매칭_상품: sunSerum.map(p => ({
-      product_no: p.product_no,
-      product_name: p.product_name,
-      keywords: p.keywords,
-      categories: p.categories,
-    })),
-    // 전체 상품에서 categories 필드 존재 비율
-    categories_필드_존재율: `${cache.filter(p => p.categories !== undefined).length}/${cache.length}`,
-    category_필드_존재율: `${cache.filter(p => p.category !== undefined).length}/${cache.length}`,
+    "총_캐시_수": cache.length,
+    "detect_mapping": cafe24ApiService.categoryMapping || {}, 
+    "category_sun_매칭수": cache.filter(p => {
+        const cNos = Array.isArray(p.categories) ? p.categories.map(c => c.category_no) : [];
+        const sunCareId = (cafe24ApiService.categoryMapping || {})['선케어'];
+        return sunCareId && cNos.includes(sunCareId);
+    }).length,
+    "categories_필드_존재율": `${cache.filter(p => p.categories !== undefined).length}/${cache.length}`,
+    "samples": sample
   });
 });
 

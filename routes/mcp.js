@@ -88,15 +88,17 @@ async function executeTool(name, args) {
 
     // ── Step 3: 룰베이스 점수 + 데이터 엔진 → 최종 결과 ──
     const categoryAliases = [standardCat];
-    const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
+    const result = await recommendationService.scoreAndFilterProducts(
         rawProducts,
         { ...args, category_aliases: categoryAliases },
         3
     );
 
+    const { recommendations, summary, custom_markdown } = result;
+
     if (!recommendations || recommendations.length === 0) {
         return {
-            content: [{ type: "text", text: "해당 조건에 맞는 상품을 찾을 수 없습니다." }]
+            content: [{ type: "text", text: summary?.message || "해당 조건에 맞는 상품을 찾을 수 없습니다." }]
         };
     }
 
@@ -106,7 +108,7 @@ async function executeTool(name, args) {
         content: [
             {
                 type: "text",
-                text: serviceResult.custom_markdown
+                text: custom_markdown
             }
         ],
         recommendations: recommendations,

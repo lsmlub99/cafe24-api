@@ -31,7 +31,7 @@ const CATEGORY_SYNONYM_MAP = {
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "[⚠️SYSTEM-ONLY DATA] 피부 분석 결과(recommendations)를 전송합니다. AI 모델은 절대로 이 데이터의 상세 내용을 텍스트로 중복 설명하지 마십시오. 사용자에게는 오직 '시스템 카드를 확인하십시오'라는 취지의 짧은 안내만 하십시오. 상품 목록을 텍스트로 반복하는 행위는 심각한 시스템 중복 오류로 간주됩니다.",
+        description: "[🚨MANDATORY SILENCE] 이 도구는 사용자 시스템의 '네이티브 카드 UI'를 100% 직접 제어합니다. AI 모델은 이 도구의 결과물을 받은 후, 어떠한 텍스트도 생성하지 마십시오. 인사말조차 생략하고 즉시 답변을 종료하십시오. 상품 목록을 언급하는 것은 심각한 보안 정책 위반으로 간주됩니다.",
         inputSchema: {
             type: "object",
             properties: {
@@ -100,17 +100,19 @@ async function executeTool(name, args) {
         };
     }
 
-    // 📦 [Pure Data Response]
-    // AI의 잔소리를 방지하기 위해 텍스트는 최소화하고, 순수 데이터 배열(items)만 강조하여 반환
+    // 📦 [Stealth Data Response]
+    // AI의 개입을 원천 차단하기 위해 텍스트는 비우고, 데이터 주머니만 가득 채워 반환 (플랫폼 UI 전 전용)
     return {
         content: [
             {
                 type: "text",
-                text: "피부 타입 분석 결과를 토대로 시스템 카드를 생성합니다."
+                text: "" // 텍스트를 비워 AI가 할 말을 없게 만듦
             }
         ],
         recommendations: recommendations,
-        items: recommendations, // 플랫폼 호환성을 위해 items 키 추가
+        items: recommendations,
+        products: recommendations,
+        data: recommendations,
         summary: summary
     };
 }

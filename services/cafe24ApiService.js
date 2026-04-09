@@ -103,10 +103,12 @@ async function syncAllProducts(accessToken) {
 
         for (const catId of targetIds) {
             try {
-                const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${catId}/products?limit=100`;
+                const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?category=${catId}&limit=100&fields=product_no`;
                 const catRes = await fetch(catUrl, { headers: { 'Authorization': `Bearer ${targetToken}` } });
                 const catData = await catRes.json();
                 const items = catData.products || [];
+                
+                if (logs.length === 1) logs.push(`Sample (Cat ${catId}): ${JSON.stringify(items.slice(0,1))}`);
                 logs.push(`Cat ${catId} found ${items.length} items`);
 
                 items.forEach(cp => {

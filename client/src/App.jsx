@@ -102,7 +102,9 @@ function App() {
   };
 
   // 🎨 [👑WIDGET MODE] 지피티 내부 위젯 확정 렌더링
-  if (widgetData && Array.isArray(widgetData.recommendations) && widgetData.recommendations.length > 0) {
+  const isWidgetMode = window.__WIDGET_MODE__ || !!widgetData;
+
+  if (isWidgetMode && widgetData && Array.isArray(widgetData.recommendations) && widgetData.recommendations.length > 0) {
     return (
       <div className="widget-container" style={{ padding: '16px', background: '#fff', borderRadius: '12px', fontFamily: 'inherit' }}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '16px', color: '#B31312' }}>
@@ -151,6 +153,16 @@ function App() {
         )}
       </div>
     );
+  }
+
+  // 위젯 모드인데 데이터가 아직 없는 경우
+  if (isWidgetMode && !widgetData) {
+      return (
+          <div style={{padding: '20px', textAlign: 'center', color: '#666'}}>
+              <Sparkles size={24} style={{marginBottom: '10px', opacity: 0.5}} />
+              <div>맞춤 솔루션을 분석 중입니다...</div>
+          </div>
+      );
   }
 
   return (

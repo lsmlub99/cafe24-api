@@ -157,29 +157,22 @@ export const recommendationService = {
         };
     });
 
-    const finalMd = recommendations.map(p => `
-${p.rank_label}
-* **제품명**: ${p.name}
-* **가격**: ${p.price}원
-* **특징**: ${p.key_point}
-* **[지금 구매하기](${p.buy_url})**
-`).join('\n---\n');
+    // ── Phase 4: [ULTIMATE MASTER TABLE] ──
+    const finalMdContent = `
+| 👑 **1위(BEST)** | **2위** | **3위** |
+| :---: | :---: | :---: |
+| ![Img](${recommendations[0].image}) | ![Img](${recommendations[1]?.image || ''}) | ![Img](${recommendations[2]?.image || ''}) |
+| **${recommendations[0].name}** | **${recommendations[1]?.name || '-'}** | **${recommendations[2]?.name || '-'}** |
+| \`${recommendations[0].price}원\` | \`${recommendations[1]?.price || '-'}원\` | \`${recommendations[2]?.price || '-'}원\` |
+| [**구매하기**](${recommendations[0].buy_url}) | ${recommendations[1] ? `[**구매하기**](${recommendations[1].buy_url})` : '-'} | ${recommendations[2] ? `[**구매하기**](${recommendations[2].buy_url})` : '-'} |
+`;
 
-    // [ISSUE 1 해결] Summary 구조 보강 (Strategy / Conclusion 분리)
-    const strategy = intent.target_categories.length > 0 
-        ? `${intent.target_categories.join(', ')} 카테고리 내에서 고객님의 피부 고민에 가장 부합하는 고성능 제품군을 선별하였습니다.`
-        : `고객님의 피부 타입 분석을 통해 자극은 최소화하고 효과는 극대화할 수 있는 베스트셀러 라인업을 구성하였습니다.`;
-
-    const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 고객님께 가장 필요한 최적의 솔루션으로 판단됩니다.`;
+    const detailGuides = recommendations.map(p => `> **[${p.rank}]** ${p.key_point}`).join('\n');
 
     return {
         recommendations,
-        custom_markdown: `### 🧴 **AI 맞춤 추천 결과**\n\n**[분석 전략]**\n${strategy}\n\n---\n${finalMd}\n\n**[최종 제언]**\n${conclusion}`,
-        summary: { 
-            message: '고객님을 위한 최적 상품입니다.',
-            strategy: strategy,
-            conclusion: conclusion
-        }
+        custom_markdown: `### 🧴 **맞춤 분석 솔루션**\n${finalMdContent}\n${detailGuides}\n\n---`,
+        summary: { message: '' } // AI 사족 방지
     };
   },
 

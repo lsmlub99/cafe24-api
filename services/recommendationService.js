@@ -101,60 +101,85 @@ export const recommendationService = {
     }).filter(p => p._score > 0)
       .sort((a, b) => b._score - a._score);
 
-    // ── Phase 3: 상위 N개 확정 (AI는 이 리스트를 절대 변경할 수 없음) ──
-    const topChoices = scored.slice(0, limit);
+    // ── Phase 3: 중복 제거 및 상위 N개 확정 (지시서 5️⃣: 중복 상품 개선) ──
+    const seenNames = new Set();
+    const finalFiltered = [];
 
-    // [Fast Verification Log]
-    console.log(`[Recommendation] 후보 ${cachedProducts.length}개 → 유효 ${scored.length}개 → Top ${topChoices.length}개`);
-    console.log(`[Recommendation] Top3: ${topChoices.map(p => p.name).join(' | ')}`);
+    // [중복 처리] '[1+1]', '[기획]' 등을 제외한 순수 이름으로 비교하여 더 좋은 조건만 남김
+    const sortedForDeals = scored.sort((a, b) => {
+        const aHasDeal = a.name.includes('1+1') || a.name.includes('기획') || a.name.includes('세트');
+        const bHasDeal = b.name.includes('1+1') || b.name.includes('기획') || b.name.includes('세트');
+        if (aHasDeal && !bHasDeal) return -1;
+        if (!aHasDeal && bHasDeal) return 1;
+        return b._score - a._score;
+    });
 
-    if (topChoices.length === 0) {
-      return {
-        recommendations: [],
-        summary: { strategy: '조건에 맞는 상품을 찾지 못했습니다.', conclusion: '' }
-      };
+    for (const p of sortedForDeals) {
+        const baseName = p.name.replace(/\[.*?\]/g, '').trim();
+        if (!seenNames.has(baseName)) {
+            seenNames.add(baseName);
+            finalFiltered.push(p);
+        }
+        if (finalFiltered.length >= limit) break;
     }
 
-    // ── Phase 4: AI 설명/추천 문구 생성 (지시서 3️⃣ 허용 영역) ──
-    // AI는 상품을 추가/제거/재정렬할 수 없음. 오직 문구만 생성.
+    const topChoices = finalFiltered;
+
+    // [Fast Verification Log]
+    console.log(`[Recommendation] 후보 ${scored.length}개 → 중복제거 후 ${topChoices.length}개`);
+
+    if (topChoices.length === 0) {
+        return {
+            recommendations: [],
+            custom_markdown: "해당 조건의 상품이 없습니다.",
+            summary: { conclusion: '검색 결과가 없습니다.' }
+        };
+    }
+
+    // ── Phase 4: AI 프리미엄 문구 생성 ──
     try {
       const resp = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [{
           role: 'system',
           content: `너는 셀퓨전씨 플래그십 스토어의 수석 뷰티 큐레이터야.
-확정된 상품 리스트를 바탕으로, 프리미엄 큐레이션 카드를 마크다운으로 작성해.
+확정된 상품 리스트를 바탕으로 고객 전용 **프리미엄 큐레이션 보고서**를 작성해.
 
-[⚠️ 중요: URL 생성 규칙]
-1. 상세페이지 링크: 반드시 https://cellfusionc.co.kr/product/detail.html?product_no={id} 형식을 사용할 것.
-2. 이미지 링크: 제공된 {img} 값을 그대로 이미지 마크다운에 넣을 것. 절대 example.com 같은 가짜 주소를 쓰지 마.
+[⚠️ 절대 규칙]
+- AI인 네가 대화하듯 말하지 말고, 도달한 결과물인 **'마크다운 카드'**만 리턴해.
+- 상세페이지 링크: https://cellfusionc.co.kr/product/detail.html?product_no={id}
+- 이미지: 제공된 {img} 절대 그대로 사용할 것.
 
-[응답 가이드]
-1. 시각적으로 풍성한 카드 UI 느낌이 나도록 작성.
-2. 🏆 메인 추천(1위)에 모든 정보(이미지, 가격, 뱃지, 설명)를 집중.
-3. 📋 2, 3위는 하단 비교 테이블로 정리. 테이블에도 실제 {img}와 상세링크를 적용해.
+[레이아웃 가이드]
+1. 모든 상품(1~3위)을 각각 독립된 **'프리미엄 큐레이션 카드'**로 작성할 것.
+2. 각 카드마다 번호와 랭킹 뱃지(🥇, 🥈, 🥉)를 달고 이미지, 가격, 상세가이드를 충실히 포함할 것.
+3. 카드 사이는 마크다운 구분선(---)을 사용하여 명확히 구분할 것.
 
-[필수 구조]
+[카드 필수 구조 - 상품별 반복]
 ---
-## 🏆 **[OO 피부 맞춤 추천] 상품명**
-![Product](실제이미지URL)
-> "큐레이터의 한 줄 평"
-### 🛍️ **핵심 정보**
-- 💰 **판매가**: \`가격원\`
-- ✨ **Key Tags**: #태그 #태그
-🧪 **Special Guide**: 전문적인 추천 사유 (150자 이내)
-[**🚀 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=상품번호)
----
-### 📋 **함께 비교하면 좋은 다른 선택지**
-순위 | 상품명 | 이미지 | 상세보기
---- | --- | --- | ---
-2위 | 이름 | ![Img](주소) | [구매](링크)
-...
+### **${'🥇' if idx===0 else '🥈' if idx===1 else '🥉'} ${rank}위: 상품명**
+![Product](이미지URL)
+> "짧고 강렬한 한 줄 큐레이션"
+
+💰 **판매가**: \`가격원\`
+✨ **핵심 태그**: #태그 #태그 #태그
+🧪 **큐레이터 가이드**: 전문적이고 상세한 추천 사유 (100자 내외)
+
+[**🚀 지금 바로 혜택받고 구매하기**](상세페이지URL)
+
 ---
 `
         }, {
           role: 'user',
-          content: `고객 상황: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, price: t.price, img: t.thumbnail, keywords: t.keywords, desc: t.summary_description })))}`
+          content: `고객 상황: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map((t, idx) => ({ 
+              rank: idx + 1, 
+              id: t.id, 
+              name: t.name, 
+              price: t.price, 
+              img: t.thumbnail, 
+              keywords: t.keywords, 
+              desc: t.summary_description 
+          })))}`
         }]
       });
 

@@ -94,6 +94,13 @@ async function executeTool(name, args) {
         // category_no 기반 구조적 필터링 (가장 정확)
         rawProducts = cafe24ApiService.getProductsFromCache({ categoryNos });
         console.log(`[Cache Hit] category_no ${categoryNos.join(',')} → ${rawProducts.length}개 매칭`);
+
+        // 카테고리 필터 0건 시 키워드 폴백 (안전망)
+        if (rawProducts.length === 0) {
+            console.warn(`[Fallback] category_no ${categoryNos.join(',')} → 0건. 키워드 '${rawCat}' 폴백 검색`);
+            rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
+            console.log(`[Fallback Result] 키워드 '${rawCat}' → ${rawProducts.length}개 매칭`);
+        }
     } else {
         // 매핑되지 않은 카테고리는 키워드 폴백
         rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });

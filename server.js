@@ -61,9 +61,54 @@ app.get('/', (req, res) => {
       <li><a href="/cafe24/products">3. 상품 리스트 조회 테스트 (Memory Sync)</a></li>
       <li><a href="/cafe24/refresh">4. 만료된 토큰을 리프레시하고 DB에 재기록</a></li>
       <li><a href="/mcp">5. MCP (Model Context Protocol) 통신 인터페이스 대기중</a></li>
+      <li><a href="/debug/cache">6. 🔍 캐시 진단 (임시)</a></li>
     </ul>
     <p style="color:green; font-weight:bold;">* 초고속 로컬 캐싱 시스템이 가동 중입니다. 응답 속도가 0.1초 이내로 단축됩니다.</p>
   `);
+});
+
+// ── 🔍 임시 진단 엔드포인트 (검증 후 삭제) ──
+app.get('/debug/cache', (req, res) => {
+  const cache = cafe24ApiService.getProductsFromCache({});
+  const sample = cache.slice(0, 3).map(p => ({
+    product_no: p.product_no,
+    product_name: p.product_name,
+    // 핵심: categories 필드가 실제로 존재하는지, 어떤 형태인지
+    categories: p.categories,
+    category: p.category,
+    // 태그 데이터
+    keywords: p.keywords,
+    attributes: p.attributes,
+  }));
+
+  // category_no 29 테스트
+  const cat29 = cache.filter(p => {
+    const cats = Array.isArray(p.categories) ? p.categories.map(c => c.category_no) : [];
+    return cats.includes(29);
+  });
+
+  // 선세럼 키워드 매칭 테스트
+  const sunSerum = cache.filter(p =>
+    (p.product_name || '').includes('선세럼') ||
+    (p.keywords || []).some(t => t.includes('선세럼'))
+  );
+
+  res.json({
+    총_캐시_수: cache.length,
+    샘플_3개_raw: sample,
+    category_no_29_매칭수: cat29.length,
+    category_no_29_상품명: cat29.map(p => p.product_name),
+    선세럼_키워드_매칭수: sunSerum.length,
+    선세럼_매칭_상품: sunSerum.map(p => ({
+      product_no: p.product_no,
+      product_name: p.product_name,
+      keywords: p.keywords,
+      categories: p.categories,
+    })),
+    // 전체 상품에서 categories 필드 존재 비율
+    categories_필드_존재율: `${cache.filter(p => p.categories !== undefined).length}/${cache.length}`,
+    category_필드_존재율: `${cache.filter(p => p.category !== undefined).length}/${cache.length}`,
+  });
 });
 
 app.use((err, req, res, next) => {

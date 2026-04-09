@@ -165,8 +165,13 @@ function getDynamicCategoryNos(keywords = []) {
     const results = [];
     const lowerKeys = keywords.map(k => k.toLowerCase());
     
-    for (const [name, id] of Object.entries(categoryMap)) {
-        if (lowerKeys.some(k => name.toLowerCase().includes(k) || k.includes(name.toLowerCase()))) {
+    for (const [mapName, id] of Object.entries(categoryMap)) {
+        // 검색 키워드(standardCat)가 맵 이름에 포함되거나 그 반대인 경우 매칭
+        if (lowerKeys.some(k => 
+            mapName.toLowerCase().includes(k) || 
+            k.includes(mapName.toLowerCase()) ||
+            (k === '선크림' && mapName === '선케어') // 특수 매칭 보정
+        )) {
             results.push(id);
         }
     }
@@ -192,25 +197,26 @@ export const cafe24ApiService = {
  */
 function getProductsFromCache(filters = {}) {
     const { categoryNos, keyword, limit } = filters;
-    let results = [...allProductsCache];
+    
+    // 🔥 [필수] 진열 중이고 판매 중인 '살아있는' 상품만 필터링
+    let results = allProductsCache.filter(p => p.display === 'T' && p.selling === 'T');
 
-    // 1. category_no 기반 필터 (가장 정확)
     if (categoryNos && categoryNos.length > 0) {
         results = results.filter(p => {
-            const productCategories = Array.isArray(p.categories) ? p.categories.map(c => c.category_no) : [];
-            return categoryNos.some(cNo => productCategories.includes(cNo));
+            // p.categories는 [{ category_no: 93 }] 형태
+            const productCategories = Array.isArray(p.categories) ? p.categories.map(c => Number(c.category_no)) : [];
+            return categoryNos.some(cNo => productCategories.includes(Number(cNo)));
         });
-        console.log(`[Cache Filter] category_no ${categoryNos.join(',')} -> ${results.length}개 매칭`);
+        console.log(`[Cache Filter] Active Products ${results.length} matched for cats: ${categoryNos}`);
     }
 
-    // 2. 키워드 기반 보조 필터 (category_no가 없을 때 폴백)
     if (keyword) {
         const lower = keyword.toLowerCase();
         results = results.filter(p =>
             (p.product_name || '').toLowerCase().includes(lower) ||
             (p.keywords || []).some(t => t.toLowerCase().includes(lower))
         );
-        console.log(`[Cache Filter] 키워드 '${keyword}' -> ${results.length}개 매칭`);
+        console.log(`[Cache Filter] Active Products ${results.length} matched for keyword: ${keyword}`);
     }
 
     if (limit && limit > 0) {

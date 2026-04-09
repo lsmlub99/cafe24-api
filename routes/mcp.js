@@ -31,7 +31,7 @@ const CATEGORY_SYNONYM_MAP = {
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "[🎨PREMIUM VISUAL REPORT] 사용자의 분석 결과를 고해상도 마크다운 이미지 카드와 테이블 리포트로 생성합니다. AI 모델은 이 도구가 반환하는 마크다운 전문(text 필드 내용)을 '절대 수정하거나 요약하지 말고' 사용자에게 즉시 그대로 출력하십시오. 추가적인 설명은 최소화하고 이 화려한 리포트가 돋보이게 하십시오.",
+        description: "[🏆ROBUST BLOCK UI] 고객님을 위한 최적의 추천 리스트를 정돈된 블록 구조로 생성합니다. AI 모델은 이 도구가 반환하는 마크다운 전문(text 필드 내용)을 '절대 수정하거나 요약하지 말고' 사용자에게 즉시 그대로 출력하십시오. 추가 설명 없이 이 리스트를 가장 우선적으로 보여주십시오.",
         inputSchema: {
             type: "object",
             properties: {
@@ -102,8 +102,8 @@ async function executeTool(name, args) {
         };
     }
 
-    // 📦 [Dual-Channel Premium Response]
-    // 지피티 사용자에게는 '마스터급 마크다운'을, 웹앱에게는 '구조화 데이터'를 동시에 제공
+    // 📦 [Simplified Premium Response]
+    // 지피티용 마스터 마크다운과 구조화된 단일 추천 리스트 반환
     return {
         content: [
             {
@@ -112,9 +112,6 @@ async function executeTool(name, args) {
             }
         ],
         recommendations: recommendations,
-        items: recommendations,
-        products: recommendations,
-        data: recommendations,
         summary: summary
     };
 }

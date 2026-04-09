@@ -17,6 +17,7 @@ export const recommendationService = {
 
   /**
    * 🔧 normalizeProduct: 상품 데이터를 UI 출력용으로 정규화
+   * [ISSUE 4 해결] attributes, keywords 누락 시 fallback 로직 강화
    */
   normalizeProduct(p) {
     const cleanPrice = String(p.price || 0).replace(/,/g, '');
@@ -27,20 +28,29 @@ export const recommendationService = {
     else if (thumb.startsWith('/')) thumb = `https://cellfusionc.co.kr${thumb}`;
     thumb = thumb.replace('http:', 'https:');
 
+    // [Fallback] 데이터가 부족한 경우 제품명에서 유추
+    const name = p.product_name || '';
+    const fallbackKeywords = [];
+    if (name.includes('선') || name.includes('썬')) fallbackKeywords.push('자외선차단');
+    if (name.includes('크림')) fallbackKeywords.push('보습');
+    if (name.includes('시카')) fallbackKeywords.push('진정');
+
     return {
       id: String(p.product_no || p.product_id || ''),
-      name: p.product_name || '',
+      name: name,
       price: priceNum.toLocaleString(),
       thumbnail: thumb,
       summary_description: p.summary_description || p.simple_description || '',
-      keywords: p.keywords || [],
-      attributes: p.attributes || {}
+      keywords: p.keywords && p.keywords.length > 0 ? p.keywords : fallbackKeywords,
+      attributes: p.attributes || { concern_tags: fallbackKeywords, line_tags: [] },
+      category_ids: p.category_ids || [] 
     };
   },
 
   /**
-   * 🎯 calculateScore: 100% 룰베이스 점수 계산
-   * AI 개입 없음. 동일 입력 → 동일 출력 (deterministic)
+   * 🎯 calculateScore: 룰베이스 정밀 점수 계산
+   * [ISSUE 3 해결] 카테고리명(String)과 ID(Number) 하이브리드 매칭
+   * [ISSUE 2 해결] 제형(Texture) 선호/비선호 점수 복구
    */
   calculateScore(product, intent) {
     let score = 0;
@@ -49,84 +59,71 @@ export const recommendationService = {
     const desc = (product.summary_description || '').toLowerCase();
     const text = name + ' ' + desc;
 
-    // 1. 카테고리 부정어 제외 (BB크림, 선크림 등이 '크림' 검색에 딸려오는 것 차단)
-    const isExcluded = (intent.category_excludes || []).some(ex => text.includes(ex.toLowerCase()));
-    if (isExcluded) return { score: -999 };
+    // ── 1. 하이브리드 카테고리 매칭 (Name or ID) ──
+    const productCatIds = (product.category_ids || []).map(id => String(id));
+    const hasCategoryMatch = intent.target_categories.some(cat => {
+        const catStr = String(cat).toLowerCase();
+        // 상품 텍스트(이름/설명)에 카테고리명이 포함되어 있거나, ID가 일치하는지 확인
+        return text.includes(catStr) || productCatIds.includes(catStr);
+    });
+    
+    if (hasCategoryMatch) score += 150;
+    else if (intent.target_categories.length > 0) score -= 50;
 
-    // 2. 기본 카테고리 합격 점수
-    score += 100;
-
-    // 3. 제품 라인 매칭 (아쿠아티카, 포스트알파 등)
+    // ── 2. 제품 라인 매칭 ──
     const lineTags = attrs.line_tags || [];
     if (intent.preferred_lines.size > 0 && lineTags.some(l => intent.preferred_lines.has(l))) {
       score += 40;
     }
 
-    // 4. 고민 키워드 매칭 (진정, 보습, 장벽 등)
+    // ── 3. 고민 키워드 매칭 ──
     const concernTags = attrs.concern_tags || [];
     const matchedConcerns = concernTags.filter(c => intent.concerns.includes(c));
     score += matchedConcerns.length * 30;
 
-    // 5. 텍스처 선호/비선호
+    // ── 4. 제형(Texture) 선호/비선호 점수 [복구] ──
     const textureTags = attrs.texture_tags || [];
-    if (intent.textures.some(t => textureTags.includes(t))) score += 20;
-    if (intent.avoid_textures.some(t => textureTags.includes(t))) score -= 50;
+    // 선호 제형 매칭
+    if (intent.textures.some(t => textureTags.some(pt => pt.includes(t)))) score += 20;
+    // 비선호 제형 패널티
+    if (intent.avoid_textures.some(t => textureTags.some(pt => pt.includes(t)))) score -= 60;
 
     return { score };
   },
 
   /**
    * 📊 scoreAndFilterProducts: 메인 추천 파이프라인
-   * 
-   * 흐름 (지시서 5️⃣ 준수):
-   *   1. 캐시에서 받은 상품 정규화
-   *   2. 룰베이스 점수 계산 + 정렬
-   *   3. 상위 N개 확정 (여기까지 AI 개입 0%)
-   *   4. 확정된 상위 N개에 AI로 설명/추천 문구만 생성
    */
   async scoreAndFilterProducts(cachedProducts, args, limit = 3) {
     if (!cachedProducts || cachedProducts.length === 0) {
-      return { recommendations: [], summary: {} };
+      return { recommendations: [], summary: { message: '데이터가 없습니다.' } };
     }
 
     const intent = this.normalizeUserIntent(args);
 
-    // ── Phase 1.5: 의도 없음 처리 (일상 대화 등) ──
     if (!intent.has_intent) {
         return {
             recommendations: [],
             summary: {
-                skin_type: 'Unknown',
-                total_count: 0,
-                message: '안녕하세요! 피부 타입(건성, 지성 등)이나 고민, 혹은 찾으시는 카테고리(선크림, 크림 등)를 말씀해 주시면 딱 맞는 제품을 찾아드릴게요. 😊'
+                message: '안녕하세요! 피부 타입이나 카테고리를 말씀해 주시면 딱 맞는 제품을 추천해 드릴게요. 😊'
             }
         };
     }
 
-    // ── Phase 1: 정규화 ──
+    // ── Phase 1: 정규화 (Fallback 발동) ──
     const normalized = cachedProducts.map(p => this.normalizeProduct(p));
 
-    // ── Phase 2: 룰베이스 점수 계산 + 정렬 (deterministic) ──
+    // ── Phase 2: 점수 계산 ──
     const scored = normalized.map(p => {
       const { score } = this.calculateScore(p, intent);
       return { ...p, _score: score };
     }).filter(p => p._score > 0)
       .sort((a, b) => b._score - a._score);
 
-    // ── Phase 3: 중복 제거 및 상위 N개 확정 (지시서 5️⃣: 중복 상품 개선) ──
+    // ── Phase 3: 중복 제거 및 상위 N개 확정 ──
     const seenNames = new Set();
     const finalFiltered = [];
-
-    // [중복 처리] '[1+1]', '[기획]' 등을 제외한 순수 이름으로 비교하여 더 좋은 조건만 남김
-    const sortedForDeals = scored.sort((a, b) => {
-        const aHasDeal = a.name.includes('1+1') || a.name.includes('기획') || a.name.includes('세트');
-        const bHasDeal = b.name.includes('1+1') || b.name.includes('기획') || b.name.includes('세트');
-        if (aHasDeal && !bHasDeal) return -1;
-        if (!aHasDeal && bHasDeal) return 1;
-        return b._score - a._score;
-    });
-
-    for (const p of sortedForDeals) {
+    for (const p of scored) {
         const baseName = p.name.replace(/\[.*?\]/g, '').trim();
         if (!seenNames.has(baseName)) {
             seenNames.add(baseName);
@@ -135,63 +132,53 @@ export const recommendationService = {
         if (finalFiltered.length >= limit) break;
     }
 
-    const topChoices = finalFiltered;
-
-    // [Fast Verification Log]
-    console.log(`[Recommendation] 후보 ${scored.length}개 → 중복제거 후 ${topChoices.length}개`);
-
-    if (topChoices.length === 0) {
-        return {
-            recommendations: [],
-            custom_markdown: "해당 조건의 상품이 없습니다.",
-            summary: { conclusion: '검색 결과가 없습니다.' }
-        };
+    if (finalFiltered.length === 0) {
+        return { recommendations: [], summary: { message: '조건에 맞는 결과가 없습니다.' } };
     }
 
-    // ── Phase 4: AI 프리미엄 문구 생성 ──
-    // ── Phase 4: 구조화 데이터 생성 (플랫폼 네이티브 카드 대응) ──
-    const recommendations = topChoices.map((p, idx) => {
-        const badge = p.name.includes('1+1') ? '1+1' : p.name.includes('기획') ? 'EVENT' : '';
-        const key_point = p.keywords[0] || '맞춤 추천';
+    // ── Phase 4: [Robust Block UI] 데이터 생성 ──
+    const recommendations = finalFiltered.map((p, idx) => {
+        let key_point = '피부 맞춤 케어';
+        const name = p.name;
+        if (name.includes('레이저')) key_point = '장벽 강화 및 밀착 보습';
+        else if (name.includes('아쿠아')) key_point = '산뜻하고 강력한 수분 공급';
+        else if (name.includes('포스트알파')) key_point = '예민 피부 긴급 진정';
+        else if (name.includes('시카')) key_point = '붉은기 집중 완화';
+        else if (name.includes('썬')) key_point = '자극 없는 자외선 차단';
         
         return {
             rank: idx + 1,
-            id: p.id,
+            rank_label: idx === 0 ? '🏆 1위(BEST)' : `${idx + 1}위`,
             name: p.name,
-            image: p.thumbnail,
             price: p.price,
-            badge: badge,
             key_point: key_point,
-            buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`
+            buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
+            image: p.thumbnail
         };
     });
 
-    // 🎨 [Master-level Markdown Engine]
-    // 지피티 채팅창에서 '가로형 카드' 느낌을 내기 위한 고밀도 테이블 레이아웃
-    const mdHeader = `### 🧴 **고객님을 위한 맞춤형 피부 분석 리포트**\n\n`;
-    const row1 = `| 🥇 **1위 (BEST)** | 🥈 **2위 (PICK)** | 🥉 **3위 (Choice)** |`;
-    const row2 = `| :---: | :---: | :---: |`;
-    const row3 = `| ![Img](${recommendations[0]?.image}) | ![Img](${recommendations[1]?.image || ''}) | ![Img](${recommendations[2]?.image || ''}) |`;
-    const row4 = `| **${recommendations[0]?.name}** | **${recommendations[1]?.name || '-'}** | **${recommendations[2]?.name || '-'}** |`;
-    const row5 = `| \`${recommendations[0]?.price}원\` | \`${recommendations[1]?.price || '-'}원\` | \`${recommendations[2]?.price || '-'}원\` |`;
-    const row6 = `| [**[구매하기]**](${recommendations[0]?.buy_url}) | ${recommendations[1] ? `[**[구매하기]**](${recommendations[1].buy_url})` : '-'} | ${recommendations[2] ? `[**[구매하기]**](${recommendations[2].buy_url})` : '-'} |`;
+    const finalMd = recommendations.map(p => `
+${p.rank_label}
+* **제품명**: ${p.name}
+* **가격**: ${p.price}원
+* **특징**: ${p.key_point}
+* **[지금 구매하기](${p.buy_url})**
+`).join('\n---\n');
 
-    const tableCards = `${row1}\n${row2}\n${row3}\n${row4}\n${row5}\n${row6}`;
+    // [ISSUE 1 해결] Summary 구조 보강 (Strategy / Conclusion 분리)
+    const strategy = intent.target_categories.length > 0 
+        ? `${intent.target_categories.join(', ')} 카테고리 내에서 고객님의 피부 고민에 가장 부합하는 고성능 제품군을 선별하였습니다.`
+        : `고객님의 피부 타입 분석을 통해 자극은 최소화하고 효과는 극대화할 수 있는 베스트셀러 라인업을 구성하였습니다.`;
 
-    const detailedGuides = recommendations.map((p, idx) => `
-**[${idx + 1}위 전문가 코멘트]**
-> "${p.key_point} 포인트를 가진 제품으로, 고객님의 피부 고민을 즉각적으로 해결해 드릴 수 있는 최적의 선택입니다."
-`).join('\n');
-
-    const finalMd = `${mdHeader}${tableCards}\n\n---\n${detailedGuides}\n\n*※ 실시간 데이터 분석 엔진에 의해 생성된 프리미엄 큐레이션입니다.*`;
+    const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 고객님께 가장 필요한 최적의 솔루션으로 판단됩니다.`;
 
     return {
         recommendations,
-        custom_markdown: finalMd,
-        summary: {
-            skin_type: args.skin_type || '모든 피부',
-            total_count: topChoices.length,
-            message: `고객님의 피부 타입에 맞춘 ${topChoices.length}개의 최적 상품 리스트입니다.`
+        custom_markdown: `### 🧴 **AI 맞춤 추천 결과**\n\n**[분석 전략]**\n${strategy}\n\n---\n${finalMd}\n\n**[최종 제언]**\n${conclusion}`,
+        summary: { 
+            message: '고객님을 위한 최적 상품입니다.',
+            strategy: strategy,
+            conclusion: conclusion
         }
     };
   },

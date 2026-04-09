@@ -49,21 +49,62 @@ mongoose.connect(config.MONGO_URI)
     process.exit(1); // DB 통신 실패 시 백엔드도 즉시 셧다운
   });
 
-app.use('/cafe24', cafe24Router);
-app.use('/mcp', mcpRouter); // AI 모델 컨텍스트 프로토콜 라우팅 추가
+import { recommendationService } from './services/recommendationService.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-app.get('/', (req, res) => {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use('/cafe24', cafe24Router);
+app.use('/mcp', mcpRouter);
+
+// ── 🎁 [Web UI 추천 API] ──
+// 리액트 프론트엔드와 실시간 연결되는 추천 엔드포인트
+app.post('/api/recommend', async (req, res) => {
+    try {
+        const { query } = req.body;
+        console.log(`[API-Request] Query: ${query}`);
+
+        // 1. 의도 파악 (룰베이스)
+        const intent = recommendationService.normalizeUserIntent({ skin_type: '', q: query });
+        
+        // 2. 캐시에서 상품 가져오기
+        const candidates = cafe24ApiService.getProductsFromCache({ 
+            category_names: intent.target_categories 
+        });
+
+        // 3. 점수 계산 및 필터링 (구조화 데이터 반환)
+        const result = await recommendationService.scoreAndFilterProducts(candidates, intent, 5);
+
+        res.json(result);
+    } catch (e) {
+        console.error('[API-Error]', e.message);
+        res.status(500).json({ error: '추천 처리 중 오류가 발생했습니다.' });
+    }
+});
+
+// ── 🌐 [Frontend 서빙] ──
+// 프론트엔드 빌드 결과물(dist)이 있다면 이를 기본으로 서비스함
+app.use(express.static(path.join(__dirname, 'client/dist')));
+
+// 모든 기타 경로는 리액트 index.html로 (SPA 지원)
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/cafe24') || req.path.startsWith('/mcp')) return next();
+    res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
+});
+
+// [기존 메인페이지는 API 전용 대시보드로 이동]
+app.get('/api/dashboard', (req, res) => {
   res.send(`
-    <h1>Cell Fusion C - Cafe24 통합 모듈 (Ultra-Fast Sync On)</h1>
+    <h1>Cell Fusion C - Admin Dashboard</h1>
     <ul>
       <li><a href="/cafe24/start">1. 카페24 인증(OAuth) 및 MongoDB 연동</a></li>
       <li><a href="/cafe24/token">2. 현재 DB에 발급된 토큰 상태 확인</a></li>
       <li><a href="/cafe24/products">3. 상품 리스트 조회 테스트 (Memory Sync)</a></li>
       <li><a href="/cafe24/refresh">4. 만료된 토큰을 리프레시하고 DB에 재기록</a></li>
-      <li><a href="/mcp">5. MCP (Model Context Protocol) 통신 인터페이스 대기중</a></li>
-      <li><a href="/debug/cache">6. 🔍 캐시 진단 (임시)</a></li>
+      <li><a href="/mcp">5. MCP 통신 인터페이스</a></li>
     </ul>
-    <p style="color:green; font-weight:bold;">* 초고속 로컬 캐싱 시스템이 가동 중입니다. 응답 속도가 0.1초 이내로 단축됩니다.</p>
   `);
 });
 

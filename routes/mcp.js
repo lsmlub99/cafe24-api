@@ -88,19 +88,13 @@ async function executeTool(name, args) {
 
     // ── Step 3: 룰베이스 점수 + AI 문구 → 최종 결과 ──
     const categoryAliases = [standardCat];
-    const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
+    const serviceResult = await recommendationService.scoreAndFilterProducts(
         rawProducts,
         { ...args, category_aliases: categoryAliases },
         3
     );
 
-    // [Fast Verification Log]
-    console.log(`[Verification] rawProducts: ${rawProducts.length}, Top3: ${recommendations.map(p => p.name).join(' | ')}`);
-    console.log(`[Verification] shape: recommendations=${!!recommendations}, summary=${!!summary}`);
-    if (recommendations.length > 0) {
-        console.log(`[Verification] top1.key_point=${!!recommendations[0].key_point}, top1.ai_tags=${!!recommendations[0].ai_tags}`);
-    }
-
+    const { recommendations, custom_markdown } = serviceResult;
     const top1 = recommendations[0];
 
     if (!top1) {
@@ -109,11 +103,9 @@ async function executeTool(name, args) {
         };
     }
 
-    const rest = recommendations.slice(1);
-
     // 🎨 [Premium Curation Card] 
     // AI가 생성한 고도화된 마크다운을 그대로 사용하여 성의 있는 고급 UI 제공
-    const finalContent = result.custom_markdown || `최종 추천은 **${top1.name}**입니다.`;
+    const finalContent = custom_markdown || `최종 추천은 **${top1.name}**입니다.`;
 
     return {
         content: [{

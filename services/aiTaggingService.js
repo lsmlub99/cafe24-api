@@ -12,7 +12,7 @@
  * 사전 정의 태그 화이트리스트
  */
 const WHITELIST = {
-  category_tags: ['앰플', '세럼', '크림', '토너', '선크림', '선세럼', '스틱', '젤', '밤', '마스크', '패드', '클렌징', '로션'],
+  category_tags: ['앰플', '세럼', '크림', '토너', '선크림', '선세럼', '선스틱', '스틱', '젤', '밤', '마스크', '패드', '클렌징', '로션'],
   line_tags: ['아쿠아티카', '포스트알파', '패리어', '레이저', '토닝'],
   concern_tags: ['진정', '보습', '장벽', '재생', '미백', '잡티', '탄력', '속건조', '유수분', '수분', '자외선', '모공', '주름', '각질'],
   texture_tags: ['가벼움', '산뜻함', '워터리', '리치함', '밤타입', '오일타입', '쿨링']
@@ -38,6 +38,14 @@ function extractTagsByRule(name, desc, categoryNos = []) {
   // ⚠️ [보수적 보정] 선세럼 오탐 방지 (지시서 3️⃣ 반영)
   // '선세럼' 단어가 단순히 설명에 있다고 다 붙이지 않음.
   // 카테고리가 93번(선케어)이거나, 이름에 '선' 혹은 '선세럼'이 직접 포함된 경우에만 최종 태그 유지.
+  // ⚠️ [보수적 보정] 선스틱/선세럼 오탐 방지
+  if (combined.includes('스틱')) {
+    if (name.includes('스틱') || name.toLowerCase().includes('stick')) {
+      if (!tags.category_tags.includes('선스틱')) tags.category_tags.push('선스틱');
+      if (!tags.concern_tags.includes('간편함')) tags.concern_tags.push('간편함');
+    }
+  }
+
   if (tags.category_tags.includes('선세럼')) {
     const isCategorySun = categoryNos.includes(93);
     const isNameSun = name.toLowerCase().includes('선세럼') || name.toLowerCase().includes('선크림') || name.toLowerCase().includes('sun');

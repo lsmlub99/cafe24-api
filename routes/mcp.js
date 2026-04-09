@@ -15,7 +15,7 @@ let clientStream = null;
 // ══════════════════════════════════════════════════════════════
 // 동의어 매핑 (지시서 2️⃣: 동의어는 룰로 처리)
 const CATEGORY_SYNONYM_MAP = {
-    '선크림': '선크림', '썬크림': '선크림', '자외선차단': '선크림', '선세럼': '선크림', 'sunscreen': '선크림', 'sun': '선크림',
+    '선크림': '선크림', '썬크림': '선크림', '자외선차단': '선크림', '선세럼': '선크림', 'sunscreen': '선크림', 'sun': '선크림', '선스틱': '선스틱', '썬스틱': '선스틱', '슥': '선스틱', '간편': '선스틱',
     '크림': '크림', 'cream': '크림', '보습크림': '크림', '수분크림': '크림',
     '세럼': '세럼', '에센스': '세럼', 'serum': '세럼',
     '앰플': '앰플', 'ampoule': '앰플',
@@ -111,41 +111,14 @@ async function executeTool(name, args) {
 
     const rest = recommendations.slice(1);
 
-    // 🎨 Premium Card UI 렌더링
-    const header = [
-        '---',
-        `💡 **이런 피부에 맞아요** : ${summary.strategy || "고객님의 피부 고민 해결 솔루션"}`,
-        `🏆 **그래서 이걸 추천합니다** : ${summary.conclusion || "검증된 베스트 아이템"}`,
-        '---'
-    ].join('\n');
-
-    const img1 = top1.thumbnail || "https://cellfusionc.co.kr/web/upload/common/no_img.gif";
-    let spotlight = `## 🏆 **${top1.name}**\n`;
-    spotlight += `![상품](${img1})\n\n`;
-    spotlight += `💰 **판매가: ${top1.price}원**\n`;
-    spotlight += `✨ **핵심 태그**: ${(top1.ai_tags || []).slice(0, 3).map(b => `\`#${b}\``).join(' ')}\n`;
-    spotlight += `🔥 **핵심 포인트**: **${top1.key_point}**\n`;
-    spotlight += `🧪 **수석 큐레이터 가이드**: *"${top1.match_reasons}"*\n\n`;
-    spotlight += `[**🚀 전용 혜택으로 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${top1.id})\n\n`;
-
-    let restTable = "";
-    if (rest.length > 0) {
-        let r1 = '| **제안 순위** |', r2 = '| :---: |', r3 = '| **이미지** |', r4 = '| **상세** |';
-        rest.forEach((p, i) => {
-            const medal = ['🥈 2위', '🥉 3위'][i] || '✨ PICK';
-            const buyUrl = `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`;
-            const img = p.thumbnail || "https://cellfusionc.co.kr/web/upload/common/no_img.gif";
-            r1 += ` ${medal} |`; r2 += ` :---: |`; r3 += ` [![상품](${img})](${buyUrl}) |`; r4 += ` [**구매**](${buyUrl}) |`;
-        });
-        restTable = `### 📋 함께 고려해볼 다른 선택지\n${r1}\n${r2}\n${r3}\n${r4}\n`;
-    }
-
-    const markdownResult = [header, '', spotlight, '---', restTable, '※ 본 큐레이션은 실시간 임상 데이터 분석을 기반으로 작성되었습니다.'].join('\n');
+    // 🎨 [Premium Curation Card] 
+    // AI가 생성한 고도화된 마크다운을 그대로 사용하여 성의 있는 고급 UI 제공
+    const finalContent = result.custom_markdown || `최종 추천은 **${top1.name}**입니다.`;
 
     return {
         content: [{
             type: "text",
-            text: markdownResult
+            text: finalContent
         }]
     };
 }

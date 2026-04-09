@@ -35,7 +35,8 @@ async function fetchCategoryMap(accessToken) {
             '클렌징': ['클렌징'],
             '토너': ['토너'],
             '세트': ['세트'],
-            '이너뷰티': ['이너뷰티']
+            '이너뷰티': ['이너뷰티'],
+            '선스틱': ['스틱', 'stick']
         };
 
         for (const [key, keywords] of Object.entries(targets)) {

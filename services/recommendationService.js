@@ -121,42 +121,41 @@ export const recommendationService = {
         model: 'gpt-4o-mini',
         messages: [{
           role: 'system',
-          content: `너는 셀퓨전씨 전문 뷰티 큐레이터야. 아래 상품 리스트는 이미 확정된 추천 결과야.
-너의 역할은 오직 각 상품의 특징을 매력적으로 설명하는 것뿐이야.
-[절대 금지] 상품을 추가하거나 제거하거나 순위를 바꾸는 행위
-[절대 금지] 부정적/방어적 코멘트 (예: "최적은 아니다", "부족하다")
-[절대 금지] 리스트에 없는 외부 브랜드/상품 언급
-[필수] 결론(conclusion)의 상품명은 반드시 리스트 1위 상품명을 그대로 사용
-반드시 JSON 형식으로 응답해.
-{ "summary": { "strategy": "15자 이내", "conclusion": "최종 추천은 OOO입니다." }, "results": [{ "id": "", "point": "7자 이내", "comment": "25자 이내" }] }`
+          content: `너는 셀퓨전씨 플래그십 스토어의 수석 뷰티 큐레이터야.
+확정된 상품 리스트를 바탕으로, 고객이 감동할 만한 **프리미엄 큐레이션 카드** 스타일의 마크다운 응답을 생성해.
+
+[응답 가이드]
+1. 단순 텍스트가 아닌, 시각적으로 풍성한 카드 UI 느낌이 나도록 마크다운을 작성할 것.
+2. 🏆 메인 추천(1위)에 화력을 집중해. (이미지, 가격, 뱃지, 수석 큐레이터 가이드 포함)
+3. 📋 2, 3위는 하단에 깔끔한 비교 테이블로 정리해.
+4. 분위기는 전문적이고 신뢰감 넘치며 친절하게.
+
+[필수 구조]
+---
+## 🏆 **[OO 피부 맞춤 추천] 상품명**
+![Product](이미지URL)
+> "큐레이터의 한 줄 평"
+### 🛍️ **핵심 정보**
+- 💰 **판매가**: \`가격원\`
+- ✨ **Key Tags**: #태그 #태그
+- 🔥 **Match Point**: **강조 포인트**
+🧪 **Special Guide**: "150자 이내의 전문적인 추천 사유"
+[**🚀 혜택받고 구매하기**](상세URL)
+---
+### 📋 **함께 비교하면 좋은 다른 선택지**
+(테이블 구조: 순위 | 상품명 | 이미지 | 상세보기)
+---
+`
         }, {
           role: 'user',
-          content: `고객: ${JSON.stringify(args)}\n상품: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, keywords: t.keywords, summary_description: t.summary_description, attributes: t.attributes })))}`
-        }],
-        response_format: { type: 'json_object' }
+          content: `고객 상황: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, price: t.price, img: t.detail_image || t.list_image, keywords: t.keywords, desc: t.summary_description })))}`
+        }]
       });
 
-      let parsed = { results: [], summary: {} };
-      try {
-        parsed = JSON.parse(resp.choices[0].message.content);
-      } catch (parseErr) {
-        console.warn('[Curation Parse Error]', parseErr.message);
-      }
-
       return {
-        recommendations: topChoices.map(p => {
-          const ai = (parsed.results || []).find(r => String(r.id) === String(p.id)) || {};
-          return {
-            ...p,
-            ai_tags: p.keywords,
-            key_point: ai.point || '피부 맞춤 케어',
-            match_reasons: ai.comment || '고객님의 피부 타입에 최적화된 상품입니다.'
-          };
-        }),
-        summary: parsed.summary || {
-          strategy: '피부 분석 완료',
-          conclusion: `최종 추천은 ${topChoices[0]?.name}입니다.`
-        }
+        custom_markdown: resp.choices[0].message.content,
+        recommendations: topChoices,
+        summary: { conclusion: `최종 추천은 ${topChoices[0]?.name}입니다.` }
       };
     } catch (e) {
       console.warn('[Curation AI Fail] 폴백 문구 사용:', e.message);

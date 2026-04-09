@@ -13,23 +13,6 @@ let clientStream = null;
 //  - 이 번호로 캐시에서 category_no 기반 구조적 필터링을 수행합니다.
 //  - 텍스트 검색에 의존하지 않으므로 오분류가 원천 차단됩니다.
 // ══════════════════════════════════════════════════════════════
-const CATEGORY_ID_MAP = {
-    '선크림':   [29],   // 선케어
-    '선케어':   [29],
-    'bb크림':   [159],  // BB크림/베이스
-    '비비크림': [159],
-    '크림':     [49],   // 크림
-    '세럼':     [58],   // 앰플/세럼
-    '앰플':     [58],
-    '마스크팩': [59],   // 마스크팩/패드
-    '패드':     [59],
-    '클렌징':   [30],   // 클렌징
-    '토너':     [31],   // 토너
-    '세트':     [60],   // 세트
-    '이너뷰티': [145],  // 이너뷰티
-    '베이비케어': [174] // 베이비케어
-};
-
 // 동의어 매핑 (지시서 2️⃣: 동의어는 룰로 처리)
 const CATEGORY_SYNONYM_MAP = {
     '선크림': '선크림', '썬크림': '선크림', '자외선차단': '선크림', '선세럼': '선크림', 'sunscreen': '선크림', 'sun': '선크림',
@@ -83,28 +66,24 @@ async function executeTool(name, args) {
     // ── Step 1: 카테고리 동의어 → 표준명 변환 ──
     const rawCat = (args.category || '').toLowerCase().trim();
     const standardCat = CATEGORY_SYNONYM_MAP[rawCat] || rawCat;
-    const categoryNos = CATEGORY_ID_MAP[standardCat] || [];
+    // ── Step 2: 캐시 필터링 (동적 ID 감지 적용) ──
+    const categoryNos = cafe24ApiService.getDynamicCategoryNos([standardCat]);
+    console.log(`[Category] 입력: '${rawCat}' → 표준: '${standardCat}' → 감지된 ID: [${categoryNos.join(',')}]`);
 
-    console.log(`[Category] 입력: '${rawCat}' → 표준: '${standardCat}' → ID: [${categoryNos.join(',')}]`);
-
-    // ── Step 2: 캐시에서 즉시 필터링 (실시간 API 호출 절대 없음) ──
     let rawProducts = [];
 
     if (categoryNos.length > 0) {
-        // category_no 기반 구조적 필터링 (가장 정확)
+        // category_no 기반 구조적 필터링
         rawProducts = cafe24ApiService.getProductsFromCache({ categoryNos });
-        console.log(`[Cache Hit] category_no ${categoryNos.join(',')} → ${rawProducts.length}개 매칭`);
-
-        // 카테고리 필터 0건 시 키워드 폴백 (안전망)
+        
+        // 0건 시 키워드 폴백
         if (rawProducts.length === 0) {
-            console.warn(`[Fallback] category_no ${categoryNos.join(',')} → 0건. 키워드 '${rawCat}' 폴백 검색`);
+            console.warn(`[Fallback] category_no ${categoryNos} → 0건. 키워드 '${rawCat}' 폴백 검색`);
             rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
-            console.log(`[Fallback Result] 키워드 '${rawCat}' → ${rawProducts.length}개 매칭`);
         }
     } else {
-        // 매핑되지 않은 카테고리는 키워드 폴백
+        // 카테고리 매핑이 안 된 경우 키워드 검색
         rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
-        console.log(`[Cache Fallback] 키워드 '${rawCat}' → ${rawProducts.length}개 매칭`);
     }
 
     // ── Step 3: 룰베이스 점수 + AI 문구 → 최종 결과 ──

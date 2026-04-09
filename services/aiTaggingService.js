@@ -37,9 +37,9 @@ function extractTagsByRule(name, desc, categoryNos = []) {
 
   // ⚠️ [보수적 보정] 선세럼 오탐 방지 (지시서 3️⃣ 반영)
   // '선세럼' 단어가 단순히 설명에 있다고 다 붙이지 않음.
-  // 카테고리가 29(선케어)이거나, 이름에 '선' 혹은 '선세럼'이 직접 포함된 경우에만 최종 태그 유지.
+  // 카테고리가 93번(선케어)이거나, 이름에 '선' 혹은 '선세럼'이 직접 포함된 경우에만 최종 태그 유지.
   if (tags.category_tags.includes('선세럼')) {
-    const isCategorySun = categoryNos.includes(29);
+    const isCategorySun = categoryNos.includes(93);
     const isNameSun = name.toLowerCase().includes('선세럼') || name.toLowerCase().includes('선크림') || name.toLowerCase().includes('sun');
     
     if (!isCategorySun && !isNameSun) {

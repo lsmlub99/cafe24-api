@@ -137,76 +137,38 @@ export const recommendationService = {
     }
 
     // ── Phase 4: AI 프리미엄 문구 생성 ──
-    try {
-      const resp = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{
-          role: 'system',
-          content: `너는 셀퓨전씨 플래그십 스토어의 수석 뷰티 큐레이터야.
-확정된 상품 리스트를 바탕으로 고객님께 감동을 줄 **'프리미엄 큐레이션 개별 카드'**들을 작성해.
-
-[⚠️ 절대 규칙]
-- 절대로 요약하거나 사족을 붙이지 말고, 아래의 마크다운 카드 레이아웃만 리턴할 것.
-- 모든 추천 상품(1~3위)을 각각 거대한 독립 카드로 정성스럽게 그려야 함.
-- 카드 사이는 마크다운 구분선(---)을 사용하여 시각적으로 분리할 것.
-
-[카드 구조 가이드]
+    // ── Phase 4: 프리미엄 마크다운 엔진 (초고속/고정 템플릿) ──
+    const skinType = args.skin_type || '모든 피부';
+    
+    // 🎨 [Premium Card Generator]
+    // AI 호출 없이 즉시 생성하여 속도와 디자인 무결성 보장
+    const finalMd = topChoices.map((p, idx) => {
+        const medal = idx === 0 ? '🥇 BEST' : idx === 1 ? '🥈 PICK' : '🥉 CHOICE';
+        const dealBadge = p.name.includes('1+1') ? '🔥 **[1+1 혜택상품]**' : p.name.includes('기획') ? '🎁 **[한정기획]**' : '';
+        
+        return `
 ---
-### **[순위뱃지] [순위]위: [상품명]**
-![Product](제공된 {img} URL)
-> "이 상품만이 가진 독보적인 솔루션 한 줄 평"
-
-💰 **판매가**: \`가격원\`
-✨ **핵심 태그**: #태그 #태그 #태그
-🧪 **큐레이터 가이드**: 이 제품이 왜 고객님께 최적의 선택인지에 대한 전문적인 분석 (150자 이내)
-
-[**🚀 지금 바로 전용 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=id)
----
-`
-        }, {
-          role: 'user',
-          content: `고객 고민: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map((t, idx) => ({ 
-              rank: idx + 1, 
-              badge: idx === 0 ? '🥇 BEST' : idx === 1 ? '🥈 PICK' : '🥉 CHOICE',
-              id: t.id, 
-              name: t.name, 
-              price: t.price, 
-              img: t.thumbnail, 
-              keywords: t.keywords, 
-              desc: t.summary_description 
-          })))}`
-        }]
-      });
-
-      return {
-        custom_markdown: resp.choices[0].message.content,
-        recommendations: topChoices,
-        summary: { conclusion: `고객님을 위한 ${topChoices.length}건의 고정밀 분석 추천이 완료되었습니다.` }
-      };
-    } catch (e) {
-      console.warn('[Curation AI Fail] 폴백 가동:', e.message);
-      
-      // 🎨 [Sincerity Fallback] AI가 실패해도 '성의 있는' 카드 자동 생성
-      const fallbackMd = topChoices.map((p, idx) => `
----
-### **${idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'} ${idx + 1}순위 추천: ${p.name}**
+### **${medal} ${idx + 1}위: ${p.name}**
 ![Product](${p.thumbnail})
-> "실시간 피부 분석 엔진이 선정한 최적의 솔루션입니다."
+${dealBadge ? `> ${dealBadge}` : ''}
 
 💰 **판매가**: \`${p.price}원\`
 ✨ **핵심 태그**: ${p.keywords.slice(0, 3).map(k => `#${k}`).join(' ')}
-🧪 **뷰티 가이드**: 고객님의 피부 타입과 고민에 맞춰 엄선한 제품입니다. 공식몰 전용 혜택을 통해 지금 바로 확인해 보세요!
+🧪 **뷰티 전문가 가이드**:
+고객님의 **${skinType}** 타입에 맞춰 엄선된 최적의 솔루션입니다. 
+${p.summary_description || '풍부한 영양과 보습 성분으로 피부 본연의 건강함을 되찾아주는 제품입니다.'}
 
-[**🚀 상세 정보 및 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})
+[**🚀 지금 바로 전용 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})
 ---
-`).join('\n');
+`;
+    }).join('\n');
 
-      return {
-        custom_markdown: fallbackMd,
+    return {
+        custom_markdown: `${finalMd}\n\n*※ 본 큐레이션은 실시간 SKU 분석 및 피부 타입 매칭 엔진에 의해 생성되었습니다.*`,
         recommendations: topChoices,
-        summary: { conclusion: '전문 분석 엔진을 통한 추천 결과입니다.' }
-      };
-    }
+        summary: { conclusion: '전문 분석 엔진을 통한 정밀 추천이 완료되었습니다.' }
+    };
+}
   },
 
   /**

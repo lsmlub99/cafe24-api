@@ -137,36 +137,30 @@ export const recommendationService = {
     }
 
     // ── Phase 4: AI 프리미엄 문구 생성 ──
-    // ── Phase 4: 프리미엄 마크다운 엔진 (Carousel UI) ──
-    const skinType = args.skin_type || '모든 피부';
-    
-    // 🎨 [Carousel Card Generator]
-    // 롯데시네마 스타일의 가로형 카드 리스트 생성
-    const carouselItems = topChoices.map((p, idx) => {
-        const medal = idx === 0 ? '🥇 BEST' : idx === 1 ? '🥈 PICK' : '🥉 Choice';
-        const dealBadge = p.name.includes('1+1') ? '🔥 [1+1 혜택]' : p.name.includes('기획') ? '🎁 [한정기획]' : '';
+    // ── Phase 4: 구조화 데이터 생성 (플랫폼 네이티브 카드 대응) ──
+    const recommendations = topChoices.map((p, idx) => {
+        const badge = p.name.includes('1+1') ? '1+1' : p.name.includes('기획') ? 'EVENT' : '';
+        const key_point = p.keywords[0] || '맞춤 추천';
         
-        return `
-### **${medal} ${idx + 1}위**
-![Product](${p.thumbnail})
-
-**${p.name}**
-${dealBadge ? `> ${dealBadge}` : ''}
-
-💰 **판매가**: \`${p.price}원\`
-🧪 **큐레이션**:
-고객님의 **${skinType}** 피부를 위한 최적의 선택! 
-${p.summary_description || '촉촉하고 산뜻한 제형으로 피부를 편안하게 지켜줍니다.'}
-
-[**🚀 지금 바로 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=${p.id})`;
-    }).join('\n<!-- slide -->\n');
-
-    const finalMd = `\`\`\`carousel\n${carouselItems}\n\`\`\``;
+        return {
+            rank: idx + 1,
+            id: p.id,
+            name: p.name,
+            image: p.thumbnail,
+            price: p.price,
+            badge: badge,
+            key_point: key_point,
+            buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`
+        };
+    });
 
     return {
-        custom_markdown: `${finalMd}\n\n*※ 실시간 SKU 분석 기반 가로형 큐레이션 카드입니다.*`,
-        recommendations: topChoices,
-        summary: { conclusion: '전문 분석 엔진을 통한 가로형 카드 제안이 완료되었습니다.' }
+        recommendations,
+        summary: {
+            skin_type: args.skin_type || '모든 피부',
+            total_count: topChoices.length,
+            message: `고객님의 피부 타입에 맞춘 ${topChoices.length}개의 최적 상품 리스트입니다.`
+        }
     };
   },
 

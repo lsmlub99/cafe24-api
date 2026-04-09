@@ -86,32 +86,31 @@ async function executeTool(name, args) {
         rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
     }
 
-    // ── Step 3: 룰베이스 점수 + AI 문구 → 최종 결과 ──
+    // ── Step 3: 룰베이스 점수 + 데이터 엔진 → 최종 결과 ──
     const categoryAliases = [standardCat];
-    const serviceResult = await recommendationService.scoreAndFilterProducts(
+    const { recommendations, summary } = await recommendationService.scoreAndFilterProducts(
         rawProducts,
         { ...args, category_aliases: categoryAliases },
         3
     );
 
-    const { recommendations, custom_markdown } = serviceResult;
-    const top1 = recommendations[0];
-
-    if (!top1) {
+    if (!recommendations || recommendations.length === 0) {
         return {
             content: [{ type: "text", text: "해당 조건에 맞는 상품을 찾을 수 없습니다." }]
         };
     }
 
-    // 🎨 [Premium Curation Card] 
-    // AI가 생성한 고도화된 마크다운을 그대로 사용하여 성의 있는 고급 UI 제공
-    const finalContent = custom_markdown || `최종 추천은 **${top1.name}**입니다.`;
-
+    // 📦 [Structured Multi-Response]
+    // 텍스트는 요약으로, 데이터는 recommendations 배열로 분리하여 플랫폼 UI 트리거
     return {
-        content: [{
-            type: "text",
-            text: finalContent
-        }]
+        content: [
+            {
+                type: "text",
+                text: summary.message
+            }
+        ],
+        recommendations: recommendations,
+        summary: summary
     };
 }
 

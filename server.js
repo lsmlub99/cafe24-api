@@ -88,10 +88,22 @@ app.post('/api/recommend', async (req, res) => {
 // 프론트엔드 빌드 결과물(dist)이 있다면 이를 기본으로 서비스함
 app.use(express.static(path.join(__dirname, 'client/dist')));
 
+import fs from 'fs';
+
 // 모든 기타 경로는 리액트 index.html로 (SPA 지원)
 app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/cafe24') || req.path.startsWith('/mcp')) return next();
-    res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
+    
+    const indexPath = path.join(__dirname, 'client/dist', 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(200).send(`
+            <style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column;}</style>
+            <h1>🏗️ AI 쇼핑 UI 빌드 중...</h1>
+            <p>서버가 처음 시작되거나 리액트 화면을 굽는 중입니다. 30초 후 새로고침 해주세요.</p>
+        `);
+    }
 });
 
 // [기존 메인페이지는 API 전용 대시보드로 이동]

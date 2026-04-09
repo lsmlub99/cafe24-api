@@ -24,6 +24,7 @@ export const recommendationService = {
 
     let thumb = p.list_image || p.detail_image || p.tiny_image || '';
     if (thumb.startsWith('//')) thumb = `https:${thumb}`;
+    else if (thumb.startsWith('/')) thumb = `https://cellfusionc.co.kr${thumb}`;
     thumb = thumb.replace('http:', 'https:');
 
     return {
@@ -122,33 +123,38 @@ export const recommendationService = {
         messages: [{
           role: 'system',
           content: `너는 셀퓨전씨 플래그십 스토어의 수석 뷰티 큐레이터야.
-확정된 상품 리스트를 바탕으로, 고객이 감동할 만한 **프리미엄 큐레이션 카드** 스타일의 마크다운 응답을 생성해.
+확정된 상품 리스트를 바탕으로, 프리미엄 큐레이션 카드를 마크다운으로 작성해.
+
+[⚠️ 중요: URL 생성 규칙]
+1. 상세페이지 링크: 반드시 https://cellfusionc.co.kr/product/detail.html?product_no={id} 형식을 사용할 것.
+2. 이미지 링크: 제공된 {img} 값을 그대로 이미지 마크다운에 넣을 것. 절대 example.com 같은 가짜 주소를 쓰지 마.
 
 [응답 가이드]
-1. 단순 텍스트가 아닌, 시각적으로 풍성한 카드 UI 느낌이 나도록 마크다운을 작성할 것.
-2. 🏆 메인 추천(1위)에 화력을 집중해. (이미지, 가격, 뱃지, 수석 큐레이터 가이드 포함)
-3. 📋 2, 3위는 하단에 깔끔한 비교 테이블로 정리해.
-4. 분위기는 전문적이고 신뢰감 넘치며 친절하게.
+1. 시각적으로 풍성한 카드 UI 느낌이 나도록 작성.
+2. 🏆 메인 추천(1위)에 모든 정보(이미지, 가격, 뱃지, 설명)를 집중.
+3. 📋 2, 3위는 하단 비교 테이블로 정리. 테이블에도 실제 {img}와 상세링크를 적용해.
 
 [필수 구조]
 ---
 ## 🏆 **[OO 피부 맞춤 추천] 상품명**
-![Product](이미지URL)
+![Product](실제이미지URL)
 > "큐레이터의 한 줄 평"
 ### 🛍️ **핵심 정보**
 - 💰 **판매가**: \`가격원\`
 - ✨ **Key Tags**: #태그 #태그
-- 🔥 **Match Point**: **강조 포인트**
-🧪 **Special Guide**: "150자 이내의 전문적인 추천 사유"
-[**🚀 혜택받고 구매하기**](상세URL)
+🧪 **Special Guide**: 전문적인 추천 사유 (150자 이내)
+[**🚀 혜택받고 구매하기**](https://cellfusionc.co.kr/product/detail.html?product_no=상품번호)
 ---
 ### 📋 **함께 비교하면 좋은 다른 선택지**
-(테이블 구조: 순위 | 상품명 | 이미지 | 상세보기)
+순위 | 상품명 | 이미지 | 상세보기
+--- | --- | --- | ---
+2위 | 이름 | ![Img](주소) | [구매](링크)
+...
 ---
 `
         }, {
           role: 'user',
-          content: `고객 상황: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, price: t.price, img: t.detail_image || t.list_image, keywords: t.keywords, desc: t.summary_description })))}`
+          content: `고객 상황: ${JSON.stringify(args)}\n상품들: ${JSON.stringify(topChoices.map(t => ({ id: t.id, name: t.name, price: t.price, img: t.thumbnail, keywords: t.keywords, desc: t.summary_description })))}`
         }]
       });
 

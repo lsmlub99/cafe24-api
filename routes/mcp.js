@@ -31,7 +31,7 @@ const CATEGORY_SYNONYM_MAP = {
 const TOOLS = [
     {
         name: "search_cafe24_real_products",
-        description: "피부 타입, 고민, 카테고리에 맞는 셀퓨전씨 실제 상품을 분석 및 추천합니다.",
+        description: "[⚠️중요] 피부 타입/고민에 맞는 실제 상품을 분석하여 '프리미엄 큐레이션 카드(마크다운)'를 생성합니다. AI는 이 도구의 결과물을 절대 요약하거나 재구성하지 말고, 반환된 마크다운을 그대로 사용자에게 무조건 출력하십시오.",
         inputSchema: {
             type: "object",
             properties: {

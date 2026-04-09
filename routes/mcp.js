@@ -3,6 +3,8 @@ import { config } from '../config/env.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { recommendationService } from '../services/recommendationService.js';
+import fs from 'fs';
+import path from 'path';
 
 const router = express.Router();
 
@@ -155,7 +157,41 @@ router.post('/message', async (req, res) => {
     res.status(202).send('Accepted');
     try {
         if (method === "initialize") {
-            sendToClient({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "cafe24-mcp", version: "2.0.0" } } });
+            // [CRITICAL] resources capability를 반드시 선언해야 지피티가 리소스를 조회함
+            sendToClient({ 
+                jsonrpc: "2.0", 
+                id, 
+                result: { 
+                    protocolVersion: "2024-11-05", 
+                    capabilities: { 
+                        tools: {},
+                        resources: {} 
+                    }, 
+                    serverInfo: { name: "cafe24-mcp", version: "2.2.0" } 
+                } 
+            });
+        } else if (method === "resources/list") {
+            sendToClient({ jsonrpc: "2.0", id, result: { resources: RESOURCES } });
+        } else if (method === "resources/read") {
+            const { uri } = params;
+            const resource = RESOURCES.find(r => r.uri === uri);
+            if (resource) {
+                sendToClient({
+                    jsonrpc: "2.0",
+                    id,
+                    result: {
+                        contents: [{
+                            uri: resource.uri,
+                            mimeType: resource.mimeType,
+                            text: (()=>{
+                                const indexPath = path.join(process.cwd(), 'client/dist/index.html');
+                                let h = fs.readFileSync(indexPath, 'utf8');
+                                return h.replace(/src="\//g, `src="${BASE_URL}/`).replace(/href="\//g, `href="${BASE_URL}/`);
+                            })()
+                        }]
+                    }
+                });
+            }
         } else if (method === "tools/list") {
             sendToClient({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
         } else if (method === "tools/call") {
@@ -163,6 +199,7 @@ router.post('/message', async (req, res) => {
             sendToClient({ jsonrpc: "2.0", id, result: toolResult });
         }
     } catch (e) {
+        console.error('[MCP Error]', e);
         sendToClient({ jsonrpc: "2.0", id, error: { message: e.message } });
     }
 });

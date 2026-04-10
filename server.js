@@ -91,12 +91,21 @@ app.post('/api/recommend', async (req, res) => {
 
 // ── 🌐 [Frontend 서빙] ──
 // 프론트엔드 빌드 결과물(dist)이 있다면 이를 기본으로 서비스함
-app.use(express.static(path.join(__dirname, 'client/dist')));
+app.use(
+  express.static(path.join(__dirname, 'client/dist'), {
+    setHeaders: (res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
 
 import fs from 'fs';
 
 // [MCP UI RESOURCE] 지피티 앱이 리액트 위젯을 불러오는 경로
 app.get('/ui/recommendation', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
 });
 

@@ -225,21 +225,24 @@ async function executeTool(args = {}) {
   };
 }
 
-router.get('/', (req, res) => {
+function handleSseConnect(req, res) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.write('event: endpoint\ndata: /mcp/message\n\n');
   res.flushHeaders();
-  console.log('[MCP Stream] Connected');
+  console.log(`[MCP Stream] Connected path=${req.path}`);
 
   clientStream = res;
   res.on('close', () => {
-    console.log('[MCP Stream] Disconnected');
+    console.log(`[MCP Stream] Disconnected path=${req.path}`);
     if (clientStream === res) clientStream = null;
   });
-});
+}
 
-router.post('/message', async (req, res) => {
+router.get('/', handleSseConnect);
+router.get('/sse', handleSseConnect);
+
+async function handleMcpMessage(req, res) {
   const { method, params, id } = req.body || {};
   res.status(202).send('Accepted');
 
@@ -343,6 +346,9 @@ router.post('/message', async (req, res) => {
     console.error('[MCP Error]', error);
     sendError(id, -32000, error.message);
   }
-});
+}
+
+router.post('/message', handleMcpMessage);
+router.post('/messages', handleMcpMessage);
 
 export default router;

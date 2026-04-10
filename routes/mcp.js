@@ -10,9 +10,9 @@ const router = express.Router();
 
 let clientStream = null;
 
-// [MCP-Apps 핵심 설정] 지피티 네이티브 위젯용 URI 및 리소스
+// [MCP-Apps 최종 설정] 가장 호환성 높은 HTTPS 기반 리소스 URI 사용
 const BASE_URL = 'https://cafe24-api.onrender.com';
-const WIDGET_URI = "ui://widget/recommendation.html";
+const WIDGET_URI = `${BASE_URL}/ui/recommendation`;
 
 const RESOURCES = [
     {
@@ -29,7 +29,7 @@ const TOOLS = [
         description: "[👑GEN-UI ENABLED] 사용자의 피부 고민을 분석하고 최적의 상품 리스트를 '네이티브 리액트 위젯'으로 출력합니다.",
         _meta: {
             "openai/outputTemplate": WIDGET_URI,
-            ui: { resourceUri: WIDGET_URI }
+            "ui": { "resourceUri": WIDGET_URI }
         },
         inputSchema: {
             type: "object",
@@ -50,8 +50,7 @@ const CATEGORY_SYNONYM_MAP = {
     '클렌징': '클렌징', '세안': '클렌징',
     '토너': '토너', '스킨': '토너',
     '마스크': '마스크팩', '팩': '마스크팩',
-    '이너뷰티': '이너뷰티', '먹는': '이너뷰티',
-    '베이비케어': '베이비케어', '아기': '베이비케어'
+    '이너뷰티': '이너뷰티', '먹는': '이너뷰티'
 };
 
 const sendToClient = (msg) => {
@@ -79,17 +78,21 @@ async function executeTool(name, args) {
 
     const result = await recommendationService.scoreAndFilterProducts(
         rawProducts,
-        { ...args, category_aliases: [standardCat] },
+        { 
+            ...args, 
+            category_aliases: [standardCat],
+            target_category_ids: categoryNos // 🎯 실제 감지된 번호 탑재
+        },
         3
     );
 
     const { recommendations, summary } = result;
     if (!recommendations || recommendations.length === 0) {
-        return { content: [{ type: "text", text: summary?.message || "해당 상품이 없습니다." }] };
+        return { content: [{ type: "text", text: summary?.message || "찾으시는 제품이 없습니다." }] };
     }
 
     return {
-        content: [{ type: "text", text: "추천 결과를 위젯 리포트로 생성합니다." }],
+        content: [{ type: "text", text: "고객님의 피부 고민 분석 결과입니다. 아래 카드를 확인해 주세요." }],
         structuredContent: {
             recommendations: recommendations,
             summary: summary,
@@ -98,7 +101,7 @@ async function executeTool(name, args) {
         },
         _meta: {
             "openai/outputTemplate": WIDGET_URI,
-            ui: { resourceUri: WIDGET_URI }
+            "ui": { "resourceUri": WIDGET_URI }
         }
     };
 }
@@ -119,44 +122,54 @@ router.post('/message', async (req, res) => {
 
     try {
         if (method === "initialize") {
-            console.log(`[MCP Protocol] Initializing Handshake...`);
+            console.log(`[MCP Protocol] Handshake Refreshed!`);
             sendToClient({ 
                 jsonrpc: "2.0", id, 
                 result: { 
                     protocolVersion: "2024-11-05", 
                     capabilities: { tools: {}, resources: { subscribe: true } }, 
-                    serverInfo: { name: "cafe24-mcp-premium", version: "3.5.0" } 
+                    serverInfo: { name: "cafe24-api-genui", version: "4.0.0" } 
                 } 
             });
         } else if (method === "resources/list") {
             console.log(`[MCP Protocol] Listing Resources...`);
             sendToClient({ jsonrpc: "2.0", id, result: { resources: RESOURCES } });
         } else if (method === "resources/read") {
-            console.log(`[MCP Protocol] 📢 Resource READ: ${params?.uri}`);
-            if (params?.uri === WIDGET_URI) {
+            const requestedUri = params?.uri || "";
+            console.log(`[MCP Protocol] 📢 Resource READ: ${requestedUri}`);
+            
+            // HTTPS 주소로 정확히 들어왔는지 체크
+            if (requestedUri === WIDGET_URI) {
                 const indexPath = path.join(process.cwd(), 'client/dist/index.html');
                 let html = fs.readFileSync(indexPath, 'utf8');
+                
+                // 위젯 모드 주입 및 자산 경로 절대경로화
                 html = html.replace('<head>', `<head><script>window.__WIDGET_MODE__=true;</script>`);
-                html = html.replace(/src="\//g, `src="${BASE_URL}/`).replace(/href="\//g, `href="${BASE_URL}/`);
+                html = html.replace(/src="\//g, `src="${BASE_URL}/`);
+                html = html.replace(/href="\//g, `href="${BASE_URL}/`);
+                
                 sendToClient({
                     jsonrpc: "2.0", id,
                     result: { contents: [{ uri: WIDGET_URI, mimeType: "text/html", text: html }] }
                 });
-                console.log(`[MCP Protocol] ✅ Widget HTML injected and sent.`);
+                console.log(`[MCP Protocol] ✅ Final High-Fidelity HTML sent.`);
             }
         } else if (method === "tools/list") {
             console.log(`[MCP Protocol] Listing Tools...`);
             sendToClient({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
         } else if (method === "tools/call") {
-            console.log(`[MCP Protocol] 🚀 Calling Tool: ${params.name}`);
+            console.log(`[MCP Protocol] 🚀 Executing with Hybrid Data Binding...`);
             const toolResult = await executeTool(params.name, params.arguments);
+            
+            // 모든 가능성 있는 필드에 데이터 주입
             const finalResult = {
                 ...toolResult,
                 data: toolResult.structuredContent,
                 output: toolResult.structuredContent
             };
+            
             sendToClient({ jsonrpc: "2.0", id, result: finalResult });
-            console.log(`[MCP Protocol] ✅ Curation Result with multi-binding data sent.`);
+            console.log(`[MCP Protocol] ✅ Result dispatched.`);
         }
     } catch (e) {
         console.error('[MCP Error]', e);

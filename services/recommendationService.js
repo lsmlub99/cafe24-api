@@ -61,11 +61,12 @@ export const recommendationService = {
 
     // ── 1. 하이브리드 카테고리 매칭 (Name or ID) ──
     const productCatIds = (product.category_ids || []).map(id => String(id));
+    const targetCatIds = (intent.target_category_ids || []).map(id => String(id));
+    
     const hasCategoryMatch = intent.target_categories.some(cat => {
         const catStr = String(cat).toLowerCase();
-        // 상품 텍스트(이름/설명)에 카테고리명이 포함되어 있거나, ID가 일치하는지 확인
         return text.includes(catStr) || productCatIds.includes(catStr);
-    });
+    }) || productCatIds.some(id => targetCatIds.includes(id));
     
     if (hasCategoryMatch) score += 150;
     else if (intent.target_categories.length > 0) score -= 50;
@@ -246,12 +247,13 @@ export const recommendationService = {
     return {
       query: rawQuery,
       target_categories: Array.from(detectedCategories),
+      target_category_ids: args.target_category_ids || [], // 🎯 실제 번호 리스트 저장
       category_excludes: [],
       concerns: Array.from(detectedConcerns),
       preferred_lines: preferredLines,
       textures: Array.from(textures),
       avoid_textures: Array.from(avoidTextures),
-      has_intent: detectedCategories.size > 0 || detectedConcerns.size > 0 || rawTypes.length > 0
+      has_intent: detectedCategories.size > 0 || detectedConcerns.size > 0 || rawTypes.length > 0 || (args.target_category_ids && args.target_category_ids.length > 0)
     };
   }
 };

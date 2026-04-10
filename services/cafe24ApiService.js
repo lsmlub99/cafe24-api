@@ -6,7 +6,6 @@ import { cafe24AuthService } from './cafe24AuthService.js';
 let lastSyncLogs = [];
 let allProductsCache = [];
 let lastSyncTime = 0;
-let lastSyncHash = '';
 let categoryMap = {};
 let ingredientDetectedPath = null;
 const ingredientDetailCache = new Map();
@@ -116,16 +115,33 @@ function stripHtml(value) {
     .trim();
 }
 
+function normalizeSearchText(value) {
+  return stripHtml(value)
+    .replace(/\(\s*\d{1,2}\/\d{1,2}[^)]*\)/g, ' ')
+    .replace(/\d{1,2}\/\d{1,2}~\d{1,2}\/\d{1,2}/g, ' ')
+    .replace(/[^\p{L}\p{N}\s:+/-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function removeMarketingNoise(value) {
+  if (!value) return '';
+  return String(value)
+    .replace(/\b(기획세트|콜라보|퍼프|증정|사은품|한정|이벤트|프로모션|타임딜)\b/gi, ' ')
+    .replace(/\b(1\+1|2\+1|3\+1)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function buildSearchPreview(product, tags = {}) {
   const parts = [
     product.product_name,
     product.summary_description,
     product.simple_description,
-    Array.isArray(product.product_tag) ? product.product_tag.join(' ') : product.product_tag,
     Array.isArray(tags.all_tags) ? tags.all_tags.join(' ') : '',
   ];
 
-  const text = stripHtml(parts.filter(Boolean).join(' '));
+  const text = removeMarketingNoise(normalizeSearchText(parts.filter(Boolean).join(' ')));
   return text.slice(0, 260);
 }
 
@@ -136,7 +152,6 @@ function buildSearchFeatures(product, tags = {}, ingredientText = '') {
     product.simple_description,
     product.description,
     product.mobile_description,
-    Array.isArray(product.product_tag) ? product.product_tag.join(' ') : product.product_tag,
     Array.isArray(tags.all_tags) ? tags.all_tags.join(' ') : '',
     Array.isArray(tags.concern_tags) ? tags.concern_tags.join(' ') : '',
     Array.isArray(tags.texture_tags) ? tags.texture_tags.join(' ') : '',
@@ -144,7 +159,7 @@ function buildSearchFeatures(product, tags = {}, ingredientText = '') {
   ];
 
   // Keep this compact for fast in-memory scoring and LLM payloads.
-  return stripHtml(parts.filter(Boolean).join(' ')).slice(0, 2000);
+  return removeMarketingNoise(normalizeSearchText(parts.filter(Boolean).join(' '))).slice(0, 1600);
 }
 
 async function refreshTokenIfNeeded() {
@@ -357,7 +372,6 @@ async function syncAllProducts(accessToken) {
     });
 
     lastSyncTime = Date.now();
-    lastSyncHash = JSON.stringify(allFetched.map((p) => `${p.product_no}${p.product_name}${p.price}`));
     console.log(`[Sync SUCCESS] Cached products: ${allProductsCache.length}`);
     return { products: allProductsCache };
   } catch (e) {

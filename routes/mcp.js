@@ -1,7 +1,6 @@
 import express from 'express';
 import { config } from '../config/env.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
-import { tokenStore } from '../stores/tokenStore.js';
 import { recommendationService } from '../services/recommendationService.js';
 import fs from 'fs';
 import path from 'path';
@@ -11,8 +10,10 @@ const router = express.Router();
 let clientStream = null;
 
 // [MCP-Apps 최종 설정] 가장 호환성 높은 HTTPS 기반 리소스 URI 사용
-const BASE_URL = 'https://cafe24-api.onrender.com';
+const DEFAULT_BASE_URL = 'https://cafe24-api.onrender.com';
+const BASE_URL = (config.PUBLIC_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
 const WIDGET_URI = `${BASE_URL}/ui/recommendation`;
+const TOOL_NAME = 'search_cafe24_real_products';
 
 const RESOURCES = [
     {
@@ -25,7 +26,7 @@ const RESOURCES = [
 
 const TOOLS = [
     {
-        name: "search_cafe24_real_products",
+        name: TOOL_NAME,
         description: "[👑GEN-UI ENABLED] 사용자의 피부 고민을 분석하고 최적의 상품 리스트를 '네이티브 리액트 위젯'으로 출력합니다.",
         _meta: {
             "openai/outputTemplate": WIDGET_URI,
@@ -60,7 +61,19 @@ const sendToClient = (msg) => {
     }
 };
 
-async function executeTool(name, args) {
+const sendError = (id, code, message, data = undefined) => {
+    sendToClient({
+        jsonrpc: "2.0",
+        id,
+        error: {
+            code,
+            message,
+            ...(data ? { data } : {})
+        }
+    });
+};
+
+async function executeTool(name, args = {}) {
     console.log(`[Tool Exec] 🛠️ ${name} 기동...`);
     const rawCat = (args.category || '').toLowerCase().trim();
     const standardCat = CATEGORY_SYNONYM_MAP[rawCat] || rawCat;
@@ -112,6 +125,11 @@ router.get('/', (req, res) => {
     res.write(`event: endpoint\ndata: /mcp/message\n\n`);
     res.flushHeaders();
     clientStream = res;
+    res.on('close', () => {
+        if (clientStream === res) {
+            clientStream = null;
+        }
+    });
 });
 
 router.post('/message', async (req, res) => {
@@ -139,41 +157,56 @@ router.post('/message', async (req, res) => {
             console.log(`[MCP Protocol] 📢 Resource READ: ${requestedUri}`);
             
             // HTTPS 주소로 정확히 들어왔는지 체크
-            if (requestedUri === WIDGET_URI) {
-                const indexPath = path.join(process.cwd(), 'client/dist/index.html');
-                let html = fs.readFileSync(indexPath, 'utf8');
-                
-                // 위젯 모드 주입 및 자산 경로 절대경로화
-                html = html.replace('<head>', `<head><script>window.__WIDGET_MODE__=true;</script>`);
-                html = html.replace(/src="\//g, `src="${BASE_URL}/`);
-                html = html.replace(/href="\//g, `href="${BASE_URL}/`);
-                
-                sendToClient({
-                    jsonrpc: "2.0", id,
-                    result: { contents: [{ uri: WIDGET_URI, mimeType: "text/html", text: html }] }
-                });
-                console.log(`[MCP Protocol] ✅ Final High-Fidelity HTML sent.`);
+            if (requestedUri !== WIDGET_URI) {
+                sendError(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: [WIDGET_URI] });
+                return;
             }
+
+            const indexPath = path.join(process.cwd(), 'client/dist/index.html');
+            if (!fs.existsSync(indexPath)) {
+                sendError(id, -32000, `Widget build not found at ${indexPath}`);
+                return;
+            }
+            let html = fs.readFileSync(indexPath, 'utf8');
+            
+            // 위젯 모드 주입 및 자산 경로 절대경로화
+            html = html.replace('<head>', `<head><script>window.__WIDGET_MODE__=true;</script>`);
+            html = html.replace(/src="\//g, `src="${BASE_URL}/`);
+            html = html.replace(/href="\//g, `href="${BASE_URL}/`);
+            
+            sendToClient({
+                jsonrpc: "2.0", id,
+                result: { contents: [{ uri: WIDGET_URI, mimeType: "text/html", text: html }] }
+            });
+            console.log(`[MCP Protocol] ✅ Final High-Fidelity HTML sent.`);
         } else if (method === "tools/list") {
             console.log(`[MCP Protocol] Listing Tools...`);
             sendToClient({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
         } else if (method === "tools/call") {
             console.log(`[MCP Protocol] 🚀 Executing with Hybrid Data Binding...`);
-            const toolResult = await executeTool(params.name, params.arguments);
+            const toolName = params?.name;
+            if (toolName !== TOOL_NAME) {
+                sendError(id, -32601, `Tool not found: ${toolName}`);
+                return;
+            }
+            const toolArgs = params?.arguments && typeof params.arguments === 'object'
+                ? params.arguments
+                : {};
+            const toolResult = await executeTool(toolName, toolArgs);
             
             // 모든 가능성 있는 필드에 데이터 주입
-            const finalResult = {
-                ...toolResult,
-                data: toolResult.structuredContent,
-                output: toolResult.structuredContent
-            };
+            const finalResult = { ...toolResult };
+            if (toolResult.structuredContent) {
+                finalResult.data = toolResult.structuredContent;
+                finalResult.output = toolResult.structuredContent;
+            }
             
             sendToClient({ jsonrpc: "2.0", id, result: finalResult });
             console.log(`[MCP Protocol] ✅ Result dispatched.`);
         }
     } catch (e) {
         console.error('[MCP Error]', e);
-        sendToClient({ jsonrpc: "2.0", id, error: { message: e.message } });
+        sendError(id, -32000, e.message);
     }
 });
 

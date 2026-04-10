@@ -10,7 +10,8 @@ export const config = {
   CLIENT_SECRET: process.env.CLIENT_SECRET,
   REDIRECT_URI: process.env.REDIRECT_URI,
   SCOPE: process.env.SCOPE,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || process.env.BASE_URL || ''
 };
 
 // 필수 환경변수 누락 시 즉시 서버 구동 실패 처리 (장애 전파 방지)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Send, Sparkles, ShoppingBag, ChevronRight } from 'lucide-react'
+import { Send, Sparkles, ChevronRight } from 'lucide-react'
 
 function App() {
   const [messages, setMessages] = useState([

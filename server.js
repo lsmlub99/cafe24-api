@@ -97,7 +97,12 @@ app.get('/ui/recommendation', (req, res) => {
 
 // 모든 기타 경로는 리액트 index.html로 (SPA 지원)
 app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/cafe24') || req.path.startsWith('/mcp')) return next();
+    if (
+      req.path.startsWith('/api') ||
+      req.path.startsWith('/cafe24') ||
+      req.path.startsWith('/mcp') ||
+      req.path.startsWith('/debug')
+    ) return next();
     
     const indexPath = path.join(__dirname, 'client/dist', 'index.html');
     if (fs.existsSync(indexPath)) {

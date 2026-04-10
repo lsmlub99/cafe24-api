@@ -13,7 +13,6 @@ const BASE_URL = (config.PUBLIC_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ''
 const WIDGET_TEMPLATE_VERSION = 'v20260410';
 const WIDGET_UI_URI = `ui://widget/recommendation-${WIDGET_TEMPLATE_VERSION}.html`;
 const WIDGET_HTTP_URI = `${BASE_URL}/ui/recommendation`;
-const WIDGET_OUTPUT_TEMPLATE_URI = `${WIDGET_HTTP_URI}?v=${WIDGET_TEMPLATE_VERSION}`;
 const TOOL_NAME = 'search_cafe24_real_products';
 const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
 
@@ -73,7 +72,7 @@ const TOOLS = [
     },
     _meta: {
       ui: { resourceUri: WIDGET_UI_URI, visibility: ['model', 'app'] },
-      'openai/outputTemplate': WIDGET_OUTPUT_TEMPLATE_URI,
+      'openai/outputTemplate': WIDGET_UI_URI,
       'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Analyzing your skin needs...',
       'openai/toolInvocation/invoked': 'Recommendation results are ready.',
@@ -215,7 +214,7 @@ async function executeTool(args = {}) {
     },
     _meta: {
       ui: { resourceUri: WIDGET_UI_URI },
-      'openai/outputTemplate': WIDGET_OUTPUT_TEMPLATE_URI,
+      'openai/outputTemplate': WIDGET_UI_URI,
       'openai/widgetAccessible': true,
       widgetData: {
         recommendations,

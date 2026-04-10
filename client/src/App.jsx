@@ -36,10 +36,14 @@ function App() {
       if (message.params?.structuredContent || message.params?.data || message.params?.output) {
         return message.params;
       }
+      if (message.params?.result) return message.params.result;
       if (message.params?.payload) return message.params.payload;
       if (message.params?.toolOutput) return message.params.toolOutput;
       if (message.result?.toolOutput) return message.result.toolOutput;
       if (message.result?.payload) return message.result.payload;
+      if (message.result?.structuredContent || message.result?.data || message.result?.output) {
+        return message.result;
+      }
       if (message.result) return message.result;
       return message;
     };
@@ -49,9 +53,11 @@ function App() {
       if (!message) return;
 
       if (message.jsonrpc === '2.0' && typeof message.method === 'string') {
-        if (message.method === 'ui/notifications/tool-result') {
-          applyWidgetData(unwrap(message));
-        }
+        applyWidgetData(unwrap(message));
+        return;
+      }
+      if (message.jsonrpc === '2.0') {
+        applyWidgetData(unwrap(message));
         return;
       }
 
@@ -72,6 +78,11 @@ function App() {
     if (window.__MCP_DATA__) applyWidgetData(window.__MCP_DATA__);
     if (window.openai?.appData) applyWidgetData(window.openai.appData);
     if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
+
+    const fallbackPoll = window.setInterval(() => {
+      if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
+      if (window.openai?.appData) applyWidgetData(window.openai.appData);
+    }, 500);
 
     const inIframe = window.parent && window.parent !== window;
     if (inIframe) {
@@ -95,7 +106,10 @@ function App() {
       );
     }
 
-    return () => window.removeEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.clearInterval(fallbackPoll);
+    };
   }, []);
 
   const handleSend = async () => {

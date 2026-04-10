@@ -9,6 +9,14 @@ const openai = new OpenAI({
 const DEFAULT_RERANK_CANDIDATES = 8;
 const DEFAULT_LLM_WEIGHT = 0.6;
 
+const FORM_KEYWORDS = {
+  cream: ['선크림', '썬크림', 'sun cream', 'sunscreen cream'],
+  stick: ['선스틱', '썬스틱', 'stick'],
+  spray: ['선스프레이', '썬스프레이', 'spray'],
+  cushion: ['선쿠션', '썬쿠션', 'cushion'],
+  lotion: ['선로션', '썬로션', 'lotion'],
+};
+
 function safeLower(v) {
   return String(v || '').toLowerCase();
 }
@@ -18,6 +26,10 @@ function tokenize(raw) {
     .split(/[,\s]+/)
     .map((t) => t.trim())
     .filter(Boolean);
+}
+
+function hasAny(text, words) {
+  return words.some((w) => text.includes(safeLower(w)));
 }
 
 export const recommendationService = {
@@ -47,10 +59,38 @@ export const recommendationService = {
       price: priceNum.toLocaleString(),
       thumbnail: thumb,
       summary_description: p.summary_description || p.simple_description || '',
+      ingredient_text: p.ingredient_text || '',
       keywords: Array.isArray(p.keywords) && p.keywords.length > 0 ? p.keywords : fallbackKeywords,
       attributes: p.attributes || { concern_tags: fallbackKeywords, line_tags: [], texture_tags: [] },
       category_ids: Array.isArray(p.category_ids) && p.category_ids.length > 0 ? p.category_ids : categoryIds,
     };
+  },
+
+  detectRequestedForm(intent, args = {}) {
+    const raw = safeLower(`${args.category || ''} ${args.query || ''} ${args.q || ''}`);
+    if (hasAny(raw, FORM_KEYWORDS.stick)) return 'stick';
+    if (hasAny(raw, FORM_KEYWORDS.spray)) return 'spray';
+    if (hasAny(raw, FORM_KEYWORDS.cushion)) return 'cushion';
+    if (hasAny(raw, FORM_KEYWORDS.lotion)) return 'lotion';
+    if (hasAny(raw, FORM_KEYWORDS.cream)) return 'cream';
+
+    if ((intent.target_categories || []).includes('선크림')) return 'cream';
+    return null;
+  },
+
+  getProductForm(product) {
+    const text = safeLower(`${product?.name || ''} ${product?.summary_description || ''}`);
+    if (hasAny(text, FORM_KEYWORDS.stick)) return 'stick';
+    if (hasAny(text, FORM_KEYWORDS.spray)) return 'spray';
+    if (hasAny(text, FORM_KEYWORDS.cushion)) return 'cushion';
+    if (hasAny(text, FORM_KEYWORDS.lotion)) return 'lotion';
+    if (hasAny(text, FORM_KEYWORDS.cream)) return 'cream';
+    return 'other';
+  },
+
+  matchesRequestedForm(product, requestedForm) {
+    if (!requestedForm) return true;
+    return this.getProductForm(product) === requestedForm;
   },
 
   calculateScore(product, intent) {
@@ -108,6 +148,7 @@ export const recommendationService = {
       detected_concerns: intent.concerns || [],
       preferred_textures: intent.textures || [],
       avoid_textures: intent.avoid_textures || [],
+      requested_form: intent.requested_form || null,
     };
   },
 
@@ -119,9 +160,11 @@ export const recommendationService = {
     const candidatePayload = candidates.map((p) => ({
       id: String(p.id),
       name: p.name,
+      form: this.getProductForm(p),
       base_score: p._score || 0,
       price: p.price,
       summary_description: p.summary_description || '',
+      ingredient_text: String(p.ingredient_text || '').slice(0, 800),
       keywords: Array.isArray(p.keywords) ? p.keywords.slice(0, 8) : [],
       concern_tags: p.attributes?.concern_tags || [],
       texture_tags: p.attributes?.texture_tags || [],
@@ -131,7 +174,8 @@ export const recommendationService = {
       'You are a strict skincare product reranker.',
       'Only reorder from provided candidates.',
       'Never invent new ids or products.',
-      'Prioritize practical fit: concern, skin type, texture preference, and usability.',
+      'If requested_form is set, prioritize exact form match strongly.',
+      'When ingredient_text is available, use it for sensitive-skin safety and irritation risk judgment.',
       'Return JSON only:',
       '{"ordered_ids":["id1","id2"],"reason":"short"}',
     ].join(' ');
@@ -184,17 +228,27 @@ export const recommendationService = {
     }
   },
 
+  enforceRequestedFormOrdering(products, requestedForm) {
+    if (!requestedForm) return products;
+    const matches = products.filter((p) => this.matchesRequestedForm(p, requestedForm));
+    const others = products.filter((p) => !this.matchesRequestedForm(p, requestedForm));
+    if (matches.length === 0) return products;
+    return [...matches, ...others];
+  },
+
   async scoreAndFilterProducts(cachedProducts, args, limit = 3) {
     if (!cachedProducts || cachedProducts.length === 0) {
       return { recommendations: [], summary: { message: '데이터가 없습니다.' } };
     }
 
     const intent = this.normalizeUserIntent(args);
+    intent.requested_form = this.detectRequestedForm(intent, args);
+
     if (!intent.has_intent) {
       return {
         recommendations: [],
         summary: {
-          message: '원하는 피부타입 또는 카테고리를 말씀해주시면 더 정확히 추천해드릴게요.',
+          message: '원하는 피부 타입 또는 카테고리를 말씀해주시면 더 정확히 추천해드릴게요.',
         },
       };
     }
@@ -222,20 +276,21 @@ export const recommendationService = {
     }
 
     const rerankedPool = await this.rerankWithLLM(candidatePool, intent, args);
-    const finalFiltered = rerankedPool.slice(0, limit);
+    const formAdjusted = this.enforceRequestedFormOrdering(rerankedPool, intent.requested_form);
+    const finalFiltered = formAdjusted.slice(0, limit);
 
     const recommendations = finalFiltered.map((p, idx) => {
       let keyPoint = '피부 고민 적합 케어';
       const name = p.name;
       if (name.includes('레이저')) keyPoint = '장벽 강화 및 보습';
-      else if (name.includes('아쿠아')) keyPoint = '가볍고 촉촉한 수분 공급';
+      else if (name.includes('아쿠아')) keyPoint = '가볍고 촉촉한 수분감';
       else if (name.includes('포스트')) keyPoint = '민감 피부 진정 케어';
-      else if (name.includes('시카')) keyPoint = '붉은기 및 자극 완화';
+      else if (name.includes('시카')) keyPoint = '붉은기/자극 완화';
       else if (name.includes('선')) keyPoint = '자외선 차단 및 데일리 사용';
 
       return {
         rank: idx + 1,
-        rank_label: idx === 0 ? '🏆 1위(BEST)' : `${idx + 1}위`,
+        rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
         name: p.name,
         price: p.price,
         key_point: keyPoint,
@@ -244,25 +299,16 @@ export const recommendationService = {
       };
     });
 
-    const finalMdContent = `
-| 🥇 **1위(BEST)** | **2위** | **3위** |
-| :---: | :---: | :---: |
-| ![Img](${recommendations[0]?.image || ''}) | ![Img](${recommendations[1]?.image || ''}) | ![Img](${recommendations[2]?.image || ''}) |
-| **${recommendations[0]?.name || '-'}** | **${recommendations[1]?.name || '-'}** | **${recommendations[2]?.name || '-'}** |
-| \`${recommendations[0]?.price || '-'}원\` | \`${recommendations[1]?.price || '-'}원\` | \`${recommendations[2]?.price || '-'}원\` |
-| ${recommendations[0] ? `[**구매하기**](${recommendations[0].buy_url})` : '-'} | ${recommendations[1] ? `[**구매하기**](${recommendations[1].buy_url})` : '-'} | ${recommendations[2] ? `[**구매하기**](${recommendations[2].buy_url})` : '-'} |
-`;
-
-    const detailGuides = recommendations.map((p) => `> **[${p.rank}]** ${p.key_point}`).join('\n');
     const strategy =
       (intent.target_categories || []).length > 0
-        ? `${intent.target_categories.join(', ')} 카테고리 내 후보를 룰베이스로 1차 선별한 뒤, LLM 재랭킹으로 최종 우선순위를 확정했습니다.`
-        : `피부 고민/텍스처 선호를 기반으로 1차 점수화 후 LLM 재랭킹으로 사용감 적합도를 높였습니다.`;
-    const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 요청 조건에 가장 적합한 솔루션으로 판단됩니다.`;
+        ? `${intent.target_categories.join(', ')} 카테고리에서 룰베이스 1차 선별 후 LLM 재랭킹을 수행했습니다.`
+        : `피부 고민/사용감 기준 룰베이스 점수화 후 LLM 재랭킹을 수행했습니다.`;
+
+    const formText = intent.requested_form ? ` 요청 제형(${intent.requested_form})을 우선 반영했습니다.` : '';
+    const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 요청 조건에 가장 적합합니다.${formText}`;
 
     return {
       recommendations,
-      custom_markdown: `### ✅ **맞춤 분석 결과**\n${finalMdContent}\n${detailGuides}\n\n---`,
       summary: {
         message: '고객님을 위한 최적 상품입니다.',
         strategy,
@@ -292,6 +338,7 @@ export const recommendationService = {
       커버: ['커버', '잡티', '가림', '비비', '메이크업'],
       시원: ['쿨링', '시원', '산뜻', '가벼운', 'fresh'],
       모공: ['모공', '피지', '유분', 'pore'],
+      저자극: ['저자극', '순한', '마일드', 'mild'],
     };
 
     const detectedCategories = new Set(args.category_aliases || [args.category].filter(Boolean));
@@ -310,7 +357,7 @@ export const recommendationService = {
     const textures = new Set();
     const avoidTextures = new Set();
 
-    if (detectedConcerns.has('진정')) preferredLines.add('포스트알파');
+    if (detectedConcerns.has('진정') || detectedConcerns.has('저자극')) preferredLines.add('포스트알파');
     if (detectedConcerns.has('보습')) preferredLines.add('아쿠아티카');
     if (detectedConcerns.has('모공')) preferredLines.add('퍼플티카');
     if (detectedConcerns.has('커버')) preferredLines.add('토닝');
@@ -320,6 +367,8 @@ export const recommendationService = {
         ['가벼움', '산뜻', '워터리'].forEach((tx) => textures.add(tx));
       } else if (type === '건성') {
         textures.add('리치');
+      } else if (type === '민감성') {
+        avoidTextures.add('알코올');
       }
     });
 
@@ -332,6 +381,7 @@ export const recommendationService = {
       preferred_lines: preferredLines,
       textures: Array.from(textures),
       avoid_textures: Array.from(avoidTextures),
+      requested_form: null,
       has_intent:
         detectedCategories.size > 0 ||
         detectedConcerns.size > 0 ||

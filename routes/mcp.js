@@ -77,7 +77,15 @@ async function executeTool(name, args = {}) {
     console.log(`[Tool Exec] 🛠️ ${name} 기동...`);
     const rawCat = (args.category || '').toLowerCase().trim();
     const standardCat = CATEGORY_SYNONYM_MAP[rawCat] || rawCat;
-    const categoryNos = cafe24ApiService.getDynamicCategoryNos([standardCat]);
+    const forcedLookup = {
+        '선크림': ['선케어'],
+        '썬크림': ['선케어'],
+        '선스틱': ['선스틱'],
+        '선스프레이': ['선스프레이'],
+        '선쿠션': ['선쿠션']
+    };
+    const lookupKeywords = forcedLookup[standardCat] || [standardCat];
+    const categoryNos = cafe24ApiService.getDynamicCategoryNos(lookupKeywords);
     
     let rawProducts = [];
     if (categoryNos.length > 0) {
@@ -88,6 +96,7 @@ async function executeTool(name, args = {}) {
     } else {
         rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
     }
+    rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, 12);
 
     const result = await recommendationService.scoreAndFilterProducts(
         rawProducts,

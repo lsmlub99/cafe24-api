@@ -409,11 +409,53 @@ async function enrichProductsWithIngredientText(products = [], maxFetch = 12) {
   });
 }
 
+async function inspectProductDetailFields(productNo) {
+  const token = await refreshTokenIfNeeded();
+  if (!token) {
+    return { error: 'No access token available.' };
+  }
+
+  const detail = await fetchProductDetailWithToken(productNo, token);
+  const product = detail.product;
+  if (!product) {
+    return { error: `Product detail not found for product_no=${productNo}` };
+  }
+
+  const entries = collectStringPaths(product)
+    .map(({ path, value }) => {
+      const lowerPath = path.toLowerCase();
+      const text = String(value || '');
+      let score = 0;
+      if (lowerPath.includes('ingredient')) score += 5;
+      if (lowerPath.includes('description')) score += 2;
+      if (looksLikeIngredientText(text)) score += 4;
+      if (INGREDIENT_TEXT_MARKERS.some((m) => text.toLowerCase().includes(m.toLowerCase()))) score += 1;
+      return {
+        path,
+        score,
+        length: text.length,
+        preview: text.replace(/\s+/g, ' ').slice(0, 200),
+      };
+    })
+    .filter((item) => item.length > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 40);
+
+  return {
+    product_no: product.product_no,
+    product_name: product.product_name,
+    detected_ingredient_path: ingredientDetectedPath,
+    top_level_keys: Object.keys(product),
+    candidate_fields: entries,
+  };
+}
+
 export const cafe24ApiService = {
   syncAllProducts,
   getProductsFromCache,
   getDynamicCategoryNos,
   enrichProductsWithIngredientText,
+  inspectProductDetailFields,
   get allProductsCache() {
     return allProductsCache;
   },

@@ -140,7 +140,11 @@ app.get('/debug/cache', async (req, res) => {
     }
   }
   
+  const rawCache = cafe24ApiService.allProductsCache || [];
   const cache = cafe24ApiService.getProductsFromCache({});
+  const displayTrueCount = rawCache.filter(p => p.display === 'T').length;
+  const sellingTrueCount = rawCache.filter(p => p.selling === 'T').length;
+  const activeCount = rawCache.filter(p => p.display === 'T' && p.selling === 'T').length;
   const sample = cache.slice(0, 3).map(p => ({
     product_no: p.product_no,
     product_name: p.product_name,
@@ -179,6 +183,10 @@ app.get('/debug/cache', async (req, res) => {
   );
 
   res.json({
+    "raw_cache_count": rawCache.length,
+    "active_cache_count": activeCount,
+    "display_true_count": displayTrueCount,
+    "selling_true_count": sellingTrueCount,
     "cache_count": cache.length,
     "ingredient_path_detected": cafe24ApiService.ingredientPath || null,
     "ingredient_filled_count": ingredientFilledCount,
@@ -195,6 +203,20 @@ app.get('/debug/cache', async (req, res) => {
     "sync_report": cafe24ApiService.syncLogs || [],
     "samples": sample
   });
+});
+
+app.get('/debug/product/:productNo', async (req, res) => {
+  try {
+    const productNo = String(req.params.productNo || '').trim();
+    if (!productNo) {
+      return res.status(400).json({ error: 'productNo is required' });
+    }
+    const result = await cafe24ApiService.inspectProductDetailFields(productNo);
+    res.json(result);
+  } catch (e) {
+    console.error('[DEBUG product Error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.use((err, req, res, next) => {

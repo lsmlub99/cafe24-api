@@ -32,6 +32,16 @@ function hasAny(text, words) {
   return words.some((w) => text.includes(safeLower(w)));
 }
 
+function countKeywordHits(text, words = []) {
+  if (!text) return 0;
+  const unique = [...new Set(words.map((w) => safeLower(w)).filter(Boolean))];
+  let hits = 0;
+  for (const word of unique) {
+    if (text.includes(word)) hits += 1;
+  }
+  return hits;
+}
+
 export const recommendationService = {
   normalizeProduct(p) {
     const cleanPrice = String(p.price || 0).replace(/,/g, '');
@@ -60,6 +70,8 @@ export const recommendationService = {
       thumbnail: thumb,
       summary_description: p.summary_description || p.simple_description || '',
       ingredient_text: p.ingredient_text || '',
+      search_preview: p.search_preview || '',
+      search_features: p.search_features || '',
       keywords: Array.isArray(p.keywords) && p.keywords.length > 0 ? p.keywords : fallbackKeywords,
       attributes: p.attributes || { concern_tags: fallbackKeywords, line_tags: [], texture_tags: [] },
       category_ids: Array.isArray(p.category_ids) && p.category_ids.length > 0 ? p.category_ids : categoryIds,
@@ -98,7 +110,9 @@ export const recommendationService = {
     const attrs = product.attributes || {};
     const name = safeLower(product.name);
     const desc = safeLower(product.summary_description);
-    const text = `${name} ${desc}`;
+    const featureText = safeLower(`${product.search_features || ''} ${product.search_preview || ''}`);
+    const ingredientText = safeLower(product.ingredient_text || '');
+    const text = `${name} ${desc} ${featureText}`;
 
     const productCatIds = (product.category_ids || []).map((id) => String(id));
     const targetCatIds = (intent.target_category_ids || []).map((id) => String(id));
@@ -135,6 +149,31 @@ export const recommendationService = {
     if ((concerns.includes('산뜻') || concerns.includes('번들')) &&
         (text.includes('산뜻') || text.includes('보송') || text.includes('워터') || text.includes('가벼'))) {
       score += 20;
+    }
+
+    const concernKeywords = [];
+    for (const concern of intent.concerns || []) {
+      concernKeywords.push(concern);
+      if (concern === '자외선 차단') concernKeywords.push('uv', 'sunscreen', 'sun');
+      if (concern === '진정') concernKeywords.push('시카', 'calm', '마데카');
+      if (concern === '저자극') concernKeywords.push('저자극', 'mild', '민감');
+      if (concern === '보습') concernKeywords.push('보습', '수분', 'moist');
+      if (concern === '산뜻함' || concern === '번들거림 개선') concernKeywords.push('산뜻', '보송', '워터', 'light');
+    }
+    const concernHits = countKeywordHits(text, concernKeywords);
+    score += Math.min(36, concernHits * 6);
+
+    if ((intent.target_categories || []).includes('선크림')) {
+      const sunHits = countKeywordHits(text, ['선', '썬', 'sunscreen', 'sun care', 'uv']);
+      score += Math.min(20, sunHits * 5);
+    }
+
+    // If ingredient text is available, apply lightweight safety/fit hints.
+    if ((intent.concerns || []).some((c) => c.includes('민감') || c.includes('저자극') || c.includes('진정'))) {
+      const irritantHits = countKeywordHits(ingredientText, ['fragrance', 'parfum', 'essential oil', 'alcohol denat']);
+      score -= Math.min(20, irritantHits * 7);
+      const soothingHits = countKeywordHits(ingredientText, ['panthenol', 'madecassoside', 'allantoin', 'centella']);
+      score += Math.min(20, soothingHits * 7);
     }
 
     return { score };

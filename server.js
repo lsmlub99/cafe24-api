@@ -154,6 +154,8 @@ app.get('/debug/cache', async (req, res) => {
     // 태그 데이터
     keywords: p.keywords,
     attributes: p.attributes,
+    search_preview: p.search_preview || '',
+    search_features_length: String(p.search_features || '').length,
     ingredient_text_preview: String(p.ingredient_text || '').slice(0, 180),
   }));
 

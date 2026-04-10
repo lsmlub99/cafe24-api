@@ -108,6 +108,45 @@ function pickIngredientTextFromProduct(product) {
   return fallback ? String(fallback.value) : '';
 }
 
+function stripHtml(value) {
+  return String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSearchPreview(product, tags = {}) {
+  const parts = [
+    product.product_name,
+    product.summary_description,
+    product.simple_description,
+    Array.isArray(product.product_tag) ? product.product_tag.join(' ') : product.product_tag,
+    Array.isArray(tags.all_tags) ? tags.all_tags.join(' ') : '',
+  ];
+
+  const text = stripHtml(parts.filter(Boolean).join(' '));
+  return text.slice(0, 260);
+}
+
+function buildSearchFeatures(product, tags = {}, ingredientText = '') {
+  const parts = [
+    product.product_name,
+    product.summary_description,
+    product.simple_description,
+    product.description,
+    product.mobile_description,
+    Array.isArray(product.product_tag) ? product.product_tag.join(' ') : product.product_tag,
+    Array.isArray(tags.all_tags) ? tags.all_tags.join(' ') : '',
+    Array.isArray(tags.concern_tags) ? tags.concern_tags.join(' ') : '',
+    Array.isArray(tags.texture_tags) ? tags.texture_tags.join(' ') : '',
+    ingredientText,
+  ];
+
+  // Keep this compact for fast in-memory scoring and LLM payloads.
+  return stripHtml(parts.filter(Boolean).join(' ')).slice(0, 2000);
+}
+
 async function refreshTokenIfNeeded() {
   const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
   if (accessToken) return accessToken;
@@ -298,11 +337,15 @@ async function syncAllProducts(accessToken) {
     allProductsCache = allFetchedWithCats.map((p) => {
       const tags = tagMap.get(p.product_no) || {};
       const ingredientText = pickIngredientTextFromProduct(p);
+      const searchPreview = buildSearchPreview(p, tags);
+      const searchFeatures = buildSearchFeatures(p, tags, ingredientText);
       ingredientDetailCache.set(String(p.product_no), ingredientText || '');
       return {
         ...p,
         product_id: p.product_no,
         ingredient_text: ingredientText || '',
+        search_preview: searchPreview,
+        search_features: searchFeatures,
         keywords: tags.all_tags || [],
         attributes: {
           category_tags: tags.category_tags || [],

@@ -33,6 +33,7 @@ function App() {
       if (structured && (Array.isArray(structured.recommendations) || structured.items)) {
         setWidgetData({
           recommendations: structured.recommendations || structured.items || [],
+          promotions: structured.promotions || [],
           summary: structured.summary || {},
           strategy: structured.strategy || structured.summary?.strategy || '',
           conclusion: structured.conclusion || structured.summary?.conclusion || ''
@@ -134,6 +135,16 @@ function App() {
               <div style={{ color: '#666', fontSize: '0.85rem', marginBottom: '12px' }}>
                 {p.price}원
               </div>
+              {!!p.why_pick && (
+                <div style={{ fontSize: '0.78rem', color: '#444', marginBottom: '6px', lineHeight: '1.45' }}>
+                  <strong>추천 이유:</strong> {p.why_pick}
+                </div>
+              )}
+              {!!p.usage_tip && (
+                <div style={{ fontSize: '0.78rem', color: '#555', marginBottom: '10px', lineHeight: '1.45' }}>
+                  <strong>사용 팁:</strong> {p.usage_tip}
+                </div>
+              )}
               <a
                 href={p.buy_url}
                 target="_blank"
@@ -145,6 +156,22 @@ function App() {
             </div>
           ))}
         </div>
+
+        {Array.isArray(widgetData.promotions) && widgetData.promotions.length > 0 && (
+          <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>
+              행사 상품도 진행 중이에요
+            </div>
+            {widgetData.promotions.map((p, idx) => (
+              <div key={`${p.buy_url}-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
+                <a href={p.buy_url} target="_blank" rel="noreferrer" style={{ color: '#444', textDecoration: 'underline' }}>
+                  {p.name}
+                </a>
+                {p.price ? ` · ${p.price}원` : ''}
+              </div>
+            ))}
+          </div>
+        )}
 
         {!!widgetData.conclusion && (
           <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#444', fontStyle: 'italic', borderTop: '1px solid #eee', paddingTop: '12px' }}>

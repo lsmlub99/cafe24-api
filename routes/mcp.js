@@ -114,15 +114,36 @@ async function executeTool(name, args = {}) {
         3
     );
 
-    const { recommendations, summary } = result;
+    const { recommendations, promotions, summary } = result;
     if (!recommendations || recommendations.length === 0) {
         return { content: [{ type: "text", text: summary?.message || "찾으시는 제품이 없습니다." }] };
     }
 
+    const lines = [];
+    lines.push(`가장 잘 맞는 1순위는 ${recommendations[0].name}입니다.`);
+    lines.push('아래 추천은 일반(상시) 제품을 우선으로 골랐고, 제품별로 이유와 사용 팁을 함께 안내드립니다.');
+    lines.push('');
+    recommendations.forEach((item, idx) => {
+        lines.push(`${idx + 1}. ${item.name} - ${item.price}원`);
+        lines.push(`- 추천 이유: ${item.why_pick || item.key_point || '요청 조건 기반 선별'}`);
+        lines.push(`- 사용 팁: ${item.usage_tip || '아침 기초 마지막 단계에서 충분량 도포'}`);
+        lines.push(`- 참고: ${item.caution || '야외 활동 시 2-3시간 간격 덧바름 권장'}`);
+        lines.push(`- 링크: ${item.buy_url}`);
+        lines.push('');
+    });
+
+    if (Array.isArray(promotions) && promotions.length > 0) {
+        lines.push('행사 상품도 별도로 진행 중입니다.');
+        promotions.forEach((item) => {
+            lines.push(`- ${item.name} (${item.price}원): ${item.buy_url}`);
+        });
+    }
+
     return {
-        content: [{ type: "text", text: "고객님의 피부 고민 분석 결과입니다. 아래 카드를 확인해 주세요." }],
+        content: [{ type: "text", text: lines.join('\n') }],
         structuredContent: {
             recommendations: recommendations,
+            promotions: promotions || [],
             summary: summary,
             strategy: summary?.strategy || "",
             conclusion: summary?.conclusion || ""
@@ -131,6 +152,7 @@ async function executeTool(name, args = {}) {
             "openai/outputTemplate": WIDGET_URI,
             "widgetData": {
                 recommendations: recommendations,
+                promotions: promotions || [],
                 summary: summary
             },
             "ui": { "resourceUri": WIDGET_URI }

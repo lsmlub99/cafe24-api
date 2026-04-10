@@ -66,16 +66,21 @@ app.post('/api/recommend', async (req, res) => {
         const { query } = req.body;
         console.log(`[API-Request] Query: ${query}`);
 
-        // 1. 의도 파악 (룰베이스)
-        const intent = recommendationService.normalizeUserIntent({ skin_type: '', q: query });
-        
-        // 2. 캐시에서 상품 가져오기
-        const candidates = cafe24ApiService.getProductsFromCache({ 
-            category_names: intent.target_categories 
-        });
+        const args = { skin_type: '', q: query, query };
+        const intent = recommendationService.normalizeUserIntent(args);
+        const categoryNos = cafe24ApiService.getDynamicCategoryNos(intent.target_categories || []);
 
-        // 3. 점수 계산 및 필터링 (구조화 데이터 반환)
-        const result = await recommendationService.scoreAndFilterProducts(candidates, intent, 5);
+        let candidates = [];
+        if (Array.isArray(categoryNos) && categoryNos.length > 0) {
+            candidates = cafe24ApiService.getProductsFromCache({ categoryNos });
+        } else {
+            candidates = cafe24ApiService.getProductsFromCache({ keyword: query });
+        }
+        if (!Array.isArray(candidates) || candidates.length === 0) {
+            candidates = cafe24ApiService.getProductsFromCache({});
+        }
+
+        const result = await recommendationService.scoreAndFilterProducts(candidates, args, 5);
 
         res.json(result);
     } catch (e) {

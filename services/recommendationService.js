@@ -11,7 +11,7 @@ const DEFAULT_LLM_WEIGHT = 0.6;
 
 const FORM_KEYWORDS = {
   cream: ['선크림', '썬크림', '선스크린', '썬스크린', 'sun cream', 'sunscreen cream', 'sunscreen'],
-  stick: ['선스틱', '썬스틱', 'stick'],
+  stick: ['선스틱', '썬스틱', '스틱', 'stick'],
   spray: ['선스프레이', '썬스프레이', 'spray'],
   cushion: ['선쿠션', '썬쿠션', 'cushion'],
   lotion: ['선로션', '썬로션', 'lotion'],
@@ -42,6 +42,29 @@ function countKeywordHits(text, words = []) {
   return hits;
 }
 
+function isPromoName(name = '') {
+  const text = safeLower(name);
+  return (
+    text.includes('1+1') ||
+    text.includes('2+1') ||
+    text.includes('3+1') ||
+    text.includes('미니') ||
+    text.includes('mini') ||
+    text.includes('증정') ||
+    text.includes('기획') ||
+    text.includes('한정')
+  );
+}
+
+function toBaseName(name = '') {
+  return String(name || '')
+    .replace(/\[[^\]]*]/g, ' ')
+    .replace(/\b(1\+1|2\+1|3\+1)\b/gi, ' ')
+    .replace(/\b(mini|미니어처|미니)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export const recommendationService = {
   normalizeProduct(p) {
     const cleanPrice = String(p.price || 0).replace(/,/g, '');
@@ -66,6 +89,8 @@ export const recommendationService = {
     return {
       id: String(p.product_no || p.product_id || ''),
       name,
+      base_name: toBaseName(name),
+      is_promo: isPromoName(name),
       price: priceNum.toLocaleString(),
       thumbnail: thumb,
       summary_description: p.summary_description || p.simple_description || '',
@@ -142,12 +167,16 @@ export const recommendationService = {
     if ((concerns.includes('자외선') || concerns.includes('데일리')) && (text.includes('선') || text.includes('uv'))) {
       score += 20;
     }
-    if ((concerns.includes('민감') || concerns.includes('저자극') || concerns.includes('진정')) &&
-        (text.includes('시카') || text.includes('마일드') || text.includes('저자극') || text.includes('calm'))) {
+    if (
+      (concerns.includes('민감') || concerns.includes('저자극') || concerns.includes('진정')) &&
+      (text.includes('시카') || text.includes('마일드') || text.includes('저자극') || text.includes('calm'))
+    ) {
       score += 25;
     }
-    if ((concerns.includes('산뜻') || concerns.includes('번들')) &&
-        (text.includes('산뜻') || text.includes('보송') || text.includes('워터') || text.includes('가벼'))) {
+    if (
+      (concerns.includes('산뜻') || concerns.includes('번들')) &&
+      (text.includes('산뜻') || text.includes('보송') || text.includes('워터') || text.includes('가벼'))
+    ) {
       score += 20;
     }
 
@@ -168,13 +197,15 @@ export const recommendationService = {
       score += Math.min(20, sunHits * 5);
     }
 
-    // If ingredient text is available, apply lightweight safety/fit hints.
     if ((intent.concerns || []).some((c) => c.includes('민감') || c.includes('저자극') || c.includes('진정'))) {
       const irritantHits = countKeywordHits(ingredientText, ['fragrance', 'parfum', 'essential oil', 'alcohol denat']);
       score -= Math.min(20, irritantHits * 7);
       const soothingHits = countKeywordHits(ingredientText, ['panthenol', 'madecassoside', 'allantoin', 'centella']);
       score += Math.min(20, soothingHits * 7);
     }
+
+    // Prefer core product as primary recommendation; promo remains as separate section.
+    if (product.is_promo) score -= 18;
 
     return { score };
   },
@@ -213,6 +244,7 @@ export const recommendationService = {
       id: String(p.id),
       name: p.name,
       form: this.getProductForm(p),
+      is_promo: !!p.is_promo,
       base_score: p._score || 0,
       price: p.price,
       summary_description: p.summary_description || '',
@@ -227,6 +259,7 @@ export const recommendationService = {
       'Only reorder from provided candidates.',
       'Never invent new ids or products.',
       'If requested_form is set, prioritize exact form match strongly.',
+      'Prefer non-promo regular products over promo packs for top recommendation.',
       'When ingredient_text is available, use it for sensitive-skin safety and irritation risk judgment.',
       'Return JSON only:',
       '{"ordered_ids":["id1","id2"],"reason":"short"}',
@@ -288,9 +321,51 @@ export const recommendationService = {
     return [...matches, ...others];
   },
 
+  buildRecommendationDetails(product, intent) {
+    const concerns = intent.concerns || [];
+    const reasons = [];
+    const tips = [];
+    const cautions = [];
+    const text = safeLower(`${product.name} ${product.summary_description} ${product.search_preview}`);
+
+    if (concerns.some((c) => String(c).includes('자외선'))) {
+      reasons.push('데일리 자외선 차단 목적에 맞는 제품');
+    }
+    if (concerns.some((c) => String(c).includes('민감') || String(c).includes('저자극') || String(c).includes('진정'))) {
+      reasons.push('민감 피부를 고려해 자극 부담을 낮추는 방향으로 선별');
+      tips.push('첫 사용 전 턱선에 소량 패치 테스트 권장');
+    }
+    if (
+      concerns.some((c) => String(c).includes('보습') || String(c).includes('수분')) ||
+      text.includes('수분') ||
+      text.includes('moist')
+    ) {
+      reasons.push('건조함을 줄이도록 수분감 포인트를 함께 고려');
+    }
+
+    if (text.includes('스프레이') || text.includes('spray')) {
+      tips.push('외출 중 덧바름이 필요할 때 빠르게 재도포 가능');
+    } else if (text.includes('스틱') || text.includes('stick')) {
+      tips.push('휴대 후 T존/광대 위주로 간편 덧바름 추천');
+    } else {
+      tips.push('기초 마지막 단계에서 2-3회 나눠 바르면 밀림이 적음');
+    }
+
+    if (text.includes('톤') || text.includes('커버')) {
+      cautions.push('메이크업과 함께 쓸 때는 소량 레이어링 권장');
+    }
+    cautions.push('야외 활동 시 2-3시간 간격 덧바름 권장');
+
+    return {
+      why_pick: reasons.join(' / ') || '요청하신 피부 고민과 사용감을 기준으로 선별했습니다.',
+      usage_tip: tips.join(' / ') || '아침 기초 마지막 단계에서 충분량 도포해 주세요.',
+      caution: cautions.join(' / '),
+    };
+  },
+
   async scoreAndFilterProducts(cachedProducts, args, limit = 3) {
     if (!cachedProducts || cachedProducts.length === 0) {
-      return { recommendations: [], summary: { message: '데이터가 없습니다.' } };
+      return { recommendations: [], promotions: [], summary: { message: '데이터가 없습니다.' } };
     }
 
     const intent = this.normalizeUserIntent(args);
@@ -299,6 +374,7 @@ export const recommendationService = {
     if (!intent.has_intent) {
       return {
         recommendations: [],
+        promotions: [],
         summary: {
           message: '원하는 피부 타입 또는 카테고리를 말씀해주시면 더 정확히 추천해드릴게요.',
         },
@@ -311,11 +387,15 @@ export const recommendationService = {
       .filter((p) => p._score > 0)
       .sort((a, b) => b._score - a._score);
 
+    const coreScored = scored.filter((p) => !p.is_promo);
+    const promoScored = scored.filter((p) => p.is_promo);
+    const primarySource = coreScored.length > 0 ? coreScored : scored;
+
     const seenNames = new Set();
     const candidatePool = [];
     const poolLimit = Math.max(limit * 3, DEFAULT_RERANK_CANDIDATES);
-    for (const p of scored) {
-      const baseName = p.name.replace(/\[.*?\]/g, '').trim();
+    for (const p of primarySource) {
+      const baseName = p.base_name || p.name.replace(/\[.*?\]/g, '').trim();
       if (!seenNames.has(baseName)) {
         seenNames.add(baseName);
         candidatePool.push(p);
@@ -324,7 +404,7 @@ export const recommendationService = {
     }
 
     if (candidatePool.length === 0) {
-      return { recommendations: [], summary: { message: '조건에 맞는 결과가 없습니다.' } };
+      return { recommendations: [], promotions: [], summary: { message: '조건에 맞는 결과가 없습니다.' } };
     }
 
     const formMatchedPool = intent.requested_form
@@ -343,27 +423,45 @@ export const recommendationService = {
       else if (name.includes('시카')) keyPoint = '붉은기/자극 완화';
       else if (name.includes('선')) keyPoint = '자외선 차단 및 데일리 사용';
 
+      const details = this.buildRecommendationDetails(p, intent);
       return {
         rank: idx + 1,
         rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
         name: p.name,
+        base_name: p.base_name,
         price: p.price,
         key_point: keyPoint,
+        why_pick: details.why_pick,
+        usage_tip: details.usage_tip,
+        caution: details.caution,
+        is_promo: !!p.is_promo,
         buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
         image: p.thumbnail,
       };
     });
 
+    const promotions = promoScored
+      .filter((p) => !recommendations.some((r) => r.name === p.name))
+      .slice(0, 3)
+      .map((p) => ({
+        name: p.name,
+        base_name: p.base_name,
+        price: p.price,
+        buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
+        image: p.thumbnail,
+      }));
+
     const strategy =
       (intent.target_categories || []).length > 0
-        ? `${intent.target_categories.join(', ')} 카테고리에서 룰베이스 1차 선별 후 LLM 재랭킹을 수행했습니다.`
-        : `피부 고민/사용감 기준 룰베이스 점수화 후 LLM 재랭킹을 수행했습니다.`;
+        ? `${intent.target_categories.join(', ')} 카테고리에서 일반 제품 우선 선별 후 LLM 재랭킹을 수행했습니다.`
+        : `피부 고민/사용감 기준 점수화 후 일반 제품 우선 + LLM 재랭킹을 수행했습니다.`;
 
     const formText = intent.requested_form ? ` 요청 제형(${intent.requested_form})을 우선 반영했습니다.` : '';
     const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 요청 조건에 가장 적합합니다.${formText}`;
 
     return {
       recommendations,
+      promotions,
       summary: {
         message: '고객님을 위한 최적 상품입니다.',
         strategy,
@@ -445,3 +543,4 @@ export const recommendationService = {
     };
   },
 };
+

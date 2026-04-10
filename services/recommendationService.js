@@ -10,7 +10,7 @@ const DEFAULT_RERANK_CANDIDATES = 8;
 const DEFAULT_LLM_WEIGHT = 0.6;
 
 const FORM_KEYWORDS = {
-  cream: ['선크림', '썬크림', 'sun cream', 'sunscreen cream'],
+  cream: ['선크림', '썬크림', '선스크린', '썬스크린', 'sun cream', 'sunscreen cream', 'sunscreen'],
   stick: ['선스틱', '썬스틱', 'stick'],
   spray: ['선스프레이', '썬스프레이', 'spray'],
   cushion: ['선쿠션', '썬쿠션', 'cushion'],
@@ -123,6 +123,19 @@ export const recommendationService = {
     const textureTags = attrs.texture_tags || [];
     if ((intent.textures || []).some((t) => textureTags.some((pt) => String(pt).includes(t)))) score += 25;
     if ((intent.avoid_textures || []).some((t) => textureTags.some((pt) => String(pt).includes(t)))) score -= 60;
+
+    const concerns = (intent.concerns || []).join(' ');
+    if ((concerns.includes('자외선') || concerns.includes('데일리')) && (text.includes('선') || text.includes('uv'))) {
+      score += 20;
+    }
+    if ((concerns.includes('민감') || concerns.includes('저자극') || concerns.includes('진정')) &&
+        (text.includes('시카') || text.includes('마일드') || text.includes('저자극') || text.includes('calm'))) {
+      score += 25;
+    }
+    if ((concerns.includes('산뜻') || concerns.includes('번들')) &&
+        (text.includes('산뜻') || text.includes('보송') || text.includes('워터') || text.includes('가벼'))) {
+      score += 20;
+    }
 
     return { score };
   },
@@ -275,9 +288,12 @@ export const recommendationService = {
       return { recommendations: [], summary: { message: '조건에 맞는 결과가 없습니다.' } };
     }
 
-    const rerankedPool = await this.rerankWithLLM(candidatePool, intent, args);
-    const formAdjusted = this.enforceRequestedFormOrdering(rerankedPool, intent.requested_form);
-    const finalFiltered = formAdjusted.slice(0, limit);
+    const formMatchedPool = intent.requested_form
+      ? candidatePool.filter((p) => this.matchesRequestedForm(p, intent.requested_form))
+      : candidatePool;
+    const poolForRerank = formMatchedPool.length > 0 ? formMatchedPool : candidatePool;
+    const rerankedPool = await this.rerankWithLLM(poolForRerank, intent, args);
+    const finalFiltered = rerankedPool.slice(0, limit);
 
     const recommendations = finalFiltered.map((p, idx) => {
       let keyPoint = '피부 고민 적합 케어';

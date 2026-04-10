@@ -145,7 +145,21 @@ app.get('/debug/cache', async (req, res) => {
     // 태그 데이터
     keywords: p.keywords,
     attributes: p.attributes,
+    ingredient_text_preview: String(p.ingredient_text || '').slice(0, 180),
   }));
+
+  const ingredientFilledCount = cache.filter(
+    p => typeof p.ingredient_text === 'string' && p.ingredient_text.trim().length > 0
+  ).length;
+
+  const ingredientSample = cache
+    .filter(p => typeof p.ingredient_text === 'string' && p.ingredient_text.trim().length > 0)
+    .slice(0, 3)
+    .map(p => ({
+      product_no: p.product_no,
+      product_name: p.product_name,
+      ingredient_text_preview: String(p.ingredient_text || '').slice(0, 250),
+    }));
 
   // category_no 29 테스트
   const cat29 = cache.filter(p => {
@@ -160,6 +174,11 @@ app.get('/debug/cache', async (req, res) => {
   );
 
   res.json({
+    "cache_count": cache.length,
+    "ingredient_path_detected": cafe24ApiService.ingredientPath || null,
+    "ingredient_filled_count": ingredientFilledCount,
+    "ingredient_filled_ratio": `${ingredientFilledCount}/${cache.length}`,
+    "ingredient_samples": ingredientSample,
     "총_캐시_수": cache.length,
     "detect_mapping": cafe24ApiService.categoryMapping || {}, 
     "category_sun_매칭수": cache.filter(p => {

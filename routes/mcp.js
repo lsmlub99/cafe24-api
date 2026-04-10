@@ -20,7 +20,11 @@ const RESOURCES = [
         uri: WIDGET_URI,
         name: "CellFusionC AI Curation UI",
         description: "고급 상품 추천 및 피부 분석 결과를 시각화하는 리액트 위젯",
-        mimeType: "text/html"
+        mimeType: "text/html",
+        _meta: {
+            "openai/widgetDescription": "CellFusionC 추천 결과를 카드 UI로 렌더링합니다.",
+            "openai/widgetPrefersBorder": true
+        }
     }
 ];
 
@@ -30,6 +34,8 @@ const TOOLS = [
         description: "[👑GEN-UI ENABLED] 사용자의 피부 고민을 분석하고 최적의 상품 리스트를 '네이티브 리액트 위젯'으로 출력합니다.",
         _meta: {
             "openai/outputTemplate": WIDGET_URI,
+            "openai/toolInvocation/invoking": "추천 조건 분석 중...",
+            "openai/toolInvocation/invoked": "추천 결과 준비 완료",
             "ui": { "resourceUri": WIDGET_URI }
         },
         inputSchema: {
@@ -123,6 +129,10 @@ async function executeTool(name, args = {}) {
         },
         _meta: {
             "openai/outputTemplate": WIDGET_URI,
+            "widgetData": {
+                recommendations: recommendations,
+                summary: summary
+            },
             "ui": { "resourceUri": WIDGET_URI }
         }
     };
@@ -154,10 +164,15 @@ router.post('/message', async (req, res) => {
                 jsonrpc: "2.0", id, 
                 result: { 
                     protocolVersion: "2024-11-05", 
-                    capabilities: { tools: {}, resources: { subscribe: true } }, 
+                    capabilities: {
+                        tools: { listChanged: false },
+                        resources: { subscribe: false }
+                    }, 
                     serverInfo: { name: "cafe24-api-genui", version: "4.0.0" } 
                 } 
             });
+        } else if (method === "notifications/initialized") {
+            return;
         } else if (method === "resources/list") {
             console.log(`[MCP Protocol] Listing Resources...`);
             sendToClient({ jsonrpc: "2.0", id, result: { resources: RESOURCES } });
@@ -178,8 +193,11 @@ router.post('/message', async (req, res) => {
             }
             let html = fs.readFileSync(indexPath, 'utf8');
             
-            // 위젯 모드 주입 및 자산 경로 절대경로화
-            html = html.replace('<head>', `<head><script>window.__WIDGET_MODE__=true;</script>`);
+            // Widget mode bootstrap and absolute asset path rewriting.
+            html = html.replace(
+                '<head>',
+                '<head><script>window.__WIDGET_MODE__=true;window.__MCP_WIDGET__=true;</script>'
+            );
             html = html.replace(/src="\//g, `src="${BASE_URL}/`);
             html = html.replace(/href="\//g, `href="${BASE_URL}/`);
             
@@ -212,6 +230,8 @@ router.post('/message', async (req, res) => {
             
             sendToClient({ jsonrpc: "2.0", id, result: finalResult });
             console.log(`[MCP Protocol] ✅ Result dispatched.`);
+        } else {
+            sendError(id, -32601, `Method not found: ${method}`);
         }
     } catch (e) {
         console.error('[MCP Error]', e);

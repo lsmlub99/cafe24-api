@@ -33,6 +33,9 @@ function App() {
 
     const unwrap = (message) => {
       if (!message) return null;
+      if (message.params?.structuredContent || message.params?.data || message.params?.output) {
+        return message.params;
+      }
       if (message.params?.payload) return message.params.payload;
       if (message.params?.toolOutput) return message.params.toolOutput;
       if (message.result?.toolOutput) return message.result.toolOutput;

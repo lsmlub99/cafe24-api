@@ -41,9 +41,23 @@ function App() {
       }
     };
 
+    const unwrapRpcPayload = (data) => {
+      if (!data) return null;
+      if (data.params?.payload) return data.params.payload;
+      if (data.params?.toolOutput) return data.params.toolOutput;
+      if (data.result) return data.result;
+      return data;
+    };
+
     const handleMessage = (event) => {
       const data = event.data;
       if (!data) return;
+
+      // JSON-RPC style bridge: ui/initialize, ui/notifications/tool-result, etc.
+      if (data.jsonrpc && data.method && String(data.method).startsWith('ui/')) {
+        applyWidgetData(unwrapRpcPayload(data));
+        return;
+      }
 
       // 1. 공식 GenUI 알림 감지
       if (data.type === 'ui/notifications/tool-result' && data.payload) {
@@ -62,6 +76,7 @@ function App() {
     if (window.__INITIAL_DATA__) applyWidgetData(window.__INITIAL_DATA__);
     if (window.__MCP_DATA__) applyWidgetData(window.__MCP_DATA__);
     if (window.openai?.appData) applyWidgetData(window.openai.appData);
+    if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);

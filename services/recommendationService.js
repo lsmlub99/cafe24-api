@@ -187,6 +187,7 @@ export const recommendationService = {
 
   normalizeProduct(p) {
     const name = p.product_name || p.name || '';
+    const resolvedPrice = parsePrice(p.price || p.retail_price || 0);
     const categoryIds = Array.isArray(p.categories)
       ? p.categories.map((c) => Number(c?.category_no)).filter((n) => Number.isFinite(n))
       : Array.isArray(p.category_ids)
@@ -207,7 +208,7 @@ export const recommendationService = {
       name,
       base_name: toBaseName(name),
       is_promo: isPromoName(name),
-      price: parsePrice(p.price).toLocaleString(),
+      price: resolvedPrice.toLocaleString(),
       thumbnail: image,
       summary_description: p.summary_description || p.simple_description || '',
       ingredient_text: p.ingredient_text || '',

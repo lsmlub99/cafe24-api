@@ -38,7 +38,8 @@ const TOOLS = [
     name: TOOL_NAME,
     description: '[GEN-UI] 사용자 피부 고민을 분석하고 상품을 추천합니다.',
     _meta: {
-      'openai/outputTemplate': WIDGET_UI_URI,
+      // Keep HTTP alias for compatibility; ui.resourceUri remains canonical.
+      'openai/outputTemplate': WIDGET_HTTP_URI,
       'openai/toolInvocation/invoking': '추천 조건을 분석 중입니다...',
       'openai/toolInvocation/invoked': '추천 결과 준비가 완료되었습니다.',
       ui: { resourceUri: WIDGET_UI_URI },
@@ -174,7 +175,7 @@ async function executeTool(args = {}) {
       conclusion: summary?.conclusion || '',
     },
     _meta: {
-      'openai/outputTemplate': WIDGET_UI_URI,
+      'openai/outputTemplate': WIDGET_HTTP_URI,
       widgetData: {
         recommendations,
         promotions: promotions || [],
@@ -230,9 +231,10 @@ router.post('/message', async (req, res) => {
     }
 
     if (method === 'resources/read') {
-      const requestedUri = params?.uri || '';
+      const requestedUri = String(params?.uri || '');
+      const normalized = requestedUri.split(/[?#]/)[0];
       const allowedUris = [WIDGET_UI_URI, WIDGET_HTTP_URI];
-      if (!allowedUris.includes(requestedUri)) {
+      if (!allowedUris.includes(normalized)) {
         sendError(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: allowedUris });
         return;
       }

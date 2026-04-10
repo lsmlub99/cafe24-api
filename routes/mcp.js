@@ -19,7 +19,7 @@ const RESOURCES = [
     uri: WIDGET_UI_URI,
     name: 'CellFusionC Recommendation Widget',
     description: '셀퓨전씨 추천 결과를 카드 UI로 렌더링합니다.',
-    mimeType: 'text/html',
+    mimeType: 'text/html;profile=mcp-app',
     _meta: {
       'openai/widgetDescription': '추천 결과와 사용 팁을 카드 형태로 보여줍니다.',
       'openai/widgetPrefersBorder': true,
@@ -29,7 +29,7 @@ const RESOURCES = [
     uri: WIDGET_HTTP_URI,
     name: 'CellFusionC Recommendation Widget (HTTP)',
     description: 'Fallback HTTP widget URI',
-    mimeType: 'text/html',
+    mimeType: 'text/html;profile=mcp-app',
   },
 ];
 
@@ -258,7 +258,7 @@ router.post('/message', async (req, res) => {
           contents: [
             {
               uri: requestedUri,
-              mimeType: 'text/html',
+              mimeType: 'text/html;profile=mcp-app',
               text: html,
             },
           ],

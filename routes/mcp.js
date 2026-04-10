@@ -10,39 +10,73 @@ let clientStream = null;
 
 const DEFAULT_BASE_URL = 'https://cafe24-api.onrender.com';
 const BASE_URL = (config.PUBLIC_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
-const WIDGET_UI_URI = 'ui://widget/recommendation.html';
+const WIDGET_TEMPLATE_VERSION = 'v20260410';
+const WIDGET_UI_URI = `ui://widget/recommendation-${WIDGET_TEMPLATE_VERSION}.html`;
 const WIDGET_HTTP_URI = `${BASE_URL}/ui/recommendation`;
+const WIDGET_OUTPUT_TEMPLATE_URI = `${WIDGET_HTTP_URI}?v=${WIDGET_TEMPLATE_VERSION}`;
 const TOOL_NAME = 'search_cafe24_real_products';
+const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
+
+const RESOURCE_META = {
+  ui: {
+    prefersBorder: true,
+    domain: BASE_URL,
+    csp: {
+      connectDomains: [BASE_URL],
+      resourceDomains: [
+        BASE_URL,
+        'https://cellfusionc.co.kr',
+        'https://img.cellfusionc.co.kr',
+        'https://persistent.oaistatic.com',
+      ],
+    },
+  },
+  'openai/widgetDescription': 'CellFusionC recommendation cards',
+  'openai/widgetPrefersBorder': true,
+  'openai/widgetCSP': {
+    connect_domains: [BASE_URL],
+    resource_domains: [
+      BASE_URL,
+      'https://cellfusionc.co.kr',
+      'https://img.cellfusionc.co.kr',
+      'https://persistent.oaistatic.com',
+    ],
+  },
+};
 
 const RESOURCES = [
   {
     uri: WIDGET_UI_URI,
     name: 'CellFusionC Recommendation Widget',
-    description: '셀퓨전씨 추천 결과를 카드 UI로 렌더링합니다.',
-    mimeType: 'text/html;profile=mcp-app',
-    _meta: {
-      'openai/widgetDescription': '추천 결과와 사용 팁을 카드 형태로 보여줍니다.',
-      'openai/widgetPrefersBorder': true,
-    },
+    description: 'Interactive recommendation cards for CellFusionC products.',
+    mimeType: RESOURCE_MIME_TYPE,
+    _meta: RESOURCE_META,
   },
   {
     uri: WIDGET_HTTP_URI,
     name: 'CellFusionC Recommendation Widget (HTTP)',
     description: 'Fallback HTTP widget URI',
-    mimeType: 'text/html;profile=mcp-app',
+    mimeType: RESOURCE_MIME_TYPE,
+    _meta: RESOURCE_META,
   },
 ];
 
 const TOOLS = [
   {
     name: TOOL_NAME,
-    description: '[GEN-UI] 사용자 피부 고민을 분석하고 상품을 추천합니다.',
+    title: 'Search CellFusionC Products',
+    description: '[GEN-UI] Analyze skin needs and recommend matching products.',
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+      destructiveHint: false,
+    },
     _meta: {
-      // Keep HTTP alias for compatibility; ui.resourceUri remains canonical.
-      'openai/outputTemplate': WIDGET_HTTP_URI,
-      'openai/toolInvocation/invoking': '추천 조건을 분석 중입니다...',
-      'openai/toolInvocation/invoked': '추천 결과 준비가 완료되었습니다.',
-      ui: { resourceUri: WIDGET_UI_URI },
+      ui: { resourceUri: WIDGET_UI_URI, visibility: ['model', 'app'] },
+      'openai/outputTemplate': WIDGET_OUTPUT_TEMPLATE_URI,
+      'openai/widgetAccessible': true,
+      'openai/toolInvocation/invoking': 'Analyzing your skin needs...',
+      'openai/toolInvocation/invoked': 'Recommendation results are ready.',
     },
     inputSchema: {
       type: 'object',
@@ -89,6 +123,8 @@ function sendToClient(msg) {
   if (clientStream && !clientStream.writableEnded) {
     clientStream.write('event: message\n');
     clientStream.write(`data: ${JSON.stringify(msg)}\n\n`);
+  } else {
+    console.warn('[MCP Stream] No active clientStream. Message not delivered via SSE.');
   }
 }
 
@@ -106,26 +142,26 @@ function sendError(id, code, message, data = undefined) {
 
 function buildConsultText(recommendations, promotions = []) {
   const lines = [];
-  lines.push(`지금 조건에서 1순위는 ${recommendations[0].name}입니다.`);
-  lines.push('상시 판매 제품을 우선으로 추천드렸고, 행사 제품은 아래에 따로 정리해드렸어요.');
+  lines.push(`지금 조건 기준 1순위는 ${recommendations[0].name} 입니다.`);
+  lines.push('일반 판매 제품을 우선 추천하고, 행사 상품은 별도로 안내해드릴게요.');
   lines.push('');
 
   recommendations.forEach((item, idx) => {
     lines.push(`${idx + 1}. ${item.name} (${item.price}원)`);
-    lines.push(`- 추천 이유: ${item.why_pick || item.key_point || '요청 조건에 맞춘 우선 선별'}`);
-    lines.push(`- 사용 팁: ${item.usage_tip || '아침 기초 마지막 단계에서 충분량 도포'}`);
-    lines.push(`- 참고: ${item.caution || '야외 활동 시 2~3시간 간격 덧바름 권장'}`);
-    lines.push(`- 제품 링크: ${item.buy_url}`);
+    lines.push(`- 추천 이유: ${item.why_pick || item.key_point || '요청 조건과의 적합도가 높습니다.'}`);
+    lines.push(`- 사용 팁: ${item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 레이어링해 주세요.'}`);
+    lines.push(`- 주의 포인트: ${item.caution || '자외선 노출이 길면 2~3시간 간격으로 덧발라 주세요.'}`);
+    lines.push(`- 구매 링크: ${item.buy_url}`);
     lines.push('');
   });
 
   if (promotions.length > 0) {
-    lines.push('행사 상품도 진행 중입니다.');
+    lines.push('현재 행사 상품도 진행 중이에요.');
     promotions.forEach((item) => {
       lines.push(`- ${item.name} (${item.price}원): ${item.buy_url}`);
     });
   } else {
-    lines.push('현재 확인된 별도 행사 상품은 없고, 위 상시 판매 제품 기준으로 추천드렸어요.');
+    lines.push('현재 별도 행사 매칭 상품은 없고, 정가 기준 추천으로 안내드렸어요.');
   }
 
   return lines.join('\n');
@@ -146,6 +182,7 @@ async function executeTool(args = {}) {
   } else {
     rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
   }
+
   rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, 12);
 
   const result = await recommendationService.scoreAndFilterProducts(
@@ -160,7 +197,9 @@ async function executeTool(args = {}) {
 
   const { recommendations, promotions, summary } = result;
   if (!recommendations || recommendations.length === 0) {
-    return { content: [{ type: 'text', text: summary?.message || '찾으시는 제품이 없습니다.' }] };
+    return {
+      content: [{ type: 'text', text: summary?.message || '조건에 맞는 상품을 찾지 못했습니다.' }],
+    };
   }
 
   const consultText = buildConsultText(recommendations, promotions || []);
@@ -175,13 +214,14 @@ async function executeTool(args = {}) {
       conclusion: summary?.conclusion || '',
     },
     _meta: {
-      'openai/outputTemplate': WIDGET_HTTP_URI,
+      ui: { resourceUri: WIDGET_UI_URI },
+      'openai/outputTemplate': WIDGET_OUTPUT_TEMPLATE_URI,
+      'openai/widgetAccessible': true,
       widgetData: {
         recommendations,
         promotions: promotions || [],
         summary,
       },
-      ui: { resourceUri: WIDGET_UI_URI },
     },
   };
 }
@@ -191,9 +231,11 @@ router.get('/', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.write('event: endpoint\ndata: /mcp/message\n\n');
   res.flushHeaders();
+  console.log('[MCP Stream] Connected');
 
   clientStream = res;
   res.on('close', () => {
+    console.log('[MCP Stream] Disconnected');
     if (clientStream === res) clientStream = null;
   });
 });
@@ -215,17 +257,16 @@ router.post('/message', async (req, res) => {
             tools: { listChanged: false },
             resources: { subscribe: false },
           },
-          serverInfo: { name: 'cafe24-api-genui', version: '4.1.0' },
+          serverInfo: { name: 'cafe24-api-genui', version: '4.2.0' },
         },
       });
       return;
     }
 
-    if (method === 'notifications/initialized') {
-      return;
-    }
+    if (method === 'notifications/initialized') return;
 
     if (method === 'resources/list') {
+      console.log('[MCP Protocol] resources/list requested');
       sendToClient({ jsonrpc: '2.0', id, result: { resources: RESOURCES } });
       return;
     }
@@ -234,6 +275,9 @@ router.post('/message', async (req, res) => {
       const requestedUri = String(params?.uri || '');
       const normalized = requestedUri.split(/[?#]/)[0];
       const allowedUris = [WIDGET_UI_URI, WIDGET_HTTP_URI];
+
+      console.log(`[MCP Protocol] resources/read requested: ${requestedUri}`);
+
       if (!allowedUris.includes(normalized)) {
         sendError(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: allowedUris });
         return;
@@ -260,8 +304,9 @@ router.post('/message', async (req, res) => {
           contents: [
             {
               uri: requestedUri,
-              mimeType: 'text/html;profile=mcp-app',
+              mimeType: RESOURCE_MIME_TYPE,
               text: html,
+              _meta: RESOURCE_META,
             },
           ],
         },
@@ -295,9 +340,9 @@ router.post('/message', async (req, res) => {
     }
 
     sendError(id, -32601, `Method not found: ${method}`);
-  } catch (e) {
-    console.error('[MCP Error]', e);
-    sendError(id, -32000, e.message);
+  } catch (error) {
+    console.error('[MCP Error]', error);
+    sendError(id, -32000, error.message);
   }
 });
 

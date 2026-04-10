@@ -39,19 +39,28 @@ const INGREDIENT_TEXT_MARKERS = [
   'ingredient',
   'ingredients',
   'inci',
-  'water',
   'niacinamide',
   'zinc oxide',
   'titanium dioxide',
   '전성분',
-  '성분',
-  '정제수',
+  'ingredients:',
+  'all ingredients',
 ];
 
 function looksLikeIngredientText(value) {
-  const text = String(value || '').toLowerCase();
-  if (text.length < 20) return false;
-  return INGREDIENT_TEXT_MARKERS.some((marker) => text.includes(marker.toLowerCase()));
+  const raw = String(value || '');
+  const text = raw.toLowerCase().replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (text.length < 50) return false;
+
+  const markerHits = INGREDIENT_TEXT_MARKERS.filter((marker) => text.includes(marker.toLowerCase())).length;
+  const separatorCount =
+    (text.match(/,/g) || []).length +
+    (text.match(/;/g) || []).length +
+    (text.match(/\//g) || []).length +
+    (text.match(/\n/g) || []).length;
+
+  // Ingredient text is usually a long list with multiple separators.
+  return markerHits >= 1 && separatorCount >= 3;
 }
 
 function getNestedValue(obj, path) {
@@ -176,6 +185,7 @@ async function fetchProductDetailWithToken(productNo, accessToken) {
 
 async function detectIngredientPath(accessToken, sampleProductNos = []) {
   let targetToken = accessToken;
+  let bestCandidates = [];
   for (const productNo of sampleProductNos.slice(0, 8)) {
     try {
       const detail = await fetchProductDetailWithToken(productNo, targetToken);
@@ -191,20 +201,27 @@ async function detectIngredientPath(accessToken, sampleProductNos = []) {
           if (lowerPath.includes('ingredient')) score += 5;
           if (lowerPath.includes('description')) score += 1;
           if (looksLikeIngredientText(value)) score += 3;
-          return { path, value, score };
+          return { path, score, preview: String(value || '').replace(/\s+/g, ' ').slice(0, 120) };
         })
         .filter((item) => item.score >= 4)
         .sort((a, b) => b.score - a.score);
 
+      bestCandidates = scored.slice(0, 5);
+
       if (scored.length > 0) {
         ingredientDetectedPath = scored[0].path;
-        return { path: ingredientDetectedPath, accessToken: targetToken, sample: productNo };
+        return {
+          path: ingredientDetectedPath,
+          accessToken: targetToken,
+          sample: productNo,
+          candidates: bestCandidates,
+        };
       }
     } catch {
       // ignore sample failures
     }
   }
-  return { path: null, accessToken: targetToken, sample: null };
+  return { path: null, accessToken: targetToken, sample: null, candidates: bestCandidates };
 }
 
 async function syncAllProducts(accessToken) {
@@ -243,6 +260,9 @@ async function syncAllProducts(accessToken) {
       logs.push(`Ingredient path detected: ${detectedIngredient.path} (sample: ${detectedIngredient.sample})`);
     } else {
       logs.push('Ingredient path not detected from samples');
+    }
+    if (Array.isArray(detectedIngredient.candidates) && detectedIngredient.candidates.length > 0) {
+      logs.push(`Ingredient path candidates: ${JSON.stringify(detectedIngredient.candidates)}`);
     }
 
     const productToCategories = {};

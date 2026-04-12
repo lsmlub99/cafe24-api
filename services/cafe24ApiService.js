@@ -2,6 +2,7 @@ import { config } from '../config/env.js';
 import { aiTaggingService } from './aiTaggingService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24AuthService } from './cafe24AuthService.js';
+import { logger } from '../utils/logger.js';
 
 let lastSyncLogs = [];
 let allProductsCache = [];
@@ -222,10 +223,10 @@ async function fetchCategoryMap(accessToken) {
     }
 
     categoryMap = newMap;
-    console.log('[Sync] Category map loaded:', categoryMap);
+    logger.info('[Sync] Category map loaded:', categoryMap);
     return categoryMap;
   } catch (e) {
-    console.error('[Category Map Error]', e.message);
+    logger.error('[Category Map Error]', e.message);
     return categoryMap;
   }
 }
@@ -283,7 +284,7 @@ async function syncAllProducts(accessToken) {
     let targetToken = accessToken || (await refreshTokenIfNeeded());
     if (!targetToken) return { products: allProductsCache || [] };
 
-    console.log('[Sync] Product sync start...');
+    logger.info('[Sync] Product sync start...');
     const currentMap = await fetchCategoryMap(targetToken);
     const targetIds = Object.values(currentMap);
 
@@ -304,7 +305,7 @@ async function syncAllProducts(accessToken) {
       offset += pageSize;
     }
 
-    console.log(`[Sync] Product list fetched: ${allFetched.length}`);
+    logger.info(`[Sync] Product list fetched: ${allFetched.length}`);
     const logs = [`Total: ${allFetched.length}`];
 
     const sampleProductNos = allFetched.slice(0, 12).map((p) => p.product_no).filter(Boolean);
@@ -372,10 +373,10 @@ async function syncAllProducts(accessToken) {
     });
 
     lastSyncTime = Date.now();
-    console.log(`[Sync SUCCESS] Cached products: ${allProductsCache.length}`);
+    logger.info(`[Sync SUCCESS] Cached products: ${allProductsCache.length}`);
     return { products: allProductsCache };
   } catch (e) {
-    console.error('[Sync Error]:', e.message);
+    logger.error('[Sync Error]:', e.message);
     return { products: allProductsCache || [] };
   }
 }
@@ -411,7 +412,7 @@ function getProductsFromCache(filters = {}) {
         : [];
       return categoryNos.some((cNo) => productCategories.includes(Number(cNo)));
     });
-    console.log(`[Cache Filter] Active Products ${results.length} matched for cats: ${categoryNos}`);
+    logger.cacheVerbose(`[Cache Filter] Active Products ${results.length} matched for cats: ${categoryNos}`);
   }
 
   if (keyword) {
@@ -421,7 +422,7 @@ function getProductsFromCache(filters = {}) {
         String(p.product_name || '').toLowerCase().includes(lower) ||
         (p.keywords || []).some((t) => String(t).toLowerCase().includes(lower))
     );
-    console.log(`[Cache Filter] Active Products ${results.length} matched for keyword: ${keyword}`);
+    logger.cacheVerbose(`[Cache Filter] Active Products ${results.length} matched for keyword: ${keyword}`);
   }
 
   if (limit && limit > 0) results = results.slice(0, limit);

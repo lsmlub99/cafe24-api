@@ -19,6 +19,7 @@ app.use(cookieParser());
 // ---------------------------------------------------------
 import { tokenStore } from './stores/tokenStore.js';
 import { cafe24ApiService } from './services/cafe24ApiService.js';
+import { logger } from './utils/logger.js';
 
 const startSyncLoop = async () => {
     try {
@@ -27,7 +28,7 @@ const startSyncLoop = async () => {
             await cafe24ApiService.syncAllProducts(accessToken);
         }
     } catch (e) {
-        console.warn(`[Sync Init] 초기 싱크 대기 중... (토큰 미발급 상태)`);
+        logger.warn('[Sync Init] waiting for initial token');
     }
 
     // 10분(600,000ms)마다 백그라운드 동기화 수행
@@ -41,11 +42,11 @@ const startSyncLoop = async () => {
 
 mongoose.connect(config.MONGO_URI)
   .then(() => {
-    console.log(`✅ MongoDB 연결 성공! (토큰 영구 저장 시스템 가동)`);
+    logger.info('✅ MongoDB connected');
     startSyncLoop(); // 백그라운드 싱크 가동
   })
   .catch((err) => {
-    console.error(`❌ MongoDB 연결 실패. .env 의 MONGO_URI 를 다시 확인하십시오:`, err.message);
+    logger.error('❌ MongoDB connection failed:', err.message);
     process.exit(1); // DB 통신 실패 시 백엔드도 즉시 셧다운
   });
 
@@ -64,7 +65,7 @@ app.use('/mcp', mcpRouter);
 app.post('/api/recommend', async (req, res) => {
     try {
         const { query } = req.body;
-        console.log(`[API-Request] Query: ${query}`);
+        logger.debug(`[API-Request] query="${query}"`);
 
         const args = { skin_type: '', q: query, query };
         const intent = recommendationService.normalizeUserIntent(args);
@@ -84,7 +85,7 @@ app.post('/api/recommend', async (req, res) => {
 
         res.json(result);
     } catch (e) {
-        console.error('[API-Error]', e.message);
+        logger.error('[API-Error]', e.message);
         res.status(500).json({ error: '추천 처리 중 오류가 발생했습니다.' });
     }
 });
@@ -230,21 +231,21 @@ app.get('/debug/product/:productNo', async (req, res) => {
     const result = await cafe24ApiService.inspectProductDetailFields(productNo);
     res.json(result);
   } catch (e) {
-    console.error('[DEBUG product Error]', e.message);
+    logger.error('[DEBUG product Error]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
 app.use((err, req, res, next) => {
-  console.error(`[FATAL ERROR] 감지되지 않은 예외 발생:`, err.stack);
+  logger.error('[FATAL ERROR] unhandled exception:', err.stack);
   res.status(500).send('서버 내부 치명적인 오류 발생');
 });
 
 app.listen(config.PORT, () => {
-  console.log(`========================================================`);
-  console.log(`🚀 Cafe24 API Server Started (MongoDB Sync On)`);
-  console.log(`▶ PORT : ${config.PORT}`);
-  console.log(`▶ TARGET MALL : ${config.MALL_ID}`);
-  console.log(`▶ SCOPE : ${config.SCOPE}`);
-  console.log(`========================================================`);
+  logger.info('========================================================');
+  logger.info('🚀 Cafe24 API Server Started (MongoDB Sync On)');
+  logger.info(`▶ PORT : ${config.PORT}`);
+  logger.info(`▶ TARGET MALL : ${config.MALL_ID}`);
+  logger.info(`▶ SCOPE : ${config.SCOPE}`);
+  logger.info('========================================================');
 });

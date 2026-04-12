@@ -1,59 +1,89 @@
-# 🚀 CelFusionC AI Recommendation MCP Server (2024 Tech-Stack)
+# CellFusionC AI Recommendation Engine (MCP + GenUI)
 
-![Status](https://img.shields.io/badge/Status-Production--Ready-green)
-![Tech](https://img.shields.io/badge/Tech-MCP_Protocol-blue)
-![AI](https://img.shields.io/badge/AI-GPT--4o--mini_Realtime-orange)
+Cafe24 상품 데이터를 기반으로 ChatGPT 안에서 네이티브 위젯(GenUI) 추천 경험을 제공하는 MCP 서버입니다.
 
-> **"하드코딩 0%, 정확도 100%"**를 지향하는 카페24 어드민 API 연동형 AI 상품 추천 엔진입니다.  
-> 본 프로젝트는 클라우드 무료 티어의 한계를 극복하기 위해 **인메모리 싱크 아키텍처**와 **LLM 실시간 추론 셀렉터**를 결합하여 압도적인 사용자 경험을 선사합니다.
+## What This Project Solves
+- 추천 정확도: 룰 기반 1차 선별 + LLM 2차 재랭크(STAGE1/STAGE2)
+- 응답 속도: 메모리 캐시 중심 추천, 주기적 동기화
+- UX 품질: MCP 리소스 템플릿(`text/html;profile=mcp-app`)으로 카드형 위젯 렌더
+- 운영 안정성: 토큰 영구 저장(MongoDB), 토큰 자동 갱신, 로그 레벨 제어
 
-## 🌟 Key Technical Showcase (핵심 기술 정수)
+## Architecture
+- Backend: Node.js + Express
+- Data: Cafe24 Admin API + MongoDB
+- Recommendation Core: `services/recommendationService.js`
+- MCP Gateway: `routes/mcp.js`
+- Widget UI: React(Vite) `client/src/App.jsx`
 
-### 1️⃣ "50초를 0.1초로" : Ultra-Fast Background Sync
-무료 티어 서비스의 가장 큰 고통인 'Cold Start'와 'API Latency'를 해결하기 위해 **Background 주기적 동기화 아키텍처**를 설계했습니다.
-- **Before**: 사용자 질문 시 API 통신 발생 (약 50초 대기)
-- **After**: 10분 주기 인메모리 풀-싱크 (0.1초 이내 즉시 응답)
+Flow:
+1. ChatGPT가 MCP `tools/call` 실행
+2. 서버가 캐시/카테고리/태깅 기반 후보 추출
+3. 추천 엔진이 스코어링 및 재랭크
+4. `structuredContent` + `_meta` 반환
+5. ChatGPT가 위젯 템플릿 로드 후 카드 UI 렌더
 
-### 2️⃣ "의미를 읽는 추천" : Semantic Real-time Selector (Hardcode 0%)
-단순히 "선크림"이라는 글자만 찾는 'Keyword Search'가 아닙니다. 
-- **AI 추론(Reasoning)**: 사용자가 "선스틱"을 물어보면 브랜드 명칭인 "스틱밤"의 의미를 GPT가 실시간으로 분석하여 매칭합니다.
-- **Rule-less Architecture**: 코드 내에 지저분한 'if/else' 동의어 규칙이 한 줄도 존재하지 않습니다.
+## Key Endpoints
+- `GET /mcp` (SSE)
+- `GET /mcp/sse` (호환 SSE)
+- `POST /mcp/message` (JSON-RPC)
+- `POST /mcp/messages` (호환 JSON-RPC)
+- `GET /ui/recommendation` (위젯 HTML 엔트리)
+- `POST /api/recommend` (웹 UI용 직접 추천 API)
+- `GET /debug/cache` (캐시/동기화 상태 점검)
+- `GET /debug/product/:productNo` (상품 상세 필드 점검)
 
-### 3️⃣ "끊김 없는 서비스" : Proactive Token Refresh
-OAuth 2.0의 고질적인 문제인 토큰 만료 에러를 사전에 방지합니다.
-- **능동적 감지**: 만료 5분 전 서버가 스스로 토큰 상태를 체크하고 갱신합니다.
-- **영구 저장**: MongoDB Atlas를 통한 토큰 영구 보관으로 서버 재부팅 시에도 인증 상태를 유지합니다.
-
----
-
-## 🛠 Tech Stack
-- **Protocol**: Anthropic MCP (Model Context Protocol) 
-- **Back-end**: Node.js, Express.js
-- **Database**: MongoDB Atlas (Mongoose)
-- **AI Core**: OpenAI GPT-4o-mini (Real-time Reasoning)
-- **Deployment**: Render.com Cloud Platform
-
----
-
-## 📸 Portfolio Screenshots (Expected Output)
-- **Semantic Table**: 할인율(%), 이미지, AI 큐레이터 코멘트가 포함된 프리미엄 마크다운 테이블 자동 생성
-- **Zero Latency**: 도구 호출 즉시 대기 없이 쏟아지는 추천 결과
-
----
-
-## 📂 Project Structure
-```text
-├── config/             # 환경 변수 및 설정 관리
-├── models/             # MongoDB 스키마 (Token)
-├── routes/             # MCP 및 카페24 라우팅
-├── services/           
-│   ├── aiSelector      # GPT 기반 실시간 추천 선정 (Core)
-│   ├── cafe24Api       # 인메모리 싱크 및 데이터 관리
-├── stores/             # 토큰 저장소 (Mem + DB Hybrid)
-└── server.js           # 서버 메인 및 백그라운드 스케줄러 가동
+## Local Setup
+1. Install
+```bash
+npm install
+npm install --prefix client
 ```
 
----
+2. Configure `.env`
+```env
+NODE_ENV=development
+PORT=10000
+MONGO_URI=...
+MALL_ID=...
+CLIENT_ID=...
+CLIENT_SECRET=...
+REDIRECT_URI=...
+SCOPE=mall.read_product mall.read_category
+OPENAI_API_KEY=...
+PUBLIC_BASE_URL=http://localhost:10000
 
-## 🛡️ License
-이 프로젝트는 셀퓨전씨 공식몰 AI 고도화의 일환으로 제작된 프로토타입이며, 모든 권한은 개발자에게 있습니다.
+# Optional logging controls
+LOG_LEVEL=debug
+LOG_MCP_VERBOSE=false
+LOG_CACHE_FILTER=false
+LOG_TOKEN_EVENTS=false
+```
+
+3. Build + Run
+```bash
+npm run build --prefix client
+node server.js
+```
+
+## Logging Policy
+로그는 `utils/logger.js`를 통해 레벨 기반으로 제어됩니다.
+
+- `info`: 운영 핵심 이벤트 (sync start/success, tools/call, resources/read)
+- `debug`: 상세 진단 (API 요청, 내부 분기)
+- `warn/error`: 장애/예외
+- `LOG_MCP_VERBOSE=true`: initialize/tools-list/resources-list 등 상세 MCP 트래픽 로그 표시
+- `LOG_CACHE_FILTER=true`: category/keyword 필터 상세 로그 표시
+- `LOG_TOKEN_EVENTS=true`: 토큰 저장 이벤트 로그 표시
+
+자세한 기준은 [LOGGING.md](docs/LOGGING.md) 참고.
+
+## Project Plan
+현재/다음 단계 실행 계획은 [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) 참고.
+
+## Portfolio Highlights
+- MCP Apps/ChatGPT 위젯 채택 이슈를 `resources/read + outputTemplate + resourceUri + CSP` 정합성으로 해결
+- 추천 결과에 대해 “정상/빈결과” 모두 위젯 렌더가 깨지지 않도록 안전 처리
+- 운영 로그를 노이즈 로그와 핵심 로그로 분리해 디버깅 효율 향상
+
+## License
+Private project for CellFusionC recommendation experience.

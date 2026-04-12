@@ -4,13 +4,15 @@ import path from 'path';
 import { config } from '../config/env.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { recommendationService } from '../services/recommendationService.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 let clientStream = null;
 
 const DEFAULT_BASE_URL = 'https://cafe24-api.onrender.com';
 const BASE_URL = (config.PUBLIC_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
-const WIDGET_TEMPLATE_VERSION = 'v20260410';
+
+const WIDGET_TEMPLATE_VERSION = 'v20260413';
 const WIDGET_UI_URI = `ui://widget/recommendation-${WIDGET_TEMPLATE_VERSION}.html`;
 const WIDGET_HTTP_URI = `${BASE_URL}/ui/recommendation`;
 const TOOL_NAME = 'search_cafe24_real_products';
@@ -123,7 +125,7 @@ function sendToClient(msg) {
     clientStream.write('event: message\n');
     clientStream.write(`data: ${JSON.stringify(msg)}\n\n`);
   } else {
-    console.warn('[MCP Stream] No active clientStream. Message not delivered via SSE.');
+    logger.warn('[MCP Stream] No active clientStream. Message not delivered via SSE.');
   }
 }
 
@@ -166,20 +168,40 @@ function buildConsultText(recommendations, promotions = []) {
   return lines.join('\n');
 }
 
-async function executeTool(args = {}) {
-  console.log(`[Tool Exec] ${TOOL_NAME} start`);
+function normalizeCategory(category) {
+  const rawCat = String(category || '').toLowerCase().trim();
+  if (!rawCat) return { rawCat: '', standardCat: '' };
+  return {
+    rawCat,
+    standardCat: CATEGORY_SYNONYM_MAP[rawCat] || rawCat,
+  };
+}
 
-  const rawCat = String(args.category || '').toLowerCase().trim();
-  const standardCat = CATEGORY_SYNONYM_MAP[rawCat] || rawCat;
-  const lookupKeywords = FORCED_LOOKUP[standardCat] || [standardCat];
-  const categoryNos = cafe24ApiService.getDynamicCategoryNos(lookupKeywords);
+async function executeTool(args = {}) {
+  logger.info(`[Tool Exec] ${TOOL_NAME} start`);
+
+  // Startup race guard: if the first tool call lands before initial sync completes,
+  // trigger one on-demand sync so users don't see an empty first response.
+  if ((cafe24ApiService.cacheSize || 0) === 0) {
+    logger.info('[Tool Exec] Cache is empty. Triggering on-demand sync...');
+    await cafe24ApiService.syncAllProducts();
+  }
+
+  const { rawCat, standardCat } = normalizeCategory(args.category);
+  const lookupKeywords = FORCED_LOOKUP[standardCat] || [standardCat].filter(Boolean);
+  const categoryNos = cafe24ApiService.getDynamicCategoryNos(lookupKeywords) || [];
 
   let rawProducts = [];
-  if (categoryNos.length > 0) {
+  if (Array.isArray(categoryNos) && categoryNos.length > 0) {
     rawProducts = cafe24ApiService.getProductsFromCache({ categoryNos });
-    if (rawProducts.length === 0) rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
-  } else {
+    if (!rawProducts.length && rawCat) rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
+  } else if (rawCat) {
     rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
+  }
+
+  // If category/keyword lookup fails, fallback to active cache instead of hard-failing.
+  if (!Array.isArray(rawProducts) || rawProducts.length === 0) {
+    rawProducts = cafe24ApiService.getProductsFromCache({});
   }
 
   rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, 12);
@@ -188,16 +210,35 @@ async function executeTool(args = {}) {
     rawProducts,
     {
       ...args,
-      category_aliases: [standardCat],
-      target_category_ids: categoryNos,
+      category_aliases: standardCat ? [standardCat] : [],
+      target_category_ids: Array.isArray(categoryNos) ? categoryNos : [],
     },
     3
   );
 
   const { recommendations, promotions, summary } = result;
-  if (!recommendations || recommendations.length === 0) {
+  const safeSummary = summary || { message: '조건에 맞는 상품을 찾지 못했습니다.' };
+
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
     return {
-      content: [{ type: 'text', text: summary?.message || '조건에 맞는 상품을 찾지 못했습니다.' }],
+      content: [{ type: 'text', text: safeSummary.message }],
+      structuredContent: {
+        recommendations: [],
+        promotions: [],
+        summary: safeSummary,
+        strategy: safeSummary.strategy || '',
+        conclusion: safeSummary.conclusion || '',
+      },
+      _meta: {
+        ui: { resourceUri: WIDGET_UI_URI },
+        'openai/outputTemplate': WIDGET_UI_URI,
+        'openai/widgetAccessible': true,
+        widgetData: {
+          recommendations: [],
+          promotions: [],
+          summary: safeSummary,
+        },
+      },
     };
   }
 
@@ -208,9 +249,9 @@ async function executeTool(args = {}) {
     structuredContent: {
       recommendations,
       promotions: promotions || [],
-      summary,
-      strategy: summary?.strategy || '',
-      conclusion: summary?.conclusion || '',
+      summary: safeSummary,
+      strategy: safeSummary.strategy || '',
+      conclusion: safeSummary.conclusion || '',
     },
     _meta: {
       ui: { resourceUri: WIDGET_UI_URI },
@@ -219,7 +260,7 @@ async function executeTool(args = {}) {
       widgetData: {
         recommendations,
         promotions: promotions || [],
-        summary,
+        summary: safeSummary,
       },
     },
   };
@@ -230,11 +271,11 @@ function handleSseConnect(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.write('event: endpoint\ndata: /mcp/message\n\n');
   res.flushHeaders();
-  console.log(`[MCP Stream] Connected path=${req.path}`);
+  logger.info(`[MCP Stream] Connected path=${req.path}`);
 
   clientStream = res;
   res.on('close', () => {
-    console.log(`[MCP Stream] Disconnected path=${req.path}`);
+    logger.info(`[MCP Stream] Disconnected path=${req.path}`);
     if (clientStream === res) clientStream = null;
   });
 }
@@ -246,7 +287,11 @@ async function handleMcpMessage(req, res) {
   const { method, params, id } = req.body || {};
   res.status(202).send('Accepted');
 
-  console.log(`[MCP Inbound] method=${method} id=${id}`);
+  if (method === 'tools/call' || method === 'resources/read') {
+    logger.info(`[MCP Inbound] method=${method} id=${id}`);
+  } else {
+    logger.mcpVerbose(`[MCP Inbound] method=${method} id=${id}`);
+  }
 
   try {
     if (method === 'initialize') {
@@ -259,7 +304,7 @@ async function handleMcpMessage(req, res) {
             tools: { listChanged: false },
             resources: { subscribe: false },
           },
-          serverInfo: { name: 'cafe24-api-genui', version: '4.2.0' },
+          serverInfo: { name: 'cafe24-api-genui', version: '4.3.0' },
         },
       });
       return;
@@ -268,7 +313,7 @@ async function handleMcpMessage(req, res) {
     if (method === 'notifications/initialized') return;
 
     if (method === 'resources/list') {
-      console.log('[MCP Protocol] resources/list requested');
+      logger.mcpVerbose('[MCP Protocol] resources/list requested');
       sendToClient({ jsonrpc: '2.0', id, result: { resources: RESOURCES } });
       return;
     }
@@ -278,7 +323,7 @@ async function handleMcpMessage(req, res) {
       const normalized = requestedUri.split(/[?#]/)[0];
       const allowedUris = [WIDGET_UI_URI, WIDGET_HTTP_URI];
 
-      console.log(`[MCP Protocol] resources/read requested: ${requestedUri}`);
+      logger.info(`[MCP Protocol] resources/read requested: ${requestedUri}`);
 
       if (!allowedUris.includes(normalized)) {
         sendError(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: allowedUris });
@@ -343,7 +388,7 @@ async function handleMcpMessage(req, res) {
 
     sendError(id, -32601, `Method not found: ${method}`);
   } catch (error) {
-    console.error('[MCP Error]', error);
+    logger.error('[MCP Error]', error);
     sendError(id, -32000, error.message);
   }
 }

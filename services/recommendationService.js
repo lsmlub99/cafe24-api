@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { config } from '../config/env.js';
+import { logger } from '../utils/logger.js';
 
 const openai = new OpenAI({
   apiKey: config.OPENAI_API_KEY,
@@ -343,7 +344,7 @@ export const recommendationService = {
         })
         .sort((a, b) => (b._final || 0) - (a._final || 0));
     } catch (e) {
-      console.warn(`[Rerank] skipped: ${e.message}`);
+      logger.warn(`[Rerank] skipped: ${e.message}`);
       return candidates;
     }
   },

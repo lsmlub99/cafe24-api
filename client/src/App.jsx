@@ -20,10 +20,11 @@ function App() {
 
       const structured = payload.structuredContent || payload.output || payload.data || payload;
       const recommendations = structured?.recommendations || structured?.items || [];
-      if (!Array.isArray(recommendations) || recommendations.length === 0) return;
+      const hasSummaryMessage = Boolean(structured?.summary?.message);
+      if (!Array.isArray(recommendations) && !hasSummaryMessage) return;
 
       setWidgetData({
-        recommendations,
+        recommendations: Array.isArray(recommendations) ? recommendations : [],
         promotions: structured.promotions || [],
         summary: structured.summary || {},
         strategy: structured.strategy || structured.summary?.strategy || '',
@@ -304,6 +305,17 @@ function App() {
             {widgetData.conclusion}
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (isWidgetMode && widgetData && (!widgetData.recommendations || widgetData.recommendations.length === 0)) {
+    return (
+      <div style={{ padding: '16px', color: '#555', background: '#fff', borderRadius: '12px' }}>
+        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#B31312', marginBottom: '8px' }}>
+          추천 결과
+        </div>
+        <div>{widgetData.summary?.message || '조건에 맞는 결과를 찾지 못했어요.'}</div>
       </div>
     );
   }

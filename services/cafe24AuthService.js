@@ -1,4 +1,5 @@
 import { config } from '../config/env.js';
+import { logger } from '../utils/logger.js';
 
 export const cafe24AuthService = {
   getAuthorizeUrl: (state) => {
@@ -8,71 +9,59 @@ export const cafe24AuthService = {
       client_id: config.CLIENT_ID,
       redirect_uri: config.REDIRECT_URI,
       scope: config.SCOPE,
-      state
+      state,
     });
     return `${baseUrl}?${params.toString()}`;
   },
 
   getAccessToken: async (code) => {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/oauth/token`;
-
-    // [핵심 변경 사항] 카페24 공식 문서 스펙 준수: client_id:client_secret 을 Base64로 인코딩하여 Header에 삽입해야 합니다.
     const base64Credentials = Buffer.from(`${config.CLIENT_ID}:${config.CLIENT_SECRET}`).toString('base64');
 
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code: String(code),
-      redirect_uri: config.REDIRECT_URI
-      // client_id, client_secret를 여기서 제거하고 Header로 이동
+      redirect_uri: config.REDIRECT_URI,
     });
 
-    console.log(`[INFO] (getAccessToken) 통신 요청 준비 완료. Payload:`, body.toString());
+    logger.debug('[Auth] Requesting access token');
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${base64Credentials}`, // 공식 문서 필수 항목
-        'Content-Type': 'application/x-www-form-urlencoded'
+        Authorization: `Basic ${base64Credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body
+      body,
     });
 
     const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(`토큰 발급 실패: ${JSON.stringify(data)}`);
-    }
-
+    if (!response.ok) throw new Error(`Token issue failed: ${JSON.stringify(data)}`);
     return data;
   },
 
   refreshAccessToken: async (refreshToken) => {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/oauth/token`;
-
-    // [핵심 변경 사항] 리프레시 토큰 요청 시에도 Basic Auth 필수
     const base64Credentials = Buffer.from(`${config.CLIENT_ID}:${config.CLIENT_SECRET}`).toString('base64');
 
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: refreshToken
-      // client_id, client_secret를 여기서 제거하고 Header로 이동
+      refresh_token: refreshToken,
     });
+
+    logger.debug('[Auth] Refreshing access token');
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${base64Credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
+        Authorization: `Basic ${base64Credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body
+      body,
     });
 
     const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(`토큰 재발급 실패: ${JSON.stringify(data)}`);
-    }
-
+    if (!response.ok) throw new Error(`Token refresh failed: ${JSON.stringify(data)}`);
     return data;
-  }
+  },
 };

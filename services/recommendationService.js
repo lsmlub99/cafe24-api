@@ -489,14 +489,24 @@ export const recommendationService = {
 
     const core = ordered.filter((p) => !p.is_promo);
     let topSource = core.length ? core : ordered;
+    let top = [];
+    const targetCount = Math.max(1, limit);
+
     if (intent.requested_form) {
       const sameFormOnly = topSource.filter((p) => p.form === intent.requested_form);
-      if (sameFormOnly.length > 0) {
-        topSource = sameFormOnly;
-      }
-    }
+      const sameFormTop = sameFormOnly.slice(0, targetCount);
+      top = [...sameFormTop];
 
-    const top = topSource.slice(0, Math.max(1, limit));
+      if (top.length < targetCount) {
+        const pickedBase = new Set(top.map((p) => p.base_name));
+        const fallbackPool = topSource.filter(
+          (p) => p.form !== intent.requested_form && !pickedBase.has(p.base_name)
+        );
+        top.push(...fallbackPool.slice(0, targetCount - top.length));
+      }
+    } else {
+      top = topSource.slice(0, targetCount);
+    }
     if (top[0]?.base_name) setLockedTop1(signature, top[0].base_name);
 
     const recommendations = top.map((p, idx) => {

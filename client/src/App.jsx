@@ -16,8 +16,8 @@ function isObject(v) {
 
 function findStructuredCandidate(node, depth = 0) {
   if (!node || depth > 6) return null;
-
   const parsed = tryParseJson(node);
+
   if (Array.isArray(parsed)) {
     for (const item of parsed) {
       const found = findStructuredCandidate(item, depth + 1);
@@ -27,22 +27,9 @@ function findStructuredCandidate(node, depth = 0) {
   }
 
   if (!isObject(parsed)) return null;
+  if (Array.isArray(parsed.recommendations) || Array.isArray(parsed.items) || isObject(parsed.summary)) return parsed;
 
-  if (Array.isArray(parsed.recommendations) || Array.isArray(parsed.items) || isObject(parsed.summary)) {
-    return parsed;
-  }
-
-  const directKeys = [
-    'structuredContent',
-    'output',
-    'data',
-    'result',
-    'payload',
-    'toolOutput',
-    '_meta',
-    'params',
-  ];
-
+  const directKeys = ['structuredContent', 'output', 'data', 'result', 'payload', 'toolOutput', '_meta', 'params'];
   for (const key of directKeys) {
     if (parsed[key] == null) continue;
     const found = findStructuredCandidate(parsed[key], depth + 1);
@@ -58,7 +45,6 @@ function findStructuredCandidate(node, depth = 0) {
     const found = findStructuredCandidate(value, depth + 1);
     if (found) return found;
   }
-
   return null;
 }
 
@@ -79,16 +65,12 @@ function normalizeWidgetData(raw) {
   const referenceRecommendations = Array.isArray(structured.reference_recommendations)
     ? structured.reference_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
     : [];
-  const followUpQuestions = Array.isArray(structured.follow_up_questions)
-    ? structured.follow_up_questions.filter((q) => typeof q === 'string' && q.trim().length > 0)
-    : [];
   const summary = isObject(structured.summary) ? structured.summary : {};
 
   return {
     recommendations,
     promotions,
     reference_recommendations: referenceRecommendations,
-    follow_up_questions: followUpQuestions,
     summary,
     strategy: structured.strategy || summary.strategy || '',
     conclusion: structured.conclusion || summary.conclusion || '',
@@ -102,6 +84,7 @@ function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [widgetData, setWidgetData] = useState(null);
+
   const messagesEndRef = useRef(null);
   const lastWidgetSignatureRef = useRef('');
   const fallbackPollRef = useRef(null);
@@ -130,17 +113,15 @@ function App() {
       if (!nextData) return;
 
       const nextHasRecs = nextData.recommendations.length > 0;
-      const currentHasRecs =
-        Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
+      const currentHasRecs = Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
 
-      // Prevent late empty payload from overwriting valid cards.
+      // Never overwrite a valid card state with a late empty payload.
       if (!nextHasRecs && currentHasRecs) return;
 
       const signature = JSON.stringify({
         names: nextData.recommendations.map((r) => r?.name || ''),
         promotions: nextData.promotions.map((p) => p?.name || ''),
-        references: (nextData.reference_recommendations || []).map((p) => p?.name || ''),
-        followups: (nextData.follow_up_questions || []).map((q) => q),
+        references: nextData.reference_recommendations.map((p) => p?.name || ''),
         message: nextData.summary?.message || '',
         strategy: nextData.strategy || '',
         conclusion: nextData.conclusion || '',
@@ -168,28 +149,18 @@ function App() {
       window.__TOOL_OUTPUT__,
       window.__WIDGET_DATA__,
     ];
-    bootstrapCandidates.forEach((c) => {
-      if (c) applyWidgetData(c);
-    });
+    bootstrapCandidates.forEach((c) => c && applyWidgetData(c));
 
     fallbackPollRef.current = window.setInterval(() => {
       const candidates = [window.openai?.toolOutput, window.openai?.appData, window.__TOOL_OUTPUT__, window.__WIDGET_DATA__];
-      candidates.forEach((c) => {
-        if (c) applyWidgetData(c);
-      });
+      candidates.forEach((c) => c && applyWidgetData(c));
     }, 400);
 
     const inIframe = window.parent && window.parent !== window;
     if (inIframe) {
       const initId = `init-${Date.now()}`;
-      window.parent.postMessage(
-        { jsonrpc: '2.0', id: initId, method: 'ui/initialize', params: { version: '1.0.0' } },
-        '*'
-      );
-      window.parent.postMessage(
-        { jsonrpc: '2.0', method: 'ui/notifications/initialized', params: { version: '1.0.0' } },
-        '*'
-      );
+      window.parent.postMessage({ jsonrpc: '2.0', id: initId, method: 'ui/initialize', params: { version: '1.0.0' } }, '*');
+      window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized', params: { version: '1.0.0' } }, '*');
     }
 
     return () => {
@@ -243,20 +214,15 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div
-          className="product-carousel"
-          style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}
-        >
+        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
           {widgetData.recommendations.map((product, idx) => (
             <div
               key={`${product.buy_url || product.name}-${idx}`}
-              className="product-card"
               style={{ minWidth: '220px', border: '1px solid #eee', borderRadius: '12px', padding: '12px', background: '#fff' }}
             >
               <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>
-                {idx === 0 ? '🏅 BEST' : `${idx + 1}위`}
+                {idx === 0 ? '🥇 BEST' : `${idx + 1}위`}
               </div>
-
               <img src={product.image} alt={product.name} style={{ width: '100%', height: '140px', objectFit: 'contain', marginBottom: '12px' }} />
               <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>{product.name}</div>
               <div style={{ color: '#666', fontSize: '0.85rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
@@ -295,25 +261,15 @@ function App() {
           ))}
         </div>
 
-        {Array.isArray(widgetData.promotions) && widgetData.promotions.length > 0 && (
+        {widgetData.promotions.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>
-              현재 행사 상품도 진행 중이에요
-            </div>
+            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>현재 행사 상품도 진행 중이에요</div>
             {widgetData.promotions.map((product, idx) => (
               <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}
-                  style={{
-                    color: '#444',
-                    textDecoration: 'underline',
-                    border: 'none',
-                    background: 'transparent',
-                    padding: 0,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
+                  style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
                 >
                   {product.name}
                 </button>
@@ -323,42 +279,19 @@ function App() {
           </div>
         )}
 
-        {Array.isArray(widgetData.reference_recommendations) && widgetData.reference_recommendations.length > 0 && (
+        {widgetData.reference_recommendations.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>
-              참고용 추천 (다른 제형)
-            </div>
+            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>참고용 추천 (다른 제형)</div>
             {widgetData.reference_recommendations.map((product, idx) => (
               <div key={`${product.buy_url || product.name}-ref-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}
-                  style={{
-                    color: '#444',
-                    textDecoration: 'underline',
-                    border: 'none',
-                    background: 'transparent',
-                    padding: 0,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
+                  style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
                 >
                   {product.name}
                 </button>
                 {product.price ? ` · ${product.price}원` : ''}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {Array.isArray(widgetData.follow_up_questions) && widgetData.follow_up_questions.length > 0 && (
-          <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>
-              다음으로 맞춤 설정해드릴게요
-            </div>
-            {widgetData.follow_up_questions.map((q, idx) => (
-              <div key={`follow-up-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
-                - {q}
               </div>
             ))}
           </div>
@@ -399,7 +332,7 @@ function App() {
               <div className="carousel-container">
                 {msg.products.map((product, idx) => (
                   <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url)}>
-                    <div className="rank-badge">{idx === 0 ? '🏅 BEST' : `${idx + 1}위`}</div>
+                    <div className="rank-badge">{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
                     <img src={product.image} alt={product.name} className="product-img" />
                     <div className="product-name">{product.name}</div>
                     <div className="product-price">{product.price ? `${product.price}원` : ''}</div>
@@ -413,7 +346,7 @@ function App() {
           </div>
         ))}
 
-        {isLoading && <div className="message-bubble message-bot">분석 중...</div>}
+        {isLoading && <div className="message-bubble message-bot">분석 중..</div>}
         <div ref={messagesEndRef} />
       </main>
 
@@ -435,3 +368,4 @@ function App() {
 }
 
 export default App;
+

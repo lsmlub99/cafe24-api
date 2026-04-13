@@ -467,7 +467,6 @@ async function executeTool(args = {}) {
     };
   }
 
-  const followUpQuestions = buildFollowUpQuestions(args);
   const consultText = buildConsultNarrativeV3(
     recommendations,
     promotions || [],
@@ -481,7 +480,6 @@ async function executeTool(args = {}) {
       recommendations,
       promotions: promotions || [],
       reference_recommendations: referenceRecommendations || [],
-      follow_up_questions: followUpQuestions,
       summary: safeSummary,
       strategy: safeSummary.strategy || '',
       conclusion: safeSummary.conclusion || '',
@@ -494,7 +492,6 @@ async function executeTool(args = {}) {
         recommendations,
         promotions: promotions || [],
         reference_recommendations: referenceRecommendations || [],
-        follow_up_questions: followUpQuestions,
         summary: safeSummary,
       },
     },

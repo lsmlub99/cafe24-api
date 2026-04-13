@@ -182,6 +182,178 @@ function buildConsultText(recommendations, promotions = [], referenceRecommendat
     });
   }
 
+  const parsedPrices = recommendations
+    .map((r) => Number.parseInt(String(r?.price || '').replace(/[^\d]/g, ''), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const minPrice = parsedPrices.length ? Math.min(...parsedPrices) : null;
+  const budgetGuide =
+    minPrice == null
+      ? '원하시면 예산대를 알려주시면 그 범위 안에서 다시 좁혀드릴까요?'
+      : minPrice <= 20000
+      ? '원하시면 2만원 이하 예산으로만 다시 추려드릴까요?'
+      : minPrice <= 30000
+      ? '원하시면 3만원대 이내로만 다시 추려드릴까요?'
+      : '원하시면 3만원 이하/이상으로 나눠서 다시 정리해드릴까요?';
+
+  const firstName = String(recommendations[0]?.name || '');
+  let comboGuide = '함께 쓰면 좋은 제품(토너/수분크림/진정템)도 같이 묶어서 추천드릴까요?';
+  if (/세럼|serum/i.test(firstName)) {
+    comboGuide = '세럼과 같이 쓰면 좋은 수분크림/선케어 조합도 바로 맞춰드릴까요?';
+  } else if (/선|sun|썬/i.test(firstName)) {
+    comboGuide = '선케어와 궁합 좋은 베이스(토너/수분크림/메이크업 전 단계)도 같이 추천드릴까요?';
+  } else if (/크림|cream/i.test(firstName)) {
+    comboGuide = '크림과 같이 쓰면 좋은 진정 세럼/선케어 조합도 같이 추천드릴까요?';
+  }
+
+  lines.push('');
+  lines.push(`- ${budgetGuide}`);
+  lines.push(`- ${comboGuide}`);
+
+  return lines.join('\n');
+}
+
+function buildConsultNarrative(recommendations, promotions = [], referenceRecommendations = [], args = {}) {
+  const lines = [];
+  const skinType = String(args.skin_type || '').trim();
+  const concernText = Array.isArray(args.concerns) && args.concerns.length > 0 ? args.concerns.join(', ') : '';
+
+  lines.push('상단 카드에는 제품별 근거와 핵심 포인트를 정리해두었고, 아래에서는 실제 사용 흐름 중심으로 안내드릴게요.');
+  lines.push('');
+
+  if (skinType || concernText) {
+    lines.push(
+      `${skinType ? `${skinType} 피부` : '현재 피부 상태'} 기준으로` +
+        `${concernText ? ` (${concernText})` : ''} ` +
+        '무겁지 않게 밀착되고, 덧발라도 부담이 적은 쪽으로 큐레이션했어요.'
+    );
+    lines.push('');
+  }
+
+  lines.push('이렇게 사용하시면 만족도가 높아요.');
+  lines.push('1) 아침: 1위 제품을 메인으로 얇게 2회 레이어링');
+  lines.push('2) 외출 중: 땀/유분이 올라오면 문지르지 말고 가볍게 덧바르기');
+  lines.push('3) 저녁: 자극감이 느껴진 날은 진정 위주 스킨케어로 마무리');
+  lines.push('');
+
+  if (recommendations.length >= 2) {
+    lines.push(`메인 선택은 1위(${recommendations[0].name})로 시작하고, 사용감이 안 맞으면 2위(${recommendations[1].name})로 바꿔보세요.`);
+  } else if (recommendations.length === 1) {
+    lines.push(`우선 1위(${recommendations[0].name})로 3일 정도 사용감부터 확인해보시는 걸 추천드려요.`);
+  }
+
+  if (recommendations.length >= 3) {
+    lines.push(`3위(${recommendations[2].name})는 보완용 대안으로 두고, 피부 반응에 따라 교체하시면 됩니다.`);
+  }
+
+  if (promotions.length > 0) {
+    lines.push('');
+    lines.push('행사 상품은 하단 배너에서 확인하실 수 있고, 본품이 맞는지 먼저 체크한 뒤 선택하시는 걸 권장드려요.');
+  }
+
+  if (Array.isArray(referenceRecommendations) && referenceRecommendations.length > 0) {
+    lines.push('');
+    lines.push('참고용 추천은 다른 제형 대안이에요. 메인 제품이 답답하거나 밀릴 때 교체 옵션으로 보시면 좋아요.');
+  }
+
+  lines.push('');
+  lines.push('원하시면 다음 답변에서 아침/야외/메이크업 전 3상황으로 나눠 더 구체적인 사용 순서까지 맞춰드릴게요.');
+
+  return lines.join('\n');
+}
+
+function buildConsultNarrativeV2(recommendations, promotions = [], referenceRecommendations = [], args = {}) {
+  const lines = [];
+  const skinType = String(args.skin_type || '').trim();
+  const concernText = Array.isArray(args.concerns) && args.concerns.length > 0 ? args.concerns.join(', ') : '';
+  const categoryText = String(args.category || '').trim();
+
+  lines.push('상단 카드에는 제품별 근거를 담아두었고, 아래에서는 실제 사용 방법 중심으로 안내드릴게요.');
+  lines.push('');
+
+  const conditionLabel = [skinType ? `${skinType} 피부` : '', concernText || '', categoryText || '']
+    .filter(Boolean)
+    .join(' / ');
+  if (conditionLabel) {
+    lines.push(`현재 조건(${conditionLabel}) 기준으로, 밀착력과 사용 편의성을 함께 고려해 구성했습니다.`);
+    lines.push('');
+  }
+
+  lines.push('사용은 아래 순서로 진행해보세요.');
+  lines.push('1) 아침: 1위 제품을 얇게 2회 레이어링해서 밀착');
+  lines.push('2) 낮 시간: 유분/땀이 올라오면 문지르지 말고 가볍게 덧바르기');
+  lines.push('3) 저녁: 자극감이 느껴진 날은 진정 위주 스킨케어로 마무리');
+  lines.push('');
+
+  if (recommendations.length >= 2) {
+    lines.push(`첫 선택은 1위(${recommendations[0].name})로 시작하고, 사용감이 안 맞으면 2위(${recommendations[1].name})로 교체해보세요.`);
+  } else if (recommendations.length === 1) {
+    lines.push(`우선 1위(${recommendations[0].name})를 3일 정도 사용해보며 밀착감/당김 여부를 체크해보시면 됩니다.`);
+  }
+
+  if (recommendations.length >= 3) {
+    lines.push(`3위(${recommendations[2].name})는 보완용 카드로 두고, 계절이나 컨디션에 따라 교체해 쓰시면 효율적이에요.`);
+  }
+
+  if (promotions.length > 0) {
+    lines.push('');
+    lines.push('행사 구성은 하단 배너에서 확인 가능하고, 본품 사용감이 맞는지 먼저 확인한 뒤 선택하시는 걸 권장드려요.');
+  }
+
+  if (Array.isArray(referenceRecommendations) && referenceRecommendations.length > 0) {
+    lines.push('');
+    lines.push('참고용 추천은 다른 제형 대안입니다. 메인 제품이 답답하거나 밀릴 때 교체 옵션으로 활용해보세요.');
+  }
+
+  lines.push('');
+  lines.push('원하시면 다음 답변에서 아침/야외활동/메이크업 전 3상황으로 나눠, 제품별 바르는 양과 순서를 더 구체적으로 맞춰드릴게요.');
+  return lines.join('\n');
+}
+
+function buildConsultNarrativeV3(recommendations, promotions = [], referenceRecommendations = [], args = {}) {
+  const lines = [];
+  const skinType = String(args.skin_type || '').trim();
+  const concernText = Array.isArray(args.concerns) && args.concerns.length > 0 ? args.concerns.join(', ') : '';
+  const categoryText = String(args.category || '').trim();
+
+  lines.push('상단 카드에는 제품별 근거를 담아두었고, 아래에서는 실제 사용 방법 중심으로 안내드릴게요.');
+  lines.push('');
+
+  const conditionLabel = [skinType ? `${skinType} 피부` : '', concernText || '', categoryText || '']
+    .filter(Boolean)
+    .join(' / ');
+  if (conditionLabel) {
+    lines.push(`현재 조건(${conditionLabel}) 기준으로, 밀착력과 사용 편의성을 함께 고려해 구성했습니다.`);
+    lines.push('');
+  }
+
+  lines.push('사용은 아래 순서로 진행해보세요.');
+  lines.push('1) 아침: 1위 제품을 얇게 2회 레이어링해서 밀착');
+  lines.push('2) 낮 시간: 유분/땀이 올라오면 문지르지 말고 가볍게 덧바르기');
+  lines.push('3) 저녁: 자극감이 느껴진 날은 진정 위주 스킨케어로 마무리');
+  lines.push('');
+
+  if (recommendations.length >= 2) {
+    lines.push(`첫 선택은 1위(${recommendations[0].name})로 시작하고, 사용감이 안 맞으면 2위(${recommendations[1].name})로 교체해보세요.`);
+  } else if (recommendations.length === 1) {
+    lines.push(`우선 1위(${recommendations[0].name})를 3일 정도 사용해보며 밀착감/당김 여부를 체크해보시면 됩니다.`);
+  }
+  if (recommendations.length >= 3) {
+    lines.push(`3위(${recommendations[2].name})는 보완용 카드로 두고, 계절이나 컨디션에 따라 교체해 쓰시면 효율적이에요.`);
+  }
+
+  if (promotions.length > 0) {
+    lines.push('');
+    lines.push('행사 구성은 하단 배너에서 확인 가능하고, 본품 사용감이 맞는지 먼저 확인한 뒤 선택하시는 걸 권장드려요.');
+  }
+  if (Array.isArray(referenceRecommendations) && referenceRecommendations.length > 0) {
+    lines.push('');
+    lines.push('참고용 추천은 다른 제형 대안입니다. 메인 제품이 답답하거나 밀릴 때 교체 옵션으로 활용해보세요.');
+  }
+
+  lines.push('');
+  lines.push(`- 원하는 가격대 있으신가요?${skinType ? ` ${skinType} 피부 기준으로` : ''} 예산에 맞춰 루틴을 맞춤으로 구성해드릴게요.`);
+  lines.push('- 같이 쓰면 좋은 제품(예: 토너/수분크림/진정템)도 묶어서 추천해드릴까요?');
+
   return lines.join('\n');
 }
 
@@ -287,7 +459,12 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = buildConsultText(recommendations, promotions || [], referenceRecommendations || []);
+  const consultText = buildConsultNarrativeV3(
+    recommendations,
+    promotions || [],
+    referenceRecommendations || [],
+    args
+  );
 
   return {
     content: [{ type: 'text', text: consultText }],

@@ -12,8 +12,6 @@ function App() {
   const lastWidgetSignatureRef = useRef('');
   const fallbackPollRef = useRef(null);
   const widgetDataRef = useRef(null);
-  const emptyStateTimerRef = useRef(null);
-  const [showEmptyState, setShowEmptyState] = useState(false);
 
   const openBuyLink = async (href) => {
     if (!href) return;
@@ -67,24 +65,6 @@ function App() {
 
       setWidgetData(nextData);
       widgetDataRef.current = nextData;
-
-      if (nextHasRecs) {
-        setShowEmptyState(false);
-        if (emptyStateTimerRef.current) {
-          window.clearTimeout(emptyStateTimerRef.current);
-          emptyStateTimerRef.current = null;
-        }
-      } else {
-        // UX guard: don't flash "no results" immediately on first response.
-        setShowEmptyState(false);
-        if (emptyStateTimerRef.current) window.clearTimeout(emptyStateTimerRef.current);
-        emptyStateTimerRef.current = window.setTimeout(() => {
-          const stillEmpty =
-            !Array.isArray(widgetDataRef.current?.recommendations) ||
-            widgetDataRef.current.recommendations.length === 0;
-          if (stillEmpty) setShowEmptyState(true);
-        }, 1800);
-      }
 
       if (fallbackPollRef.current && nextHasRecs) {
         window.clearInterval(fallbackPollRef.current);
@@ -155,10 +135,6 @@ function App() {
       if (fallbackPollRef.current) {
         window.clearInterval(fallbackPollRef.current);
         fallbackPollRef.current = null;
-      }
-      if (emptyStateTimerRef.current) {
-        window.clearTimeout(emptyStateTimerRef.current);
-        emptyStateTimerRef.current = null;
       }
     };
   }, []);
@@ -297,21 +273,7 @@ function App() {
     );
   }
 
-  if (
-    isWidgetMode &&
-    widgetData &&
-    (!widgetData.recommendations || widgetData.recommendations.length === 0) &&
-    showEmptyState
-  ) {
-    return (
-      <div style={{ padding: '16px', color: '#555', background: '#fff', borderRadius: '12px' }}>
-        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#B31312', marginBottom: '8px' }}>추천 결과</div>
-        <div>{widgetData.summary?.message || '조건에 맞는 결과를 찾지 못했어요.'}</div>
-      </div>
-    );
-  }
-
-  if (isWidgetMode && !widgetData) {
+  if (isWidgetMode && (!widgetData || !Array.isArray(widgetData.recommendations) || widgetData.recommendations.length === 0)) {
     return (
       <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
         <Sparkles size={24} style={{ marginBottom: '10px', opacity: 0.5 }} />

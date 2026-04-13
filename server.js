@@ -107,7 +107,13 @@ import fs from 'fs';
 app.get('/ui/recommendation', (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.sendFile(path.join(__dirname, 'client/dist', 'index.html'));
+    const indexPath = path.join(__dirname, 'client/dist', 'index.html');
+    if (!fs.existsSync(indexPath)) {
+      return res.status(404).send('Widget build not found');
+    }
+    let html = fs.readFileSync(indexPath, 'utf8');
+    html = html.replace('<head>', '<head><script>window.__WIDGET_MODE__=true;window.__MCP_WIDGET__=true;</script>');
+    res.type('html').send(html);
 });
 
 // 모든 기타 경로는 리액트 index.html로 (SPA 지원)

@@ -16,19 +16,19 @@ const TOP1_LOCK_TTL_MS = 1000 * 60 * 30;
 const top1Lock = new Map();
 
 const FORM_KEYWORDS = {
-  cream: ['선크림', '썬크림', '선스크린', '썬스크린', 'sun cream', 'sunscreen', 'cream'],
-  stick: ['선스틱', '썬스틱', '스틱', 'stick'],
-  spray: ['선스프레이', '썬스프레이', 'spray'],
-  cushion: ['선쿠션', '썬쿠션', 'cushion'],
-  lotion: ['선로션', '썬로션', 'lotion'],
-  serum: ['선세럼', '썬세럼', '세럼', 'serum'],
+  cream: ['선크림', '썬크림', 'sunscreen', 'sun cream', 'cream'],
+  stick: ['선스틱', '썬스틱', 'stick', 'sun stick'],
+  spray: ['선스프레이', '썬스프레이', 'spray', 'sun spray'],
+  cushion: ['선쿠션', '썬쿠션', 'cushion', 'sun cushion'],
+  lotion: ['선로션', '썬로션', 'lotion', 'sun lotion'],
+  serum: ['선세럼', '썬세럼', '세럼', 'serum', 'sun serum'],
 };
 
 const CATEGORY_KEYWORDS = {
   선크림: ['선크림', '썬크림', '자외선', '선케어', 'sunscreen', 'sun'],
-  선스틱: ['선스틱', '썬스틱', '스틱', 'stick'],
+  선스틱: ['선스틱', '썬스틱', 'stick', 'sun stick'],
   크림: ['크림', '보습', 'cream'],
-  세럼: ['세럼', '에센스', '앰플', 'serum', 'ampoule'],
+  세럼: ['세럼', '앰플', 'serum', 'ampoule'],
   토너: ['토너', '스킨', 'toner'],
   클렌징: ['클렌징', '세안', 'cleansing'],
   마스크팩: ['마스크', '팩', 'mask'],
@@ -37,13 +37,12 @@ const CATEGORY_KEYWORDS = {
 
 const CONCERN_KEYWORDS = {
   자외선차단: ['자외선', 'uv', 'sun'],
-  민감: ['민감', '저자극', '순한', '마일드', '진정'],
-  보습: ['보습', '수분', '건조', 'moist'],
-  산뜻: ['산뜻', '보송', '번들', '유분', 'light'],
-  열감: ['열감', '쿨링', '홍조', '화끈', '시원'],
-  진정: ['진정', '시카', 'calm', '병풀'],
-  모공: ['모공', '피지', 'pore'],
-  커버: ['커버', '잡티', '비비', '메이크업'],
+  민감: ['민감', '저자극', '진정', 'sensitive', 'calm'],
+  보습: ['보습', '수분', '건조', 'moist', 'hydrat'],
+  산뜻: ['산뜻', '보송', '유분', '번들', 'light'],
+  쿨링: ['쿨링', '열감', '시원', 'cool'],
+  모공: ['모공', '피지', 'pore', 'sebum'],
+  커버: ['커버', '잡티', '비비', 'makeup', 'tone'],
 };
 
 function lower(v) {
@@ -129,6 +128,11 @@ function parseJsonObject(text = '') {
   }
 }
 
+function includesAny(text, words = []) {
+  const t = lower(text);
+  return words.some((w) => t.includes(lower(w)));
+}
+
 export const recommendationService = {
   normalizeUserIntent(args = {}) {
     const q = lower(args.q || args.query || '');
@@ -150,9 +154,9 @@ export const recommendationService = {
     const textures = new Set();
     const avoidTextures = new Set();
 
-    if (concerns.has('민감') || concerns.has('진정')) preferredLines.add('포스트알파');
+    if (concerns.has('민감')) preferredLines.add('패리어');
     if (concerns.has('보습')) preferredLines.add('아쿠아티카');
-    if (concerns.has('모공')) preferredLines.add('퍼플티카');
+    if (concerns.has('모공')) preferredLines.add('포어');
 
     for (const t of tokens(skinType)) {
       if (t === '지성' || t === '복합성') ['가벼움', '산뜻', '워터리'].forEach((x) => textures.add(x));
@@ -260,11 +264,13 @@ export const recommendationService = {
     const concernWords = [];
     for (const c of intent.concerns || []) {
       concernWords.push(c);
-      if (c === '자외선차단') concernWords.push('uv', 'sun', 'sunscreen');
-      if (c === '민감' || c === '진정') concernWords.push('시카', '진정', '마일드', '저자극');
-      if (c === '보습') concernWords.push('보습', '수분', 'moist');
-      if (c === '산뜻') concernWords.push('산뜻', '보송', '워터');
-      if (c === '열감') concernWords.push('쿨링', '시원', 'cool');
+      if (c === '자외선차단') concernWords.push('uv', 'sun', 'sunscreen', '자외선');
+      if (c === '민감') concernWords.push('진정', '민감', '저자극', '시카', '패리어');
+      if (c === '보습') concernWords.push('보습', '수분', 'moist', 'hydrat');
+      if (c === '산뜻') concernWords.push('산뜻', '보송', '유분', '번들', 'light');
+      if (c === '쿨링') concernWords.push('쿨링', '시원', '열감', 'cool');
+      if (c === '모공') concernWords.push('모공', '피지', 'pore', 'sebum');
+      if (c === '커버') concernWords.push('커버', '톤업', '잡티', 'bb', 'tone');
     }
     score += Math.min(36, countHits(text, concernWords) * 6);
 
@@ -350,30 +356,79 @@ export const recommendationService = {
   },
 
   buildRecommendationDetails(product, intent) {
-    const concerns = intent.concerns || [];
+    const concerns = Array.isArray(intent.concerns) ? intent.concerns.map((x) => String(x)) : [];
+    const concernText = concerns.join(' ').toLowerCase();
+    const lineTags = Array.isArray(product.attributes?.line_tags) ? product.attributes.line_tags : [];
+    const concernTags = Array.isArray(product.attributes?.concern_tags) ? product.attributes.concern_tags : [];
+    const textureTags = Array.isArray(product.attributes?.texture_tags) ? product.attributes.texture_tags : [];
+    const text = String(product.full_text || '').toLowerCase();
+
     const reasons = [];
     const tips = [];
     const cautions = [];
 
-    if (concerns.some((c) => String(c).includes('자외선'))) reasons.push('데일리 자외선 차단 목적에 맞는 제품');
-    if (concerns.some((c) => String(c).includes('민감') || String(c).includes('진정')))
-      reasons.push('민감 피부 기준으로 자극 부담을 낮추는 방향으로 선별');
-    if (concerns.some((c) => String(c).includes('보습'))) reasons.push('건조함 완화를 위해 수분감 포인트를 함께 고려');
-    if (concerns.some((c) => String(c).includes('열감')) && product.full_text.includes('쿨링'))
-      reasons.push('열감이 올라오는 날에 비교적 가볍게 사용할 수 있는 쿨링 계열');
+    const hasSun = includesAny(concernText, ['자외', 'uv', 'sun']);
+    const hasSensitive = includesAny(concernText, ['민감', '진정', '저자극']);
+    const hasMoist = includesAny(concernText, ['보습', '수분', '건조']);
+    const hasOil = includesAny(concernText, ['지성', '번들', '유분', '산뜻']);
+    const hasCooling = includesAny(concernText, ['쿨링', '열감']);
 
-    if (product.form === 'spray') tips.push('외출 중 덧바를 때 빠르게 재도포 가능');
-    else if (product.form === 'stick') tips.push('휴대 후 T존/광대 위주로 간편 덧바름 추천');
-    else tips.push('기초 마지막 단계에서 2~3회 나눠 바르면 밀림이 적음');
+    if (hasSun && (includesAny(text, ['sun', '자외']) || concernTags.some((t) => String(t).includes('자외')))) {
+      reasons.push('자외선 차단 목적에 맞는 선케어 포인트가 확인되는 제품이에요.');
+    }
+    if (
+      hasSensitive &&
+      (concernTags.some((t) => includesAny(String(t), ['진정', '민감'])) ||
+        lineTags.some((l) => includesAny(String(l), ['패리어', '시카'])))
+    ) {
+      reasons.push('민감/진정 조건과 맞는 태그(진정·패리어·시카 라인)가 함께 잡혔어요.');
+    }
+    if (
+      hasMoist &&
+      (concernTags.some((t) => includesAny(String(t), ['수분', '보습'])) ||
+        textureTags.some((t) => includesAny(String(t), ['촉촉', '리치'])))
+    ) {
+      reasons.push('건조·수분 고민에 맞춰 보습/수분 관련 신호가 있는 후보예요.');
+    }
+    if (
+      hasOil &&
+      (textureTags.some((t) => includesAny(String(t), ['산뜻', '가벼'])) ||
+        includesAny(text, ['sebum', 'pore', '피지', '모공']))
+    ) {
+      reasons.push('유분/번들 고민에 맞게 가벼운 사용감 계열 신호가 반영됐어요.');
+    }
+    if (hasCooling && (includesAny(text, ['쿨링', 'cool']) || lineTags.some((l) => String(l).includes('아쿠아티카')))) {
+      reasons.push('열감/진정 니즈에 맞춰 쿨링 또는 진정 계열 문맥이 확인됐어요.');
+    }
 
-    cautions.push('야외 활동 시 2~3시간 간격 덧바름 권장');
-    if (product.full_text.includes('커버') || product.full_text.includes('톤'))
-      cautions.push('메이크업과 함께 쓸 때는 소량 레이어링 권장');
+    if (product.form === 'spray') {
+      tips.push('분사형이라 야외 활동 중 덧바르기 편하고, 빠르게 재도포하기 좋아요.');
+    } else if (product.form === 'stick') {
+      tips.push('스틱형이라 휴대/위생 관리가 편하고, 메이크업 위에 가볍게 덧바르기 좋아요.');
+    } else if (product.form === 'serum') {
+      tips.push('세럼형은 얇게 레이어링하기 쉬워 답답함을 줄이면서 사용하기 편해요.');
+    } else {
+      tips.push('기초 마지막 단계에서 2~3회 나눠 바르면 밀림을 줄이고 밀착감을 높일 수 있어요.');
+    }
+
+    cautions.push('야외 활동이 길면 2~3시간 간격 재도포를 권장해요.');
+    if (includesAny(text, ['tone', '톤', 'cover', '커버'])) {
+      cautions.push('톤/커버 계열은 한 번에 많이 바르기보다 소량 레이어링이 더 자연스러워요.');
+    }
+
+    const fallbackReasonParts = [];
+    if (product.form && product.form !== 'other') fallbackReasonParts.push(`${product.form} 제형 적합성`);
+    if (concernTags.length) fallbackReasonParts.push(`고민 태그 매칭(${concernTags.slice(0, 2).join(', ')})`);
+    if (lineTags.length) fallbackReasonParts.push(`라인 일치(${lineTags[0]})`);
 
     return {
-      why_pick: reasons.join(' / ') || '요청 조건에 맞춰 종합 점수로 선별했습니다.',
-      usage_tip: tips.join(' / ') || '아침 기초 마지막 단계에서 충분량 도포해 주세요.',
-      caution: cautions.join(' / '),
+      why_pick:
+        reasons.join(' ') ||
+        (fallbackReasonParts.length
+          ? `요청 조건과의 일치도가 높아 선별됐어요. (${fallbackReasonParts.join(' · ')})`
+          : '요청 조건과의 종합 점수가 높아 우선 추천됐어요.'),
+      usage_tip: tips.join(' '),
+      caution: cautions.join(' '),
     };
   },
 
@@ -389,7 +444,7 @@ export const recommendationService = {
       return {
         recommendations: [],
         promotions: [],
-        summary: { message: '원하는 피부 타입 또는 고민을 알려주시면 더 정확히 추천해드릴게요.' },
+        summary: { message: '원하는 피부 타입이나 제품군을 말씀해주시면 더 정확히 추천해드릴게요.' },
       };
     }
 
@@ -435,12 +490,12 @@ export const recommendationService = {
 
     const recommendations = top.map((p, idx) => {
       const details = this.buildRecommendationDetails(p, intent);
-      let key = '피부 고민 적합 케어';
-      if (p.name.includes('레이저')) key = '장벽 강화 및 보습';
-      else if (p.name.includes('아쿠아')) key = '가볍고 촉촉한 수분감';
-      else if (p.name.includes('포스트')) key = '민감 피부 진정 케어';
-      else if (p.name.includes('시카')) key = '붉은기/자극 완화';
-      else if (p.name.includes('선')) key = '자외선 차단 및 데일리 사용';
+      let key = '요청 조건 종합 케어';
+      if (includesAny(p.name, ['레이저'])) key = '장벽 강화/보습';
+      else if (includesAny(p.name, ['아쿠아티카'])) key = '가볍고 촉촉한 수분감';
+      else if (includesAny(p.name, ['패리어'])) key = '민감 피부 진정 케어';
+      else if (includesAny(p.name, ['시카'])) key = '붉은기/자극 완화';
+      else if (includesAny(p.name, ['썬', 'sun'])) key = '자외선 차단 데일리 케어';
 
       return {
         rank: idx + 1,

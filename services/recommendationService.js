@@ -471,9 +471,19 @@ export const recommendationService = {
 
     const reranked = await this.stage2Rerank(dedup, intent, args);
 
+    // If user explicitly asked a form (e.g. cream/stick/spray), keep same-form items first.
+    let formAligned = reranked;
+    if (intent.requested_form) {
+      const sameForm = reranked.filter((p) => p.form === intent.requested_form);
+      const otherForm = reranked.filter((p) => p.form !== intent.requested_form);
+      if (sameForm.length > 0) {
+        formAligned = [...sameForm, ...otherForm];
+      }
+    }
+
     const signature = buildIntentSignature(intent, args);
     const lockedTop1 = getLockedTop1(signature);
-    let ordered = reranked;
+    let ordered = formAligned;
     if (lockedTop1) {
       const lockIdx = ordered.findIndex((p) => p.base_name === lockedTop1);
       if (lockIdx > 0) {

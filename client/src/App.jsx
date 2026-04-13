@@ -76,11 +76,15 @@ function normalizeWidgetData(raw) {
   const promotions = Array.isArray(structured.promotions)
     ? structured.promotions.filter((item) => isObject(item) && (item.name || item.buy_url))
     : [];
+  const referenceRecommendations = Array.isArray(structured.reference_recommendations)
+    ? structured.reference_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
+    : [];
   const summary = isObject(structured.summary) ? structured.summary : {};
 
   return {
     recommendations,
     promotions,
+    reference_recommendations: referenceRecommendations,
     summary,
     strategy: structured.strategy || summary.strategy || '',
     conclusion: structured.conclusion || summary.conclusion || '',
@@ -131,6 +135,7 @@ function App() {
       const signature = JSON.stringify({
         names: nextData.recommendations.map((r) => r?.name || ''),
         promotions: nextData.promotions.map((p) => p?.name || ''),
+        references: (nextData.reference_recommendations || []).map((p) => p?.name || ''),
         message: nextData.summary?.message || '',
         strategy: nextData.strategy || '',
         conclusion: nextData.conclusion || '',
@@ -292,6 +297,34 @@ function App() {
             </div>
             {widgetData.promotions.map((product, idx) => (
               <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
+                <button
+                  type="button"
+                  onClick={() => openBuyLink(product.buy_url)}
+                  style={{
+                    color: '#444',
+                    textDecoration: 'underline',
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  {product.name}
+                </button>
+                {product.price ? ` · ${product.price}원` : ''}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {Array.isArray(widgetData.reference_recommendations) && widgetData.reference_recommendations.length > 0 && (
+          <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>
+              참고용 추천 (다른 제형)
+            </div>
+            {widgetData.reference_recommendations.map((product, idx) => (
+              <div key={`${product.buy_url || product.name}-ref-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}

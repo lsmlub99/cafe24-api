@@ -46,12 +46,12 @@ const CONCERN_KEYWORDS = {
 };
 
 const FORM_REGEX = {
-  cream: /(크림|cream|젤\s*크림|gel\s*cream)/i,
-  stick: /(스틱|stick|스틱밤|stick\s*balm|밤\b|balm)/i,
   spray: /(스프레이|spray|미스트|mist)/i,
+  stick: /(스틱|stick|스틱밤|stick\s*balm|밤\b|balm)/i,
   cushion: /(쿠션|cushion)/i,
   lotion: /(로션|lotion)/i,
   serum: /(세럼|serum|앰플|ampoule)/i,
+  cream: /(크림|cream|젤\s*크림|gel\s*cream)/i,
 };
 
 function lower(v) {
@@ -231,12 +231,17 @@ export const recommendationService = {
       keywords: Array.isArray(p.keywords) ? p.keywords : [],
       attributes: p.attributes || { concern_tags: [], line_tags: [], texture_tags: [] },
       category_ids: categoryIds,
-      form: this.detectProductForm(fullText),
+      form: this.detectProductForm(name, fullText),
       full_text: fullText,
     };
   },
 
-  detectProductForm(fullText = '') {
+  detectProductForm(productName = '', fullText = '') {
+    const nameText = String(productName || '');
+    for (const [form, re] of Object.entries(FORM_REGEX)) {
+      if (re.test(nameText)) return form;
+    }
+
     const t = String(fullText || '');
     for (const [form, re] of Object.entries(FORM_REGEX)) {
       if (re.test(t)) return form;
@@ -544,6 +549,20 @@ export const recommendationService = {
     });
 
     const recBase = new Set(recommendations.map((r) => r.base_name));
+    const referenceRecommendations = ordered
+      .filter((p) => !recBase.has(p.base_name))
+      .filter((p) => !intent.requested_form || p.form !== intent.requested_form)
+      .slice(0, 2)
+      .map((p) => ({
+        name: p.name,
+        base_name: p.base_name,
+        form: p.form,
+        price: p.price,
+        key_point: p.form === 'spray' ? '덧바르기 편의' : p.form === 'stick' ? '휴대/수정 편의' : '다른 제형 대안',
+        buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
+        image: p.thumbnail,
+      }));
+
     const promotions = normalized
       .filter((p) => p.is_promo && recBase.has(p.base_name))
       .slice(0, 4)
@@ -560,6 +579,7 @@ export const recommendationService = {
 
     return {
       recommendations,
+      reference_recommendations: referenceRecommendations,
       promotions,
       summary: {
         message: '고객님을 위한 최적 상품입니다.',

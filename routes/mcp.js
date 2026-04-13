@@ -153,7 +153,7 @@ function sendError(id, code, message, data = undefined) {
   });
 }
 
-function buildConsultText(recommendations, promotions = []) {
+function buildConsultText(recommendations, promotions = [], referenceRecommendations = []) {
   const lines = [];
   lines.push(`지금 조건 기준 1순위는 ${recommendations[0].name} 입니다.`);
   lines.push('상세 링크는 위젯 카드의 "지금 구매하기" 버튼에서 바로 열 수 있어요.');
@@ -172,6 +172,14 @@ function buildConsultText(recommendations, promotions = []) {
     promotions.forEach((item) => lines.push(`- ${item.name} (${item.price}원)`));
   } else {
     lines.push('현재 별도 행사 매칭 상품은 없고, 정가 기준 추천으로 안내드렸어요.');
+  }
+
+  if (Array.isArray(referenceRecommendations) && referenceRecommendations.length > 0) {
+    lines.push('');
+    lines.push('참고용으로 다른 제형 대안도 함께 추천드릴게요.');
+    referenceRecommendations.forEach((item) => {
+      lines.push(`- ${item.name} (${item.price}원 / ${item.form || '다른 제형'})`);
+    });
   }
 
   return lines.join('\n');
@@ -256,7 +264,7 @@ async function executeTool(args = {}) {
     3
   );
 
-  const { recommendations, promotions, summary } = result;
+  const { recommendations, promotions, summary, reference_recommendations: referenceRecommendations = [] } = result;
   const safeSummary = summary || { message: '조건에 맞는 상품을 찾지 못했습니다.' };
 
   if (!Array.isArray(recommendations) || recommendations.length === 0) {
@@ -265,6 +273,7 @@ async function executeTool(args = {}) {
       structuredContent: {
         recommendations: [],
         promotions: [],
+        reference_recommendations: [],
         summary: safeSummary,
         strategy: safeSummary.strategy || '',
         conclusion: safeSummary.conclusion || '',
@@ -273,18 +282,19 @@ async function executeTool(args = {}) {
         ui: { resourceUri: WIDGET_UI_URI },
         'openai/outputTemplate': WIDGET_UI_URI,
         'openai/widgetAccessible': true,
-        widgetData: { recommendations: [], promotions: [], summary: safeSummary },
+        widgetData: { recommendations: [], promotions: [], reference_recommendations: [], summary: safeSummary },
       },
     };
   }
 
-  const consultText = buildConsultText(recommendations, promotions || []);
+  const consultText = buildConsultText(recommendations, promotions || [], referenceRecommendations || []);
 
   return {
     content: [{ type: 'text', text: consultText }],
     structuredContent: {
       recommendations,
       promotions: promotions || [],
+      reference_recommendations: referenceRecommendations || [],
       summary: safeSummary,
       strategy: safeSummary.strategy || '',
       conclusion: safeSummary.conclusion || '',
@@ -293,7 +303,12 @@ async function executeTool(args = {}) {
       ui: { resourceUri: WIDGET_UI_URI },
       'openai/outputTemplate': WIDGET_UI_URI,
       'openai/widgetAccessible': true,
-      widgetData: { recommendations, promotions: promotions || [], summary: safeSummary },
+      widgetData: {
+        recommendations,
+        promotions: promotions || [],
+        reference_recommendations: referenceRecommendations || [],
+        summary: safeSummary,
+      },
     },
   };
 }

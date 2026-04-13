@@ -11,6 +11,9 @@ function App() {
   const messagesEndRef = useRef(null);
   const lastWidgetSignatureRef = useRef('');
   const fallbackPollRef = useRef(null);
+  const widgetDataRef = useRef(null);
+  const emptyStateTimerRef = useRef(null);
+  const [showEmptyState, setShowEmptyState] = useState(false);
 
   const openBuyLink = async (href) => {
     if (!href) return;
@@ -45,6 +48,12 @@ function App() {
         strategy: '',
         conclusion: structured.conclusion || structured.summary?.conclusion || '',
       };
+      const nextHasRecs = Array.isArray(nextData.recommendations) && nextData.recommendations.length > 0;
+      const currentHasRecs =
+        Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
+
+      // Guard: avoid replacing a good card result with a stale/late empty payload.
+      if (!nextHasRecs && currentHasRecs) return;
 
       const signature = JSON.stringify({
         names: nextData.recommendations.map((r) => r?.name || ''),
@@ -57,8 +66,27 @@ function App() {
       lastWidgetSignatureRef.current = signature;
 
       setWidgetData(nextData);
+      widgetDataRef.current = nextData;
 
-      if (fallbackPollRef.current) {
+      if (nextHasRecs) {
+        setShowEmptyState(false);
+        if (emptyStateTimerRef.current) {
+          window.clearTimeout(emptyStateTimerRef.current);
+          emptyStateTimerRef.current = null;
+        }
+      } else {
+        // UX guard: don't flash "no results" immediately on first response.
+        setShowEmptyState(false);
+        if (emptyStateTimerRef.current) window.clearTimeout(emptyStateTimerRef.current);
+        emptyStateTimerRef.current = window.setTimeout(() => {
+          const stillEmpty =
+            !Array.isArray(widgetDataRef.current?.recommendations) ||
+            widgetDataRef.current.recommendations.length === 0;
+          if (stillEmpty) setShowEmptyState(true);
+        }, 1800);
+      }
+
+      if (fallbackPollRef.current && nextHasRecs) {
         window.clearInterval(fallbackPollRef.current);
         fallbackPollRef.current = null;
       }
@@ -127,6 +155,10 @@ function App() {
       if (fallbackPollRef.current) {
         window.clearInterval(fallbackPollRef.current);
         fallbackPollRef.current = null;
+      }
+      if (emptyStateTimerRef.current) {
+        window.clearTimeout(emptyStateTimerRef.current);
+        emptyStateTimerRef.current = null;
       }
     };
   }, []);
@@ -265,7 +297,12 @@ function App() {
     );
   }
 
-  if (isWidgetMode && widgetData && (!widgetData.recommendations || widgetData.recommendations.length === 0)) {
+  if (
+    isWidgetMode &&
+    widgetData &&
+    (!widgetData.recommendations || widgetData.recommendations.length === 0) &&
+    showEmptyState
+  ) {
     return (
       <div style={{ padding: '16px', color: '#555', background: '#fff', borderRadius: '12px' }}>
         <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#B31312', marginBottom: '8px' }}>추천 결과</div>

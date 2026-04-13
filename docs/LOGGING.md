@@ -55,9 +55,12 @@ LOG_TOKEN_EVENTS=true
 - `[Sync SUCCESS] Cached products: ...`
 - `[MCP Inbound] method=tools/call id=...`
 - `[MCP Protocol] resources/read requested: ...`
+- `[MCP Tool] search_cafe24_real_products ok id=... recs=... elapsed_ms=...`
 - `[MCP Error] ...`
 
 ## Notes
 - ChatGPT 위젯 이슈 진단 시에는 `LOG_MCP_VERBOSE=true`를 먼저 켜고,
   `resources/list -> resources/read -> tools/call` 순서를 확인하세요.
 - 디버그가 끝나면 반드시 verbose 플래그를 `false`로 되돌리는 것을 권장합니다.
+- 기본(프로덕션)에서는 `Connected/Disconnected` 같은 SSE 연결 로그를 숨깁니다.
+  이 로그는 `LOG_MCP_VERBOSE=true`일 때만 출력됩니다.

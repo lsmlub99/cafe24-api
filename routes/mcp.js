@@ -271,11 +271,11 @@ function handleSseConnect(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.write('event: endpoint\ndata: /mcp/message\n\n');
   res.flushHeaders();
-  logger.info(`[MCP Stream] Connected path=${req.path}`);
+  logger.mcpVerbose(`[MCP Stream] Connected path=${req.path}`);
 
   clientStream = res;
   res.on('close', () => {
-    logger.info(`[MCP Stream] Disconnected path=${req.path}`);
+    logger.mcpVerbose(`[MCP Stream] Disconnected path=${req.path}`);
     if (clientStream === res) clientStream = null;
   });
 }
@@ -285,6 +285,7 @@ router.get('/sse', handleSseConnect);
 
 async function handleMcpMessage(req, res) {
   const { method, params, id } = req.body || {};
+  const startedAt = Date.now();
   res.status(202).send('Accepted');
 
   if (method === 'tools/call' || method === 'resources/read') {
@@ -381,6 +382,13 @@ async function handleMcpMessage(req, res) {
         finalResult.data = toolResult.structuredContent;
         finalResult.output = toolResult.structuredContent;
       }
+
+      const recCount = Array.isArray(toolResult?.structuredContent?.recommendations)
+        ? toolResult.structuredContent.recommendations.length
+        : 0;
+      logger.info(
+        `[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}`
+      );
 
       sendToClient({ jsonrpc: '2.0', id, result: finalResult });
       return;

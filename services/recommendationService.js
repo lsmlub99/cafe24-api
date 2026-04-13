@@ -470,7 +470,7 @@ export const recommendationService = {
         image: p.thumbnail,
       }));
 
-    const strategy = `1차 후보 선별(STAGE1) 후 2차 정밀 재랭크(STAGE2)를 수행했습니다.`;
+    const strategy = '피부 타입, 고민, 제형을 함께 반영해 가장 잘 맞는 후보를 추천했습니다.';
     const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 요청 조건에 가장 적합합니다.`;
 
     return {

@@ -9,6 +9,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [widgetData, setWidgetData] = useState(null);
   const messagesEndRef = useRef(null);
+  const lastWidgetSignatureRef = useRef('');
+  const fallbackPollRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -23,13 +25,30 @@ function App() {
       const hasSummaryMessage = Boolean(structured?.summary?.message);
       if (!Array.isArray(recommendations) && !hasSummaryMessage) return;
 
-      setWidgetData({
+      const nextData = {
         recommendations: Array.isArray(recommendations) ? recommendations : [],
         promotions: structured.promotions || [],
         summary: structured.summary || {},
-        strategy: structured.strategy || structured.summary?.strategy || '',
+        strategy: '',
         conclusion: structured.conclusion || structured.summary?.conclusion || '',
+      };
+
+      const signature = JSON.stringify({
+        names: nextData.recommendations.map((r) => r?.name || ''),
+        promotions: nextData.promotions.map((p) => p?.name || ''),
+        message: nextData.summary?.message || '',
+        strategy: nextData.strategy,
+        conclusion: nextData.conclusion,
       });
+      if (signature === lastWidgetSignatureRef.current) return;
+      lastWidgetSignatureRef.current = signature;
+
+      setWidgetData(nextData);
+
+      if (fallbackPollRef.current) {
+        window.clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
     };
 
     const unwrap = (message) => {
@@ -80,7 +99,7 @@ function App() {
     if (window.openai?.appData) applyWidgetData(window.openai.appData);
     if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
 
-    const fallbackPoll = window.setInterval(() => {
+    fallbackPollRef.current = window.setInterval(() => {
       if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
       if (window.openai?.appData) applyWidgetData(window.openai.appData);
     }, 500);
@@ -109,7 +128,10 @@ function App() {
 
     return () => {
       window.removeEventListener('message', handleMessage);
-      window.clearInterval(fallbackPoll);
+      if (fallbackPollRef.current) {
+        window.clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
     };
   }, []);
 
@@ -169,22 +191,6 @@ function App() {
           <Sparkles size={18} fill="#B31312" />
           셀퓨전씨 AI 맞춤 추천
         </h3>
-
-        {widgetData.strategy && (
-          <div
-            style={{
-              background: '#f9f9f9',
-              padding: '12px',
-              borderRadius: '8px',
-              marginBottom: '16px',
-              borderLeft: '4px solid #B31312',
-              fontSize: '0.9rem',
-              lineHeight: '1.5',
-            }}
-          >
-            {widgetData.strategy}
-          </div>
-        )}
 
         <div
           className="product-carousel"

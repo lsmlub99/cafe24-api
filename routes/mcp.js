@@ -187,6 +187,34 @@ function normalizeCategory(category) {
   };
 }
 
+const ENRICH_TRIGGER_KEYWORDS = [
+  '민감',
+  '저자극',
+  '알러지',
+  '알레르기',
+  '성분',
+  '전성분',
+  'ingredient',
+  'ingredients',
+  'inci',
+];
+
+function computeEnrichMaxFetch(args = {}) {
+  const concerns = Array.isArray(args.concerns) ? args.concerns : [];
+  const mergedText = [
+    args.category || '',
+    args.skin_type || '',
+    args.q || '',
+    args.query || '',
+    concerns.join(' '),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  const shouldEnrich = ENRICH_TRIGGER_KEYWORDS.some((k) => mergedText.includes(String(k).toLowerCase()));
+  return shouldEnrich ? config.ENRICH_MAX_FETCH_INGREDIENT : config.ENRICH_MAX_FETCH_BASE;
+}
+
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -211,7 +239,11 @@ async function executeTool(args = {}) {
     rawProducts = cafe24ApiService.getProductsFromCache({});
   }
 
-  rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, 12);
+  const enrichMaxFetch = computeEnrichMaxFetch(args);
+  if (enrichMaxFetch > 0) {
+    logger.info(`[Tool Exec] Hybrid enrich enabled: maxFetch=${enrichMaxFetch}`);
+  }
+  rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, enrichMaxFetch);
 
   const result = await recommendationService.scoreAndFilterProducts(
     rawProducts,

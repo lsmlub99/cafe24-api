@@ -7,6 +7,11 @@ function toBool(value, defaultValue = false) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value).toLowerCase());
 }
 
+function toInt(value, defaultValue = 0) {
+  const n = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(n) ? n : defaultValue;
+}
+
 export const config = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: process.env.PORT || 3000,
@@ -23,6 +28,8 @@ export const config = {
   LOG_MCP_VERBOSE: toBool(process.env.LOG_MCP_VERBOSE, false),
   LOG_CACHE_FILTER: toBool(process.env.LOG_CACHE_FILTER, false),
   LOG_TOKEN_EVENTS: toBool(process.env.LOG_TOKEN_EVENTS, false),
+  ENRICH_MAX_FETCH_BASE: Math.max(0, toInt(process.env.ENRICH_MAX_FETCH_BASE, 0)),
+  ENRICH_MAX_FETCH_INGREDIENT: Math.max(0, toInt(process.env.ENRICH_MAX_FETCH_INGREDIENT, 4)),
 };
 
 const requiredKeys = [

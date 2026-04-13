@@ -45,6 +45,15 @@ const CONCERN_KEYWORDS = {
   커버: ['커버', '잡티', '비비', 'makeup', 'tone'],
 };
 
+const FORM_REGEX = {
+  cream: /(크림|cream|젤\s*크림|gel\s*cream)/i,
+  stick: /(스틱|stick|스틱밤|stick\s*balm|밤\b|balm)/i,
+  spray: /(스프레이|spray|미스트|mist)/i,
+  cushion: /(쿠션|cushion)/i,
+  lotion: /(로션|lotion)/i,
+  serum: /(세럼|serum|앰플|ampoule)/i,
+};
+
 function lower(v) {
   return String(v || '').toLowerCase();
 }
@@ -228,6 +237,10 @@ export const recommendationService = {
   },
 
   detectProductForm(fullText = '') {
+    const t = String(fullText || '');
+    for (const [form, re] of Object.entries(FORM_REGEX)) {
+      if (re.test(t)) return form;
+    }
     for (const [form, words] of Object.entries(FORM_KEYWORDS)) {
       if (words.some((w) => fullText.includes(lower(w)))) return form;
     }
@@ -274,8 +287,8 @@ export const recommendationService = {
     }
     score += Math.min(36, countHits(text, concernWords) * 6);
 
-    if (intent.requested_form && product.form === intent.requested_form) score += 22;
-    if (intent.requested_form && product.form !== intent.requested_form) score -= 8;
+    if (intent.requested_form && product.form === intent.requested_form) score += 40;
+    if (intent.requested_form && product.form !== intent.requested_form) score -= 55;
 
     if (product.is_promo) score -= 16;
     return score;
@@ -493,7 +506,14 @@ export const recommendationService = {
     }
 
     const core = ordered.filter((p) => !p.is_promo);
-    const topSource = core.length ? core : ordered;
+    let topSource = core.length ? core : ordered;
+    if (intent.requested_form) {
+      const formFirst = topSource.filter((p) => p.form === intent.requested_form);
+      if (formFirst.length > 0) {
+        const rest = topSource.filter((p) => p.form !== intent.requested_form);
+        topSource = [...formFirst, ...rest];
+      }
+    }
     const top = topSource.slice(0, Math.max(1, limit));
 
     if (top[0]?.base_name) setLockedTop1(signature, top[0].base_name);

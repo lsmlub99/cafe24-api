@@ -16,12 +16,12 @@ const TOP1_LOCK_TTL_MS = 1000 * 60 * 30;
 const top1Lock = new Map();
 
 const FORM_KEYWORDS = {
-  cream: ['선크림', '썬크림', 'sunscreen', 'sun cream', 'cream'],
-  stick: ['선스틱', '썬스틱', 'stick', 'sun stick'],
-  spray: ['선스프레이', '썬스프레이', 'spray', 'sun spray'],
-  cushion: ['선쿠션', '썬쿠션', 'cushion', 'sun cushion'],
-  lotion: ['선로션', '썬로션', 'lotion', 'sun lotion'],
-  serum: ['선세럼', '썬세럼', '세럼', 'serum', 'sun serum'],
+  cream: ['선크림', '썬크림', '크림', 'cream', 'sunscreen', 'sun cream', 'gel cream'],
+  stick: ['선스틱', '썬스틱', '스틱', '스틱밤', 'stick', 'stick balm', 'sun stick'],
+  spray: ['선스프레이', '썬스프레이', '스프레이', '미스트', 'spray', 'mist', 'sun spray'],
+  cushion: ['선쿠션', '썬쿠션', '쿠션', 'cushion', 'sun cushion'],
+  lotion: ['선로션', '썬로션', '로션', 'lotion', 'sun lotion'],
+  serum: ['선세럼', '썬세럼', '세럼', '앰플', 'serum', 'ampoule', 'sun serum'],
 };
 
 const CATEGORY_KEYWORDS = {
@@ -46,12 +46,12 @@ const CONCERN_KEYWORDS = {
 };
 
 const FORM_REGEX = {
-  spray: /(스프레이|spray|미스트|mist)/i,
-  stick: /(스틱|stick|스틱밤|stick\s*balm|밤\b|balm)/i,
-  cushion: /(쿠션|cushion)/i,
-  lotion: /(로션|lotion)/i,
-  serum: /(세럼|serum|앰플|ampoule)/i,
-  cream: /(크림|cream|젤\s*크림|gel\s*cream)/i,
+  spray: /(스프레이|썬스프레이|spray|mist|미스트)/i,
+  stick: /(스틱밤|선스틱|썬스틱|스틱|stick\s*balm|stick|balm|밤)/i,
+  cushion: /(선쿠션|썬쿠션|쿠션|cushion)/i,
+  lotion: /(선로션|썬로션|로션|lotion)/i,
+  serum: /(선세럼|썬세럼|세럼|앰플|serum|ampoule)/i,
+  cream: /(선크림|썬크림|젤\s*크림|크림|sun\s*cream|sunscreen|cream|gel\s*cream)/i,
 };
 
 function lower(v) {
@@ -73,6 +73,11 @@ function countHits(text, words = []) {
     if (w && t.includes(w)) n += 1;
   }
   return n;
+}
+
+function includesAny(text, words = []) {
+  const t = lower(text);
+  return words.some((w) => t.includes(lower(w)));
 }
 
 function toBaseName(name = '') {
@@ -135,11 +140,6 @@ function parseJsonObject(text = '') {
   } catch {
     return null;
   }
-}
-
-function includesAny(text, words = []) {
-  const t = lower(text);
-  return words.some((w) => t.includes(lower(w)));
 }
 
 export const recommendationService = {
@@ -241,13 +241,9 @@ export const recommendationService = {
     for (const [form, re] of Object.entries(FORM_REGEX)) {
       if (re.test(nameText)) return form;
     }
-
     const t = String(fullText || '');
     for (const [form, re] of Object.entries(FORM_REGEX)) {
       if (re.test(t)) return form;
-    }
-    for (const [form, words] of Object.entries(FORM_KEYWORDS)) {
-      if (words.some((w) => fullText.includes(lower(w)))) return form;
     }
     return 'other';
   },
@@ -292,8 +288,8 @@ export const recommendationService = {
     }
     score += Math.min(36, countHits(text, concernWords) * 6);
 
-    if (intent.requested_form && product.form === intent.requested_form) score += 40;
-    if (intent.requested_form && product.form !== intent.requested_form) score -= 55;
+    if (intent.requested_form && product.form === intent.requested_form) score += 55;
+    if (intent.requested_form && product.form !== intent.requested_form) score -= 70;
 
     if (product.is_promo) score -= 16;
     return score;
@@ -375,76 +371,61 @@ export const recommendationService = {
 
   buildRecommendationDetails(product, intent) {
     const concerns = Array.isArray(intent.concerns) ? intent.concerns.map((x) => String(x)) : [];
-    const concernText = concerns.join(' ').toLowerCase();
     const lineTags = Array.isArray(product.attributes?.line_tags) ? product.attributes.line_tags : [];
     const concernTags = Array.isArray(product.attributes?.concern_tags) ? product.attributes.concern_tags : [];
     const textureTags = Array.isArray(product.attributes?.texture_tags) ? product.attributes.texture_tags : [];
     const text = String(product.full_text || '').toLowerCase();
+    const name = String(product.name || '').toLowerCase();
 
     const reasons = [];
     const tips = [];
     const cautions = [];
 
-    const hasSun = includesAny(concernText, ['자외', 'uv', 'sun']);
-    const hasSensitive = includesAny(concernText, ['민감', '진정', '저자극']);
-    const hasMoist = includesAny(concernText, ['보습', '수분', '건조']);
-    const hasOil = includesAny(concernText, ['지성', '번들', '유분', '산뜻']);
-    const hasCooling = includesAny(concernText, ['쿨링', '열감']);
-
-    if (hasSun && (includesAny(text, ['sun', '자외']) || concernTags.some((t) => String(t).includes('자외')))) {
-      reasons.push('자외선 차단 목적에 맞는 선케어 포인트가 확인되는 제품이에요.');
+    if (intent.requested_form && product.form === intent.requested_form) {
+      reasons.push(`요청하신 제형(${intent.requested_form})과 정확히 일치해요.`);
     }
-    if (
-      hasSensitive &&
-      (concernTags.some((t) => includesAny(String(t), ['진정', '민감'])) ||
-        lineTags.some((l) => includesAny(String(l), ['패리어', '시카'])))
-    ) {
-      reasons.push('민감/진정 조건과 맞는 태그(진정·패리어·시카 라인)가 함께 잡혔어요.');
+    if (includesAny(name, ['잡티', 'tone', 'toning'])) {
+      reasons.push('잡티/톤 보정 니즈를 같이 충족할 수 있는 제품군이에요.');
     }
-    if (
-      hasMoist &&
-      (concernTags.some((t) => includesAny(String(t), ['수분', '보습'])) ||
-        textureTags.some((t) => includesAny(String(t), ['촉촉', '리치'])))
-    ) {
-      reasons.push('건조·수분 고민에 맞춰 보습/수분 관련 신호가 있는 후보예요.');
+    if (includesAny(name, ['cool', '쿨링', '아쿠아'])) {
+      reasons.push('가볍고 답답함이 적은 사용감 문맥이 확인돼요.');
     }
-    if (
-      hasOil &&
-      (textureTags.some((t) => includesAny(String(t), ['산뜻', '가벼'])) ||
-        includesAny(text, ['sebum', 'pore', '피지', '모공']))
-    ) {
-      reasons.push('유분/번들 고민에 맞게 가벼운 사용감 계열 신호가 반영됐어요.');
+    if (includesAny(name, ['barrier', '패리어', 'cica', '시카', 'calming', '카밍'])) {
+      reasons.push('민감/진정 관점에서 자극 부담을 낮춘 라인 맥락이 있어요.');
     }
-    if (hasCooling && (includesAny(text, ['쿨링', 'cool']) || lineTags.some((l) => String(l).includes('아쿠아티카')))) {
-      reasons.push('열감/진정 니즈에 맞춰 쿨링 또는 진정 계열 문맥이 확인됐어요.');
+    if (concernTags.length > 0) {
+      reasons.push(`요청 고민과 매칭된 태그(${concernTags.slice(0, 2).join(', ')})가 포함돼요.`);
+    }
+    if (lineTags.length > 0) {
+      reasons.push(`동일 라인(${lineTags[0]}) 제품이라 사용 맥락이 잘 맞아요.`);
+    }
+    if (textureTags.length > 0) {
+      reasons.push(`제형/사용감 태그(${textureTags.slice(0, 2).join(', ')})가 조건과 맞아요.`);
+    }
+    if (includesAny(text, ['uv', 'sun', '자외선'])) {
+      reasons.push('자외선 차단 목적의 선케어 문맥이 명확해요.');
     }
 
     if (product.form === 'spray') {
-      tips.push('분사형이라 야외 활동 중 덧바르기 편하고, 빠르게 재도포하기 좋아요.');
+      tips.push('분사형이라 외출 중 덧바르기와 빠른 재도포가 편해요.');
     } else if (product.form === 'stick') {
-      tips.push('스틱형이라 휴대/위생 관리가 편하고, 메이크업 위에 가볍게 덧바르기 좋아요.');
+      tips.push('스틱형이라 휴대/위생 관리가 쉽고 수정용으로 좋아요.');
     } else if (product.form === 'serum') {
-      tips.push('세럼형은 얇게 레이어링하기 쉬워 답답함을 줄이면서 사용하기 편해요.');
+      tips.push('세럼형은 얇게 레이어링하기 쉬워 답답함을 줄이기 좋아요.');
     } else {
-      tips.push('기초 마지막 단계에서 2~3회 나눠 바르면 밀림을 줄이고 밀착감을 높일 수 있어요.');
+      tips.push('기초 마지막 단계에서 2~3회 나눠 바르면 밀림을 줄일 수 있어요.');
     }
 
-    cautions.push('야외 활동이 길면 2~3시간 간격 재도포를 권장해요.');
-    if (includesAny(text, ['tone', '톤', 'cover', '커버'])) {
-      cautions.push('톤/커버 계열은 한 번에 많이 바르기보다 소량 레이어링이 더 자연스러워요.');
+    cautions.push('야외 활동이 길면 2~3시간 간격으로 재도포해 주세요.');
+    if (includesAny(text, ['tone', 'cover', '커버'])) {
+      cautions.push('커버 계열은 한 번에 많이 바르기보다 소량 레이어링이 자연스러워요.');
     }
-
-    const fallbackReasonParts = [];
-    if (product.form && product.form !== 'other') fallbackReasonParts.push(`${product.form} 제형 적합성`);
-    if (concernTags.length) fallbackReasonParts.push(`고민 태그 매칭(${concernTags.slice(0, 2).join(', ')})`);
-    if (lineTags.length) fallbackReasonParts.push(`라인 일치(${lineTags[0]})`);
 
     return {
       why_pick:
-        reasons.join(' ') ||
-        (fallbackReasonParts.length
-          ? `요청 조건과의 일치도가 높아 선별됐어요. (${fallbackReasonParts.join(' · ')})`
-          : '요청 조건과의 종합 점수가 높아 우선 추천됐어요.'),
+        reasons.length > 0
+          ? reasons.slice(0, 2).join(' ')
+          : '요청 조건과의 적합도가 높고 카테고리/고민 매칭 점수가 안정적으로 높았습니다.',
       usage_tip: tips.join(' '),
       caution: cautions.join(' '),
     };
@@ -489,19 +470,15 @@ export const recommendationService = {
 
     const reranked = await this.stage2Rerank(dedup, intent, args);
 
-    // If user explicitly asked a form (e.g. cream/stick/spray), keep same-form items first.
-    let formAligned = reranked;
+    let ordered = reranked;
     if (intent.requested_form) {
       const sameForm = reranked.filter((p) => p.form === intent.requested_form);
       const otherForm = reranked.filter((p) => p.form !== intent.requested_form);
-      if (sameForm.length > 0) {
-        formAligned = [...sameForm, ...otherForm];
-      }
+      if (sameForm.length > 0) ordered = [...sameForm, ...otherForm];
     }
 
     const signature = buildIntentSignature(intent, args);
     const lockedTop1 = getLockedTop1(signature);
-    let ordered = formAligned;
     if (lockedTop1) {
       const lockIdx = ordered.findIndex((p) => p.base_name === lockedTop1);
       if (lockIdx > 0) {
@@ -513,18 +490,18 @@ export const recommendationService = {
     const core = ordered.filter((p) => !p.is_promo);
     let topSource = core.length ? core : ordered;
     if (intent.requested_form) {
-      const formFirst = topSource.filter((p) => p.form === intent.requested_form);
-      if (formFirst.length > 0) {
-        const rest = topSource.filter((p) => p.form !== intent.requested_form);
-        topSource = [...formFirst, ...rest];
+      const sameFormOnly = topSource.filter((p) => p.form === intent.requested_form);
+      if (sameFormOnly.length > 0) {
+        topSource = sameFormOnly;
       }
     }
-    const top = topSource.slice(0, Math.max(1, limit));
 
+    const top = topSource.slice(0, Math.max(1, limit));
     if (top[0]?.base_name) setLockedTop1(signature, top[0].base_name);
 
     const recommendations = top.map((p, idx) => {
       const details = this.buildRecommendationDetails(p, intent);
+
       let key = '요청 조건 종합 케어';
       if (includesAny(p.name, ['레이저'])) key = '장벽 강화/보습';
       else if (includesAny(p.name, ['아쿠아티카'])) key = '가볍고 촉촉한 수분감';

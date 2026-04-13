@@ -1,6 +1,92 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Send, Sparkles } from 'lucide-react';
 
+function tryParseJson(value) {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function isObject(v) {
+  return v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function findStructuredCandidate(node, depth = 0) {
+  if (!node || depth > 6) return null;
+
+  const parsed = tryParseJson(node);
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) {
+      const found = findStructuredCandidate(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (!isObject(parsed)) return null;
+
+  if (Array.isArray(parsed.recommendations) || Array.isArray(parsed.items) || isObject(parsed.summary)) {
+    return parsed;
+  }
+
+  const directKeys = [
+    'structuredContent',
+    'output',
+    'data',
+    'result',
+    'payload',
+    'toolOutput',
+    '_meta',
+    'params',
+  ];
+
+  for (const key of directKeys) {
+    if (parsed[key] == null) continue;
+    const found = findStructuredCandidate(parsed[key], depth + 1);
+    if (found) return found;
+  }
+
+  if (isObject(parsed.widgetData)) {
+    const found = findStructuredCandidate(parsed.widgetData, depth + 1);
+    if (found) return found;
+  }
+
+  for (const value of Object.values(parsed)) {
+    const found = findStructuredCandidate(value, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function normalizeWidgetData(raw) {
+  const structured = findStructuredCandidate(raw);
+  if (!structured) return null;
+
+  const recommendationsRaw = Array.isArray(structured.recommendations)
+    ? structured.recommendations
+    : Array.isArray(structured.items)
+    ? structured.items
+    : [];
+
+  const recommendations = recommendationsRaw.filter((item) => isObject(item) && (item.name || item.buy_url || item.image));
+  const promotions = Array.isArray(structured.promotions)
+    ? structured.promotions.filter((item) => isObject(item) && (item.name || item.buy_url))
+    : [];
+  const summary = isObject(structured.summary) ? structured.summary : {};
+
+  return {
+    recommendations,
+    promotions,
+    summary,
+    strategy: structured.strategy || summary.strategy || '',
+    conclusion: structured.conclusion || summary.conclusion || '',
+  };
+}
+
 function App() {
   const [messages, setMessages] = useState([
     { id: 1, type: 'bot', text: '안녕하세요! 셀퓨전씨 AI 뷰티 가이드입니다. 무엇을 도와드릴까요?' },
@@ -32,90 +118,56 @@ function App() {
 
   useEffect(() => {
     const applyWidgetData = (payload) => {
-      if (!payload) return;
+      const nextData = normalizeWidgetData(payload);
+      if (!nextData) return;
 
-      const structured = payload.structuredContent || payload.output || payload.data || payload;
-      const recommendations = structured?.recommendations || structured?.items || [];
-      const hasSummaryMessage = Boolean(structured?.summary?.message);
-      if (!Array.isArray(recommendations) && !hasSummaryMessage) return;
-
-      const nextData = {
-        recommendations: Array.isArray(recommendations) ? recommendations : [],
-        promotions: structured.promotions || [],
-        summary: structured.summary || {},
-        strategy: '',
-        conclusion: structured.conclusion || structured.summary?.conclusion || '',
-      };
-      const nextHasRecs = Array.isArray(nextData.recommendations) && nextData.recommendations.length > 0;
+      const nextHasRecs = nextData.recommendations.length > 0;
       const currentHasRecs =
         Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
 
-      // Guard: avoid replacing a good card result with a stale/late empty payload.
+      // Prevent late empty payload from overwriting valid cards.
       if (!nextHasRecs && currentHasRecs) return;
 
       const signature = JSON.stringify({
         names: nextData.recommendations.map((r) => r?.name || ''),
         promotions: nextData.promotions.map((p) => p?.name || ''),
         message: nextData.summary?.message || '',
-        strategy: nextData.strategy,
-        conclusion: nextData.conclusion,
+        strategy: nextData.strategy || '',
+        conclusion: nextData.conclusion || '',
       });
       if (signature === lastWidgetSignatureRef.current) return;
       lastWidgetSignatureRef.current = signature;
 
       setWidgetData(nextData);
       widgetDataRef.current = nextData;
-
-      if (fallbackPollRef.current && nextHasRecs) {
-        window.clearInterval(fallbackPollRef.current);
-        fallbackPollRef.current = null;
-      }
-    };
-
-    const unwrap = (message) => {
-      if (!message) return null;
-      if (message.params?.structuredContent || message.params?.data || message.params?.output) return message.params;
-      if (message.params?.result) return message.params.result;
-      if (message.params?.payload) return message.params.payload;
-      if (message.params?.toolOutput) return message.params.toolOutput;
-      if (message.result?.toolOutput) return message.result.toolOutput;
-      if (message.result?.payload) return message.result.payload;
-      if (message.result?.structuredContent || message.result?.data || message.result?.output) return message.result;
-      if (message.result) return message.result;
-      return message;
     };
 
     const handleMessage = (event) => {
-      const message = event.data;
-      if (!message) return;
-
-      if (message.jsonrpc === '2.0') {
-        applyWidgetData(unwrap(message));
-        return;
-      }
-
-      if (message.type === 'ui/notifications/tool-result') {
-        applyWidgetData(message.payload);
-        return;
-      }
-
-      if (message.structuredContent || message.recommendations || message.items) {
-        applyWidgetData(message);
-      }
+      if (!event?.data) return;
+      applyWidgetData(event.data);
     };
 
     window.addEventListener('message', handleMessage);
 
-    if (window.mcpData) applyWidgetData(window.mcpData);
-    if (window.__INITIAL_DATA__) applyWidgetData(window.__INITIAL_DATA__);
-    if (window.__MCP_DATA__) applyWidgetData(window.__MCP_DATA__);
-    if (window.openai?.appData) applyWidgetData(window.openai.appData);
-    if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
+    const bootstrapCandidates = [
+      window.mcpData,
+      window.__INITIAL_DATA__,
+      window.__MCP_DATA__,
+      window.openai?.appData,
+      window.openai?.toolOutput,
+      window.__TOOL_OUTPUT__,
+      window.__WIDGET_DATA__,
+    ];
+    bootstrapCandidates.forEach((c) => {
+      if (c) applyWidgetData(c);
+    });
 
     fallbackPollRef.current = window.setInterval(() => {
-      if (window.openai?.toolOutput) applyWidgetData(window.openai.toolOutput);
-      if (window.openai?.appData) applyWidgetData(window.openai.appData);
-    }, 500);
+      const candidates = [window.openai?.toolOutput, window.openai?.appData, window.__TOOL_OUTPUT__, window.__WIDGET_DATA__];
+      candidates.forEach((c) => {
+        if (c) applyWidgetData(c);
+      });
+    }, 400);
 
     const inIframe = window.parent && window.parent !== window;
     if (inIframe) {
@@ -165,16 +217,13 @@ function App() {
         },
       ]);
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + 1, type: 'bot', text: '서버 통신 중 오류가 발생했습니다.' },
-      ]);
+      setMessages((prev) => [...prev, { id: Date.now() + 1, type: 'bot', text: '서버 통신 중 오류가 발생했습니다.' }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const isWidgetMode = Boolean(window.__WIDGET_MODE__ || widgetData);
+  const isWidgetMode = Boolean(window.__WIDGET_MODE__ || window.__MCP_WIDGET__ || widgetData);
 
   if (isWidgetMode && widgetData?.recommendations?.length) {
     return (
@@ -273,7 +322,7 @@ function App() {
     );
   }
 
-  if (isWidgetMode && (!widgetData || !Array.isArray(widgetData.recommendations) || widgetData.recommendations.length === 0)) {
+  if (isWidgetMode) {
     return (
       <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
         <Sparkles size={24} style={{ marginBottom: '10px', opacity: 0.5 }} />

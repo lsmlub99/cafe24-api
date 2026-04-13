@@ -9,6 +9,7 @@ let allProductsCache = [];
 let lastSyncTime = 0;
 let categoryMap = {};
 let ingredientDetectedPath = null;
+let syncInFlight = null;
 const ingredientDetailCache = new Map();
 
 const CATEGORY_TARGETS = {
@@ -279,7 +280,7 @@ async function detectIngredientPath(accessToken, sampleProductNos = []) {
   return { path: null, accessToken: targetToken, sample: null, candidates: bestCandidates };
 }
 
-async function syncAllProducts(accessToken) {
+async function syncAllProductsCore(accessToken) {
   try {
     let targetToken = accessToken || (await refreshTokenIfNeeded());
     if (!targetToken) return { products: allProductsCache || [] };
@@ -379,6 +380,23 @@ async function syncAllProducts(accessToken) {
     logger.error('[Sync Error]:', e.message);
     return { products: allProductsCache || [] };
   }
+}
+
+async function syncAllProducts(accessToken) {
+  if (syncInFlight) {
+    logger.info('[Sync] Join in-flight sync...');
+    return syncInFlight;
+  }
+
+  syncInFlight = (async () => {
+    try {
+      return await syncAllProductsCore(accessToken);
+    } finally {
+      syncInFlight = null;
+    }
+  })();
+
+  return syncInFlight;
 }
 
 function getDynamicCategoryNos(keywords = []) {

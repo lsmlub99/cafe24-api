@@ -357,6 +357,14 @@ function buildConsultNarrativeV3(recommendations, promotions = [], referenceReco
   return lines.join('\n');
 }
 
+function buildFollowUpQuestions(args = {}) {
+  const skinType = String(args.skin_type || '').trim();
+  return [
+    `원하는 가격대 있으신가요?${skinType ? ` ${skinType} 피부 기준으로` : ''} 예산에 맞춰 루틴을 맞춤으로 구성해드릴게요.`,
+    '같이 쓰면 좋은 제품(예: 토너/수분크림/진정템)도 묶어서 추천해드릴까요?',
+  ];
+}
+
 function normalizeCategory(category) {
   const rawCat = String(category || '').toLowerCase().trim();
   if (!rawCat) return { rawCat: '', standardCat: '' };
@@ -459,6 +467,7 @@ async function executeTool(args = {}) {
     };
   }
 
+  const followUpQuestions = buildFollowUpQuestions(args);
   const consultText = buildConsultNarrativeV3(
     recommendations,
     promotions || [],
@@ -472,6 +481,7 @@ async function executeTool(args = {}) {
       recommendations,
       promotions: promotions || [],
       reference_recommendations: referenceRecommendations || [],
+      follow_up_questions: followUpQuestions,
       summary: safeSummary,
       strategy: safeSummary.strategy || '',
       conclusion: safeSummary.conclusion || '',
@@ -484,6 +494,7 @@ async function executeTool(args = {}) {
         recommendations,
         promotions: promotions || [],
         reference_recommendations: referenceRecommendations || [],
+        follow_up_questions: followUpQuestions,
         summary: safeSummary,
       },
     },

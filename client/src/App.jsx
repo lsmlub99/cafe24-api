@@ -79,12 +79,16 @@ function normalizeWidgetData(raw) {
   const referenceRecommendations = Array.isArray(structured.reference_recommendations)
     ? structured.reference_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
     : [];
+  const followUpQuestions = Array.isArray(structured.follow_up_questions)
+    ? structured.follow_up_questions.filter((q) => typeof q === 'string' && q.trim().length > 0)
+    : [];
   const summary = isObject(structured.summary) ? structured.summary : {};
 
   return {
     recommendations,
     promotions,
     reference_recommendations: referenceRecommendations,
+    follow_up_questions: followUpQuestions,
     summary,
     strategy: structured.strategy || summary.strategy || '',
     conclusion: structured.conclusion || summary.conclusion || '',
@@ -136,6 +140,7 @@ function App() {
         names: nextData.recommendations.map((r) => r?.name || ''),
         promotions: nextData.promotions.map((p) => p?.name || ''),
         references: (nextData.reference_recommendations || []).map((p) => p?.name || ''),
+        followups: (nextData.follow_up_questions || []).map((q) => q),
         message: nextData.summary?.message || '',
         strategy: nextData.strategy || '',
         conclusion: nextData.conclusion || '',
@@ -341,6 +346,19 @@ function App() {
                   {product.name}
                 </button>
                 {product.price ? ` · ${product.price}원` : ''}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {Array.isArray(widgetData.follow_up_questions) && widgetData.follow_up_questions.length > 0 && (
+          <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>
+              다음으로 맞춤 설정해드릴게요
+            </div>
+            {widgetData.follow_up_questions.map((q, idx) => (
+              <div key={`follow-up-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
+                - {q}
               </div>
             ))}
           </div>

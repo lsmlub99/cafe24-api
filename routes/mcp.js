@@ -2,9 +2,9 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config/env.js';
+import { logger } from '../utils/logger.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { recommendationService } from '../services/recommendationService.js';
-import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 let clientStream = null;
@@ -42,6 +42,7 @@ const RESOURCE_META = {
       'https://img.cellfusionc.co.kr',
       'https://persistent.oaistatic.com',
     ],
+    redirect_domains: ['https://cellfusionc.co.kr'],
   },
 };
 
@@ -133,34 +134,27 @@ function sendError(id, code, message, data = undefined) {
   sendToClient({
     jsonrpc: '2.0',
     id,
-    error: {
-      code,
-      message,
-      ...(data ? { data } : {}),
-    },
+    error: { code, message, ...(data ? { data } : {}) },
   });
 }
 
 function buildConsultText(recommendations, promotions = []) {
   const lines = [];
   lines.push(`지금 조건 기준 1순위는 ${recommendations[0].name} 입니다.`);
-  lines.push('일반 판매 제품을 우선 추천하고, 행사 상품은 별도로 안내해드릴게요.');
+  lines.push('상세 링크는 위젯 카드의 "지금 구매하기" 버튼에서 바로 열 수 있어요.');
   lines.push('');
 
   recommendations.forEach((item, idx) => {
     lines.push(`${idx + 1}. ${item.name} (${item.price}원)`);
     lines.push(`- 추천 이유: ${item.why_pick || item.key_point || '요청 조건과의 적합도가 높습니다.'}`);
-    lines.push(`- 사용 팁: ${item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 레이어링해 주세요.'}`);
+    lines.push(`- 사용 팁: ${item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 발라 주세요.'}`);
     lines.push(`- 주의 포인트: ${item.caution || '자외선 노출이 길면 2~3시간 간격으로 덧발라 주세요.'}`);
-    lines.push(`- 구매 링크: ${item.buy_url}`);
     lines.push('');
   });
 
   if (promotions.length > 0) {
-    lines.push('현재 행사 상품도 진행 중이에요.');
-    promotions.forEach((item) => {
-      lines.push(`- ${item.name} (${item.price}원): ${item.buy_url}`);
-    });
+    lines.push('현재 행사 상품도 함께 확인할 수 있어요.');
+    promotions.forEach((item) => lines.push(`- ${item.name} (${item.price}원)`));
   } else {
     lines.push('현재 별도 행사 매칭 상품은 없고, 정가 기준 추천으로 안내드렸어요.');
   }
@@ -171,17 +165,12 @@ function buildConsultText(recommendations, promotions = []) {
 function normalizeCategory(category) {
   const rawCat = String(category || '').toLowerCase().trim();
   if (!rawCat) return { rawCat: '', standardCat: '' };
-  return {
-    rawCat,
-    standardCat: CATEGORY_SYNONYM_MAP[rawCat] || rawCat,
-  };
+  return { rawCat, standardCat: CATEGORY_SYNONYM_MAP[rawCat] || rawCat };
 }
 
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
-  // Startup race guard: if the first tool call lands before initial sync completes,
-  // trigger one on-demand sync so users don't see an empty first response.
   if ((cafe24ApiService.cacheSize || 0) === 0) {
     logger.info('[Tool Exec] Cache is empty. Triggering on-demand sync...');
     await cafe24ApiService.syncAllProducts();
@@ -199,7 +188,6 @@ async function executeTool(args = {}) {
     rawProducts = cafe24ApiService.getProductsFromCache({ keyword: rawCat });
   }
 
-  // If category/keyword lookup fails, fallback to active cache instead of hard-failing.
   if (!Array.isArray(rawProducts) || rawProducts.length === 0) {
     rawProducts = cafe24ApiService.getProductsFromCache({});
   }
@@ -233,11 +221,7 @@ async function executeTool(args = {}) {
         ui: { resourceUri: WIDGET_UI_URI },
         'openai/outputTemplate': WIDGET_UI_URI,
         'openai/widgetAccessible': true,
-        widgetData: {
-          recommendations: [],
-          promotions: [],
-          summary: safeSummary,
-        },
+        widgetData: { recommendations: [], promotions: [], summary: safeSummary },
       },
     };
   }
@@ -257,11 +241,7 @@ async function executeTool(args = {}) {
       ui: { resourceUri: WIDGET_UI_URI },
       'openai/outputTemplate': WIDGET_UI_URI,
       'openai/widgetAccessible': true,
-      widgetData: {
-        recommendations,
-        promotions: promotions || [],
-        summary: safeSummary,
-      },
+      widgetData: { recommendations, promotions: promotions || [], summary: safeSummary },
     },
   };
 }
@@ -301,10 +281,7 @@ async function handleMcpMessage(req, res) {
         id,
         result: {
           protocolVersion: '2024-11-05',
-          capabilities: {
-            tools: { listChanged: false },
-            resources: { subscribe: false },
-          },
+          capabilities: { tools: { listChanged: false }, resources: { subscribe: false } },
           serverInfo: { name: 'cafe24-api-genui', version: '4.3.0' },
         },
       });
@@ -323,7 +300,6 @@ async function handleMcpMessage(req, res) {
       const requestedUri = String(params?.uri || '');
       const normalized = requestedUri.split(/[?#]/)[0];
       const allowedUris = [WIDGET_UI_URI, WIDGET_HTTP_URI];
-
       logger.info(`[MCP Protocol] resources/read requested: ${requestedUri}`);
 
       if (!allowedUris.includes(normalized)) {
@@ -338,26 +314,14 @@ async function handleMcpMessage(req, res) {
       }
 
       let html = fs.readFileSync(indexPath, 'utf8');
-      html = html.replace(
-        '<head>',
-        '<head><script>window.__WIDGET_MODE__=true;window.__MCP_WIDGET__=true;</script>'
-      );
+      html = html.replace('<head>', '<head><script>window.__WIDGET_MODE__=true;window.__MCP_WIDGET__=true;</script>');
       html = html.replace(/src="\//g, `src="${BASE_URL}/`);
       html = html.replace(/href="\//g, `href="${BASE_URL}/`);
 
       sendToClient({
         jsonrpc: '2.0',
         id,
-        result: {
-          contents: [
-            {
-              uri: requestedUri,
-              mimeType: RESOURCE_MIME_TYPE,
-              text: html,
-              _meta: RESOURCE_META,
-            },
-          ],
-        },
+        result: { contents: [{ uri: requestedUri, mimeType: RESOURCE_MIME_TYPE, text: html, _meta: RESOURCE_META }] },
       });
       return;
     }
@@ -377,7 +341,6 @@ async function handleMcpMessage(req, res) {
       const toolArgs = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {};
       const toolResult = await executeTool(toolArgs);
       const finalResult = { ...toolResult };
-
       if (toolResult.structuredContent) {
         finalResult.data = toolResult.structuredContent;
         finalResult.output = toolResult.structuredContent;
@@ -386,9 +349,7 @@ async function handleMcpMessage(req, res) {
       const recCount = Array.isArray(toolResult?.structuredContent?.recommendations)
         ? toolResult.structuredContent.recommendations.length
         : 0;
-      logger.info(
-        `[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}`
-      );
+      logger.info(`[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}`);
 
       sendToClient({ jsonrpc: '2.0', id, result: finalResult });
       return;

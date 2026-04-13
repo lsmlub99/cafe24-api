@@ -12,6 +12,19 @@ function App() {
   const lastWidgetSignatureRef = useRef('');
   const fallbackPollRef = useRef(null);
 
+  const openBuyLink = async (href) => {
+    if (!href) return;
+    try {
+      if (window.openai?.openExternal) {
+        await window.openai.openExternal({ href });
+        return;
+      }
+    } catch {
+      // fallback below
+    }
+    window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -53,17 +66,13 @@ function App() {
 
     const unwrap = (message) => {
       if (!message) return null;
-      if (message.params?.structuredContent || message.params?.data || message.params?.output) {
-        return message.params;
-      }
+      if (message.params?.structuredContent || message.params?.data || message.params?.output) return message.params;
       if (message.params?.result) return message.params.result;
       if (message.params?.payload) return message.params.payload;
       if (message.params?.toolOutput) return message.params.toolOutput;
       if (message.result?.toolOutput) return message.result.toolOutput;
       if (message.result?.payload) return message.result.payload;
-      if (message.result?.structuredContent || message.result?.data || message.result?.output) {
-        return message.result;
-      }
+      if (message.result?.structuredContent || message.result?.data || message.result?.output) return message.result;
       if (message.result) return message.result;
       return message;
     };
@@ -72,10 +81,6 @@ function App() {
       const message = event.data;
       if (!message) return;
 
-      if (message.jsonrpc === '2.0' && typeof message.method === 'string') {
-        applyWidgetData(unwrap(message));
-        return;
-      }
       if (message.jsonrpc === '2.0') {
         applyWidgetData(unwrap(message));
         return;
@@ -108,20 +113,11 @@ function App() {
     if (inIframe) {
       const initId = `init-${Date.now()}`;
       window.parent.postMessage(
-        {
-          jsonrpc: '2.0',
-          id: initId,
-          method: 'ui/initialize',
-          params: { version: '1.0.0' },
-        },
+        { jsonrpc: '2.0', id: initId, method: 'ui/initialize', params: { version: '1.0.0' } },
         '*'
       );
       window.parent.postMessage(
-        {
-          jsonrpc: '2.0',
-          method: 'ui/notifications/initialized',
-          params: { version: '1.0.0' },
-        },
+        { jsonrpc: '2.0', method: 'ui/notifications/initialized', params: { version: '1.0.0' } },
         '*'
       );
     }
@@ -160,7 +156,7 @@ function App() {
           products: data.recommendations || [],
         },
       ]);
-    } catch (error) {
+    } catch {
       setMessages((prev) => [
         ...prev,
         { id: Date.now() + 1, type: 'bot', text: '서버 통신 중 오류가 발생했습니다.' },
@@ -174,106 +170,60 @@ function App() {
 
   if (isWidgetMode && widgetData?.recommendations?.length) {
     return (
-      <div
-        className="widget-container"
-        style={{ padding: '16px', background: '#fff', borderRadius: '12px', fontFamily: 'inherit' }}
-      >
-        <h3
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '1.1rem',
-            marginBottom: '16px',
-            color: '#B31312',
-          }}
-        >
+      <div className="widget-container" style={{ padding: '16px', background: '#fff', borderRadius: '12px' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#B31312', marginBottom: '16px' }}>
           <Sparkles size={18} fill="#B31312" />
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
         <div
           className="product-carousel"
-          style={{
-            display: 'flex',
-            gap: '16px',
-            overflowX: 'auto',
-            paddingBottom: '12px',
-            WebkitOverflowScrolling: 'touch',
-          }}
+          style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}
         >
           {widgetData.recommendations.map((product, idx) => (
             <div
               key={`${product.buy_url || product.name}-${idx}`}
               className="product-card"
-              style={{
-                minWidth: '220px',
-                border: '1px solid #eee',
-                borderRadius: '12px',
-                padding: '12px',
-                background: '#fff',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-              }}
+              style={{ minWidth: '220px', border: '1px solid #eee', borderRadius: '12px', padding: '12px', background: '#fff' }}
             >
               <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>
                 {idx === 0 ? '🏅 BEST' : `${idx + 1}위`}
               </div>
 
-              <img
-                src={product.image}
-                alt={product.name}
-                style={{ width: '100%', height: '140px', objectFit: 'contain', marginBottom: '12px' }}
-              />
-
-              <div
-                style={{
-                  fontWeight: 'bold',
-                  fontSize: '0.9rem',
-                  marginBottom: '4px',
-                  minHeight: '2.4em',
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}
-              >
-                {product.name}
-              </div>
-
-              <div style={{ color: '#666', fontSize: '0.85rem', marginBottom: '12px' }}>
-                {product.price ? `${product.price}원` : ''}
-              </div>
+              <img src={product.image} alt={product.name} style={{ width: '100%', height: '140px', objectFit: 'contain', marginBottom: '12px' }} />
+              <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>{product.name}</div>
+              <div style={{ color: '#666', fontSize: '0.85rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
 
               {product.why_pick && (
                 <div style={{ fontSize: '0.78rem', color: '#444', marginBottom: '6px', lineHeight: '1.45' }}>
                   <strong>추천 이유:</strong> {product.why_pick}
                 </div>
               )}
-
               {product.usage_tip && (
                 <div style={{ fontSize: '0.78rem', color: '#555', marginBottom: '10px', lineHeight: '1.45' }}>
                   <strong>사용 팁:</strong> {product.usage_tip}
                 </div>
               )}
 
-              <a
-                href={product.buy_url}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                onClick={() => openBuyLink(product.buy_url)}
                 style={{
                   display: 'block',
+                  width: '100%',
                   textAlign: 'center',
                   background: '#B31312',
                   color: '#fff',
                   padding: '10px',
                   borderRadius: '8px',
                   fontSize: '0.85rem',
-                  textDecoration: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
                   fontWeight: 'bold',
                 }}
               >
                 지금 구매하기
-              </a>
+              </button>
             </div>
           ))}
         </div>
@@ -284,13 +234,22 @@ function App() {
               현재 행사 상품도 진행 중이에요
             </div>
             {widgetData.promotions.map((product, idx) => (
-              <div
-                key={`${product.buy_url || product.name}-${idx}`}
-                style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}
-              >
-                <a href={product.buy_url} target="_blank" rel="noreferrer" style={{ color: '#444' }}>
+              <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
+                <button
+                  type="button"
+                  onClick={() => openBuyLink(product.buy_url)}
+                  style={{
+                    color: '#444',
+                    textDecoration: 'underline',
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
                   {product.name}
-                </a>
+                </button>
                 {product.price ? ` · ${product.price}원` : ''}
               </div>
             ))}
@@ -298,16 +257,7 @@ function App() {
         )}
 
         {widgetData.conclusion && (
-          <div
-            style={{
-              marginTop: '16px',
-              fontSize: '0.85rem',
-              color: '#444',
-              fontStyle: 'italic',
-              borderTop: '1px solid #eee',
-              paddingTop: '12px',
-            }}
-          >
+          <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#444', fontStyle: 'italic', borderTop: '1px solid #eee', paddingTop: '12px' }}>
             {widgetData.conclusion}
           </div>
         )}
@@ -318,9 +268,7 @@ function App() {
   if (isWidgetMode && widgetData && (!widgetData.recommendations || widgetData.recommendations.length === 0)) {
     return (
       <div style={{ padding: '16px', color: '#555', background: '#fff', borderRadius: '12px' }}>
-        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#B31312', marginBottom: '8px' }}>
-          추천 결과
-        </div>
+        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#B31312', marginBottom: '8px' }}>추천 결과</div>
         <div>{widgetData.summary?.message || '조건에 맞는 결과를 찾지 못했어요.'}</div>
       </div>
     );
@@ -348,15 +296,10 @@ function App() {
         {messages.map((msg) => (
           <div key={msg.id} className="message-wrapper">
             <div className={`message-bubble message-${msg.type}`}>{msg.text}</div>
-
             {Array.isArray(msg.products) && msg.products.length > 0 && (
               <div className="carousel-container">
                 {msg.products.map((product, idx) => (
-                  <div
-                    key={`${product.buy_url || product.name}-${idx}`}
-                    className="product-card"
-                    onClick={() => product.buy_url && window.open(product.buy_url, '_blank')}
-                  >
+                  <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url)}>
                     <div className="rank-badge">{idx === 0 ? '🏅 BEST' : `${idx + 1}위`}</div>
                     <img src={product.image} alt={product.name} className="product-img" />
                     <div className="product-name">{product.name}</div>

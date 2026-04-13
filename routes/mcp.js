@@ -94,8 +94,23 @@ const TOOLS = [
 const CATEGORY_SYNONYM_MAP = {
   선크림: '선크림',
   썬크림: '선크림',
+  suncream: '선크림',
+  sunscreen: '선크림',
+  sunblock: '선크림',
   자외선: '선크림',
   선케어: '선크림',
+  suncare: '선크림',
+  선스틱: '선스틱',
+  썬스틱: '선스틱',
+  sunstick: '선스틱',
+  'sun stick': '선스틱',
+  선세럼: '선세럼',
+  썬세럼: '선세럼',
+  sunserum: '선세럼',
+  'sun serum': '선세럼',
+  선스프레이: '선스프레이',
+  sunspray: '선스프레이',
+  'sun spray': '선스프레이',
   크림: '크림',
   보습크림: '크림',
   수분크림: '크림',
@@ -165,7 +180,11 @@ function buildConsultText(recommendations, promotions = []) {
 function normalizeCategory(category) {
   const rawCat = String(category || '').toLowerCase().trim();
   if (!rawCat) return { rawCat: '', standardCat: '' };
-  return { rawCat, standardCat: CATEGORY_SYNONYM_MAP[rawCat] || rawCat };
+  const compact = rawCat.replace(/[\s_-]+/g, '');
+  return {
+    rawCat,
+    standardCat: CATEGORY_SYNONYM_MAP[rawCat] || CATEGORY_SYNONYM_MAP[compact] || rawCat,
+  };
 }
 
 async function executeTool(args = {}) {
@@ -198,6 +217,7 @@ async function executeTool(args = {}) {
     rawProducts,
     {
       ...args,
+      category: standardCat || args.category,
       category_aliases: standardCat ? [standardCat] : [],
       target_category_ids: Array.isArray(categoryNos) ? categoryNos : [],
     },

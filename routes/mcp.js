@@ -74,8 +74,8 @@ const TOOLS = [
       destructiveHint: false,
     },
     _meta: {
-      ui: { resourceUri: WIDGET_UI_URI, visibility: ['model', 'app'] },
-      'openai/outputTemplate': WIDGET_UI_URI,
+      ui: { resourceUri: WIDGET_HTTP_URI, visibility: ['model', 'app'] },
+      'openai/outputTemplate': WIDGET_HTTP_URI,
       'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Analyzing your skin needs...',
       'openai/toolInvocation/invoked': 'Recommendation results are ready.',
@@ -459,8 +459,8 @@ async function executeTool(args = {}) {
         conclusion: safeSummary.conclusion || '',
       },
       _meta: {
-        ui: { resourceUri: WIDGET_UI_URI },
-        'openai/outputTemplate': WIDGET_UI_URI,
+        ui: { resourceUri: WIDGET_HTTP_URI },
+        'openai/outputTemplate': WIDGET_HTTP_URI,
         'openai/widgetAccessible': true,
         widgetData: { recommendations: [], promotions: [], reference_recommendations: [], summary: safeSummary },
       },
@@ -487,8 +487,8 @@ async function executeTool(args = {}) {
       conclusion: safeSummary.conclusion || '',
     },
     _meta: {
-      ui: { resourceUri: WIDGET_UI_URI },
-      'openai/outputTemplate': WIDGET_UI_URI,
+      ui: { resourceUri: WIDGET_HTTP_URI },
+      'openai/outputTemplate': WIDGET_HTTP_URI,
       'openai/widgetAccessible': true,
       widgetData: {
         recommendations,

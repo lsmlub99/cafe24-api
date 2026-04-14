@@ -39,7 +39,7 @@ export const RECOMMENDATION_POLICY = {
   formPolicy: {
     strictOnExplicitForm: true,
     defaultMainFormsByCategory: {
-      sunscreen: ['cream'],
+      sunscreen: ['cream', 'lotion'],
       toner: ['toner'],
       serum: ['serum'],
       cream: ['cream', 'lotion'],

@@ -54,8 +54,18 @@ export function getQualityScore(product, policy) {
   const review = Math.min(policy.scoring.reviewCap, Math.log10((product.review_count || 0) + 1) * 10);
   const rating = Math.min(policy.scoring.ratingCap, Math.max(0, (product.rating || 0) * 4));
   const sales = Math.min(policy.scoring.salesCap, Math.log10((product.sales_count || 0) + 1) * 10);
-  const bestTag = includesAny(product.name, ['best', '베스트', '인기']) ? policy.scoring.bestTagBonus : 0;
-  return review + rating + sales + bestTag;
+  const bestTag = includesAny(`${product.name} ${product.text}`, ['best', '베스트', '인기', 'best seller']) ? policy.scoring.bestTagBonus : 0;
+
+  const direct = review + rating + sales + bestTag;
+  if (direct > 0) return direct;
+
+  // Fallback quality proxy when commerce signals are missing from source payload.
+  const textLen = String(product.text || '').length;
+  const richness = Math.min(12, Math.floor(textLen / 120));
+  const hasImage = product.image ? 2 : 0;
+  const hasPrice = product.price_value > 0 ? 2 : 0;
+  const promoAdj = product.is_promo ? -1 : 1;
+  return Math.max(0, richness + hasImage + hasPrice + promoAdj);
 }
 
 export function getNoveltyScore(product) {
@@ -109,11 +119,30 @@ export function getConditionScore(product, intent, policy) {
 
   const concerns = intent.concern || [];
   const concernTags = product.attributes?.concern_tags || [];
-  const concernMatchCount = concerns.filter((c) => concernTags.some((t) => lower(t).includes(lower(c)))).length;
+  const derivedConcernSignals = product.derived_attributes?.concern_signals || [];
+  const concernMatchCount = concerns.filter(
+    (c) =>
+      concernTags.some((t) => lower(t).includes(lower(c))) ||
+      derivedConcernSignals.some((s) => lower(s).includes(lower(c)))
+  ).length;
 
   const structuredScore = textureMatches * 10 + finishMatches * 8 + useCaseMatches * 6 + concernMatchCount * 7;
   const keywordScore = scoreByKeywordHints(product, signals);
   return Math.min(policy.scoring.conditionCap, structuredScore + keywordScore);
+}
+
+function getQueryMatchScore(product, intent) {
+  const query = String(intent.query || '').trim();
+  if (!query) return 0;
+  const src = lower(`${product.name} ${product.text}`);
+  const tokens = query
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2)
+    .slice(0, 8);
+  if (!tokens.length) return 0;
+  const hit = tokens.filter((t) => src.includes(lower(t))).length;
+  return Math.min(12, hit * 3);
 }
 
 export function getRequestIntentScore(product, intent, policy, conditionScore = 0) {
@@ -152,6 +181,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
 
   const formMismatchPenalty = getFormMismatchPenalty(product, intent, intent.allowed_main_forms || [], policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
+  const queryMatch = getQueryMatchScore(product, intent);
 
   const baseScore =
     categoryGate +
@@ -159,6 +189,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     quality * policy.scoring.qualityWeight +
     intentFit * policy.scoring.intentWeight +
     novelty * policy.scoring.noveltyWeight +
+    queryMatch +
     promoPenalty +
     conditionPriorityBonus +
     formMismatchPenalty -
@@ -174,6 +205,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     quality_score: Number(quality.toFixed(3)),
     intent_score: Number(intentFit.toFixed(3)),
     novelty_score: Number(novelty.toFixed(3)),
+    query_match_score: Number(queryMatch.toFixed(3)),
     promo_penalty: promoPenalty,
     category_gate: categoryGate,
     condition_priority_bonus: conditionPriorityBonus,
@@ -330,4 +362,3 @@ export function getSecondaryRecommendations(allProducts, intent, mainItems, taxo
 
   return dedupeByBase([...sameCategoryDifferentForms, ...crossCategory]).slice(0, policy.limits.defaultSecondary);
 }
-

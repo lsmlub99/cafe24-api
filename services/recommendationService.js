@@ -278,6 +278,10 @@ export const recommendationService = {
       .sort((a, b) => b._base_score - a._base_score)
       .slice(0, RECOMMENDATION_POLICY.limits.stage1TopK);
 
+    logger.info(
+      `[Rank Pool] candidates=${candidates.length} stage1=${scored.length} requested_category=${parsedIntent.requested_category || 'none'} requested_form=${parsedIntent.requested_form || 'none'}`
+    );
+
     const deduped = dedupeByBase(scored).slice(0, RECOMMENDATION_POLICY.limits.stage2TopK);
     const reranked = await stage2Rerank(deduped, parsedIntent, RECOMMENDATION_POLICY);
     const finalSelected = selectDiverseTopN(reranked, Math.max(1, limit), RECOMMENDATION_POLICY);
@@ -285,7 +289,7 @@ export const recommendationService = {
     finalSelected.forEach((item, idx) => {
       const breakdown = item._score_breakdown || {};
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 

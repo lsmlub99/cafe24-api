@@ -81,10 +81,28 @@ export function extractProductAttributes(raw = {}, name = '', text = '') {
     .join(' ');
   const lineKey = lineTags[0] ? lower(String(lineTags[0]).trim()) : lower(nameLineGuess);
 
+  const concernSignals = pickSignals(signalSource, {
+    hydration: ['보습', '수분', '촉촉', '아쿠아', 'hydra', 'moist'],
+    soothing: ['진정', '카밍', '시카', '민감', '패리어', 'calming', 'cica'],
+    sebum_control: ['유분', '피지', '번들', '보송', '모공', '포어', 'pore', 'sebum'],
+    tone_up: ['톤업', '잡티', '토닝', '커버', 'tone', 'cover'],
+    uv_protection: ['자외선', 'uv', 'sun', 'spf', 'pa++++'],
+  });
+
+  // Lightweight inference from form itself.
+  if (signalSource.includes('스프레이') || signalSource.includes('spray') || signalSource.includes('미스트')) {
+    useCaseSignals.push('reapply_friendly');
+    textureSignals.push('lightweight');
+  }
+  if (signalSource.includes('스틱') || signalSource.includes('stick')) {
+    useCaseSignals.push('reapply_friendly');
+  }
+
   return {
     texture_signals: textureSignals,
     finish_signals: finishSignals,
     use_case_signals: useCaseSignals,
+    concern_signals: concernSignals,
     line_key: lineKey || '',
   };
 }

@@ -152,6 +152,7 @@
   - `quality_score`
   - `intent_score`
   - `novelty_score`
+  - `query_match_score`
   - `final_rank_reason`
 
 ## 10. 점진 개선 계획

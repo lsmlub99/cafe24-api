@@ -1,9 +1,10 @@
 import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower } from './shared.js';
 
-function detectSortIntent(parsedIntent, query, taxonomy) {
+function detectSortIntent(parsedIntent, query, taxonomy, contextText = '') {
   const q = lower(query);
-  if (parsedIntent.novelty_request) return 'new_arrival';
-  if (includesAny(q, taxonomy.popularityKeywords || [])) return 'popular';
+  const context = lower(contextText || q);
+  if (parsedIntent.novelty_request || includesAny(context, taxonomy.noveltyKeywords || [])) return 'new_arrival';
+  if (includesAny(context, taxonomy.popularityKeywords || [])) return 'popular';
   if (parsedIntent.preference.length || parsedIntent.situation.length || parsedIntent.skin_type || parsedIntent.concern.length) {
     return 'condition_based';
   }
@@ -30,6 +31,13 @@ export function parseUserIntent(args = {}, taxonomy) {
   const noveltyRequest = includesAny(q, taxonomy.noveltyKeywords || []);
   const explicitFormRequest = Boolean(requestedForm);
 
+  const contextText = [
+    q,
+    args.category || '',
+    args.skin_type || '',
+    Array.isArray(args.concerns) ? args.concerns.join(' ') : '',
+  ].join(' ');
+
   const parsed = {
     requested_category: requestedCategory,
     requested_category_ids: Array.isArray(args.target_category_ids) ? args.target_category_ids : [],
@@ -44,6 +52,6 @@ export function parseUserIntent(args = {}, taxonomy) {
     query: q,
   };
 
-  parsed.sort_intent = detectSortIntent(parsed, q, taxonomy);
+  parsed.sort_intent = detectSortIntent(parsed, q, taxonomy, contextText);
   return parsed;
 }

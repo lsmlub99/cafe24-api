@@ -224,6 +224,13 @@ function getDiversitySoftPenalty(product, context, policy) {
   return lineSeen * policy.scoring.sameLinePenalty + formSeen * policy.scoring.sameFormPenalty;
 }
 
+function getRepeatPenalty(product, intent, policy) {
+  const seen = intent.session_context?.recent_main_base_names || [];
+  const base = String(product.base_name || '').trim();
+  if (!base || !Array.isArray(seen) || !seen.length) return 0;
+  return seen.includes(base) ? policy.scoring.repeatRecommendationPenalty : 0;
+}
+
 export function calculateMainScoreBreakdown(product, intent, categoryLocked, policy, context = null) {
   const condition = getConditionScore(product, intent, policy);
   const quality = getQualityScore(product, policy);
@@ -241,6 +248,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const formMismatchPenalty = getFormMismatchPenalty(product, intent.allowed_main_forms || [], policy);
   const reactivePenalty = getReactivePenalty(product, intent, policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
+  const repeatPenalty = getRepeatPenalty(product, intent, policy);
   const queryMatch = getQueryMatchScore(product, intent);
 
   const baseScore =
@@ -255,6 +263,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     conditionPriorityBonus +
     formMismatchPenalty -
     reactivePenalty -
+    repeatPenalty -
     diversityPenalty;
 
   const finalRankReason = hasConditionSignal
@@ -274,6 +283,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     condition_priority_bonus: conditionPriorityBonus,
     form_mismatch_penalty: formMismatchPenalty,
     reactive_penalty: reactivePenalty,
+    repeat_penalty: repeatPenalty,
     diversity_penalty: Number(diversityPenalty.toFixed(3)),
     final_rank_reason: finalRankReason,
   };

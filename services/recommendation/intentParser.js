@@ -10,6 +10,7 @@ const IRRITATION_WORDS = [
   '\uD654\uB048', // 화끈
   '\uAC04\uC9C0\uB7EC', // 간지러
 ];
+const VARIETY_WORDS = ['다른', '다른거', '다른 건', '말고', '또 뭐', '더 있', '없나요', '없어?', 'other option'];
 
 function detectSortIntent(parsedIntent, query, taxonomy, contextText = '') {
   const q = lower(query);
@@ -66,6 +67,7 @@ export function parseUserIntent(args = {}, taxonomy) {
   const preference = findAllAliasKeys(q, taxonomy.preferences);
   const noveltyRequest = includesAny(q, taxonomy.noveltyKeywords || []);
   const popularityIntent = includesAny(q, taxonomy.popularityKeywords || []);
+  const varietyIntent = includesAny(q, VARIETY_WORDS);
   const priceIntent = parsePriceIntent(q);
   const sensitivitySignal = detectSensitivitySignal(q, concern);
   const explicitFormRequest = Boolean(requestedForm);
@@ -88,6 +90,7 @@ export function parseUserIntent(args = {}, taxonomy) {
     preference,
     novelty_request: noveltyRequest,
     popularity_intent: popularityIntent,
+    variety_intent: varietyIntent,
     price_intent: priceIntent,
     sensitivity_signal: sensitivitySignal,
     sort_intent: 'popular',
@@ -97,4 +100,3 @@ export function parseUserIntent(args = {}, taxonomy) {
   parsed.sort_intent = detectSortIntent(parsed, q, taxonomy, contextText);
   return parsed;
 }
-

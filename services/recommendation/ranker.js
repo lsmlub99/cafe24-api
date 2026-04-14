@@ -48,6 +48,48 @@ function mapIntentSignals(intent = {}) {
   };
 }
 
+function getFeatureMatchScore(product, intentSignals, intent = {}) {
+  const fv = product.feature_vector || {};
+  let score = 0;
+
+  if (intentSignals.texture.includes('lightweight')) score += (fv.lightweight_score || 0) * 2.2;
+  if (intentSignals.texture.includes('moisturizing')) score += (fv.moisturizing_score || 0) * 2.2;
+  if (intentSignals.texture.includes('low_oily')) {
+    score += (fv.lightweight_score || 0) * 1.4;
+    score += Math.max(0, 8 - (fv.moisturizing_score || 0)) * 0.6;
+  }
+  if (intentSignals.finish.includes('tone_up')) score += (fv.toneup_score || 0) * 1.9;
+  if (intentSignals.finish.includes('makeup_friendly')) score += (fv.makeup_compat || 0) * 1.5;
+  if (intentSignals.finish.includes('low_white_cast')) score += (fv.lightweight_score || 0) * 0.8;
+  if (intentSignals.useCase.includes('reapply_friendly')) score += (fv.reapply_fit || 0) * 1.7;
+  if (intentSignals.concerns.includes('soothing')) {
+    score += (fv.soothing_score || 0) * 1.8;
+    score -= (fv.irritation_risk || 0) * 1.6;
+  }
+
+  const sessionSignals = intent.session_context?.reactive_signals || [];
+  if (sessionSignals.includes('irritation')) {
+    score += (fv.soothing_score || 0) * 1.4;
+    score -= (fv.irritation_risk || 0) * 1.8;
+  }
+  const negatives = intent.session_context?.negative_preferences || [];
+  if (negatives.includes('oily')) score -= (fv.moisturizing_score || 0) * 1.0;
+  if (negatives.includes('heavy')) score -= (fv.moisturizing_score || 0) * 0.9;
+
+  return Math.max(-18, Math.min(32, Number(score.toFixed(3))));
+}
+
+function getPriceIntentScore(product, intent = {}) {
+  const max = intent.price_intent?.max_price_krw;
+  const price = Number(product.price_value || 0);
+  if (!Number.isFinite(max) || max <= 0 || !Number.isFinite(price) || price <= 0) return 0;
+  if (price <= max) return 8;
+  const over = price - max;
+  if (over <= max * 0.1) return 3;
+  if (over <= max * 0.25) return -4;
+  return -10;
+}
+
 export function getQualityScore(product, policy) {
   const review = Math.min(policy.scoring.reviewCap, Math.log10((product.review_count || 0) + 1) * 10);
   const rating = Math.min(policy.scoring.ratingCap, Math.max(0, (product.rating || 0) * 4));
@@ -126,8 +168,9 @@ export function getConditionScore(product, intent, policy) {
   ).length;
 
   const structuredScore = textureMatches * 10 + finishMatches * 8 + useCaseMatches * 6 + concernMatchCount * 7;
+  const featureScore = getFeatureMatchScore(product, signals, intent);
   const keywordScore = scoreByKeywordHints(product, signals);
-  return Math.min(policy.scoring.conditionCap, structuredScore + keywordScore);
+  return Math.min(policy.scoring.conditionCap, structuredScore + keywordScore + featureScore);
 }
 
 function getQueryMatchScore(product, intent) {
@@ -159,6 +202,22 @@ function getFormMismatchPenalty(product, allowedMainForms, policy) {
   return allowedMainForms.includes(product.form) ? 0 : policy.scoring.formMismatchPenalty;
 }
 
+function getReactivePenalty(product, intent, policy) {
+  const reactiveIntent =
+    (intent.concern || []).includes('soothing') ||
+    intent.skin_type === 'sensitive' ||
+    includesAny(intent.query || '', ['따가', '자극', '눈시림', '트러블', '안 맞']);
+  if (!reactiveIntent) return 0;
+
+  const source = lower(`${product.name} ${product.text}`);
+  const finishSignals = product.derived_attributes?.finish_signals || [];
+  const toneLike =
+    finishSignals.includes('tone_up') ||
+    includesAny(source, ['토닝', '톤업', '커버', '비비', '보정']);
+
+  return toneLike ? policy.scoring.reactiveToneUpPenalty : 0;
+}
+
 function getDiversitySoftPenalty(product, context, policy) {
   const lineSeen = context.lineCounts.get(product.line_key || '') || 0;
   const formSeen = context.formCounts.get(product.form || '') || 0;
@@ -170,6 +229,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const quality = getQualityScore(product, policy);
   const novelty = intent.novelty_request ? getNoveltyScore(product) : 0;
   const intentFit = getRequestIntentScore(product, intent, policy, condition);
+  const priceIntentScore = getPriceIntentScore(product, intent);
   const promoPenalty = product.is_promo ? policy.scoring.promoPenalty : 0;
   const categoryGate = categoryLocked ? policy.scoring.categoryGate : 0;
 
@@ -179,6 +239,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     hasConditionSignal && condition >= policy.scoring.conditionStrongMatchThreshold ? policy.scoring.conditionPriorityBonus : 0;
 
   const formMismatchPenalty = getFormMismatchPenalty(product, intent.allowed_main_forms || [], policy);
+  const reactivePenalty = getReactivePenalty(product, intent, policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
   const queryMatch = getQueryMatchScore(product, intent);
 
@@ -188,10 +249,12 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     quality * policy.scoring.qualityWeight +
     intentFit * policy.scoring.intentWeight +
     novelty * policy.scoring.noveltyWeight +
+    priceIntentScore +
     queryMatch +
     promoPenalty +
     conditionPriorityBonus +
     formMismatchPenalty -
+    reactivePenalty -
     diversityPenalty;
 
   const finalRankReason = hasConditionSignal
@@ -203,12 +266,14 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     condition_score: Number(condition.toFixed(3)),
     quality_score: Number(quality.toFixed(3)),
     intent_score: Number(intentFit.toFixed(3)),
+    price_intent_score: Number(priceIntentScore.toFixed(3)),
     novelty_score: Number(novelty.toFixed(3)),
     query_match_score: Number(queryMatch.toFixed(3)),
     promo_penalty: promoPenalty,
     category_gate: categoryGate,
     condition_priority_bonus: conditionPriorityBonus,
     form_mismatch_penalty: formMismatchPenalty,
+    reactive_penalty: reactivePenalty,
     diversity_penalty: Number(diversityPenalty.toFixed(3)),
     final_rank_reason: finalRankReason,
   };
@@ -356,4 +421,3 @@ export function getSecondaryRecommendations(allProducts, intent, mainItems, taxo
 
   return dedupeByBase([...sameCategoryDifferentForms, ...crossCategory]).slice(0, policy.limits.defaultSecondary);
 }
-

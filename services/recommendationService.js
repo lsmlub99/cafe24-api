@@ -19,6 +19,7 @@ import {
   trackNoResult,
   trackRequest,
 } from './recommendation/metrics.js';
+import { getSessionContext, updateSessionContext } from './recommendation/sessionContext.js';
 
 let openaiClient = null;
 let openaiLoadAttempted = false;
@@ -56,9 +57,32 @@ function buildReasoningTags(parsedIntent) {
   for (const c of parsedIntent.concern || []) tags.push(`concern:${c}`);
   for (const s of parsedIntent.situation || []) tags.push(`situation:${s}`);
   for (const p of parsedIntent.preference || []) tags.push(`preference:${p}`);
+  if (parsedIntent.sensitivity_signal) tags.push(`sensitivity:${parsedIntent.sensitivity_signal}`);
+  if (parsedIntent.price_intent?.max_price_krw) tags.push(`price_max:${parsedIntent.price_intent.max_price_krw}`);
   if (parsedIntent.novelty_request) tags.push('novelty:new_arrival');
   tags.push(`sort:${parsedIntent.sort_intent}`);
   return tags;
+}
+
+function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
+  const mergedConcern = new Set(parsedIntent.concern || []);
+  const mergedPreference = new Set(parsedIntent.preference || []);
+  const reactiveSignals = sessionContext.reactive_signals || [];
+  const negativePreferences = sessionContext.negative_preferences || [];
+
+  if (reactiveSignals.includes('irritation')) mergedConcern.add('soothing');
+  if (negativePreferences.includes('oily')) mergedConcern.add('sebum_control');
+  if (negativePreferences.includes('heavy')) mergedPreference.add('lightweight');
+
+  return {
+    ...parsedIntent,
+    concern: [...mergedConcern],
+    preference: [...mergedPreference],
+    session_context: {
+      reactive_signals: reactiveSignals,
+      negative_preferences: negativePreferences,
+    },
+  };
 }
 
 function buildDetail(product, parsedIntent) {
@@ -321,7 +345,7 @@ export const recommendationService = {
     finalSelected.forEach((item, idx) => {
       const breakdown = item._score_breakdown || {};
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 
@@ -390,7 +414,9 @@ export const recommendationService = {
       const item = normalizeCafe24Product(p, RECOMMENDATION_TAXONOMY);
       return { ...item, category_key: inferProductCategory(item) };
     });
-    const parsed = this.parse_user_request(args);
+    const sessionKey = String(args.__session_key || args.session_key || 'global');
+    const sessionContext = getSessionContext(sessionKey);
+    const parsed = applySessionContextToIntent(this.parse_user_request(args), sessionContext);
 
     let primary = this.get_primary_candidates(normalized, parsed, { relaxForm: false, includePromo: false });
     let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
@@ -478,6 +504,11 @@ export const recommendationService = {
       RECOMMENDATION_POLICY.limits.defaultSecondary
     );
 
+    updateSessionContext(sessionKey, {
+      query: `${args.query || args.q || ''}`.trim(),
+      parsedIntent: parsed,
+    });
+
     return this.build_recommendation_response(
       parsed,
       mainRecommendations,
@@ -489,4 +520,3 @@ export const recommendationService = {
     );
   },
 };
-

@@ -443,8 +443,15 @@ async function handleMcpMessage(req, res) {
         return;
       }
 
+      const sessionHeaderKey =
+        req.headers['x-openai-conversation-id'] ||
+        req.headers['x-openai-session-id'] ||
+        req.headers['x-session-id'] ||
+        req.headers['x-request-id'] ||
+        'global';
       const toolArgs = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {};
-      const toolResult = await executeTool(toolArgs);
+      const enrichedArgs = { ...toolArgs, __session_key: String(sessionHeaderKey) };
+      const toolResult = await executeTool(enrichedArgs);
       const finalResult = { ...toolResult };
       if (toolResult.structuredContent) {
         finalResult.data = toolResult.structuredContent;
@@ -479,4 +486,3 @@ router.post('/message', handleMcpMessage);
 router.post('/messages', handleMcpMessage);
 
 export default router;
-

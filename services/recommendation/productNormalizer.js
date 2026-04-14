@@ -1,4 +1,5 @@
 import { lower, parseDateMs, parsePrice, toBaseName, isPromoName } from './shared.js';
+import { extractFeatureVector } from './featureExtractor.js';
 
 export function extractCategoryIds(raw = {}) {
   if (Array.isArray(raw.categories)) {
@@ -124,7 +125,7 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
   const textureTags = Array.isArray(raw.attributes?.texture_tags) ? raw.attributes.texture_tags : [];
   const derivedAttrs = extractProductAttributes(raw, name);
 
-  return {
+  const normalized = {
     id: String(raw.product_no || raw.product_id || raw.id || ''),
     name,
     base_name: toBaseName(name),
@@ -145,5 +146,9 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
     sales_count: Number(raw.sales_count || raw.order_count || 0) || 0,
     image,
   };
-}
 
+  return {
+    ...normalized,
+    feature_vector: extractFeatureVector(normalized),
+  };
+}

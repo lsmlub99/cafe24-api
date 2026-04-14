@@ -28,6 +28,7 @@ export const RECOMMENDATION_POLICY = {
     formMismatchPenalty: -120,
     sameLinePenalty: 8,
     sameFormPenalty: 5,
+    reactiveToneUpPenalty: -22,
   },
   diversity: {
     enabled: true,
@@ -87,7 +88,7 @@ export const RECOMMENDATION_TAXONOMY = {
   },
   concerns: {
     hydration: ['보습', '수분', '건조', '당김', 'hydration', 'moist'],
-    soothing: ['진정', '붉은기', '열감', '민감', 'soothing', 'calming'],
+    soothing: ['진정', '붉은기', '열감', '민감', '따가움', '자극', '눈시림', '트러블', 'soothing', 'calming'],
     sebum_control: ['유분', '피지', '번들', '모공', 'sebum', 'oily'],
     tone_up: ['톤업', '잡티', '톤 보정', '커버', 'tone', 'cover'],
     uv_protection: ['자외선', 'uv', 'sun'],
@@ -113,4 +114,3 @@ export const RECOMMENDATION_TAXONOMY = {
     bb: ['sunscreen', 'toner'],
   },
 };
-

@@ -18,6 +18,7 @@
 ## 3. 설계 원칙
 - 카테고리 잠금 우선: requested_category가 있으면 primary 후보는 해당 카테고리로 제한
 - 제형 잠금 우선: requested_form이 있거나 카테고리 기본 제형 정책이 있으면 main은 해당 form으로 제한
+- 메인 순도 보장: 메인 추천에는 프로모션/미니/기획형 상품을 포함하지 않음
 - fallback도 카테고리 유지: 조건 완화는 허용, 카테고리 이탈은 금지
 - cross-sell 분리: secondary에서만 노출
 - fast path 우선: 구조화된 retrieval/ranking을 기본으로 사용
@@ -53,6 +54,9 @@
 - `situation[]`
 - `preference[]`
 - `novelty_request`
+- `popularity_intent`
+- `price_intent`
+- `sensitivity_signal`
 - `sort_intent`
 - `query`
 
@@ -62,7 +66,7 @@
 - 기본: id, name, category_ids, price, image
 - 추천용: base_name, form, text, summary_description
 - 품질 신호: review_count, rating, sales_count, created_at_ms
-- 부가: attributes(concern_tags/line_tags/texture_tags), is_promo
+- 부가: attributes(concern_tags/line_tags/texture_tags), derived_attributes, feature_vector, is_promo
 
 ### 5.3 Primary Candidate Retrieval
 함수: `get_primary_candidates(products, parsedIntent)`  
@@ -76,13 +80,20 @@
 함수: `rank_primary_recommendations(candidates, parsedIntent, limit, categoryLocked)`
 - 1차 Fast Rank:
   - category gate
-  - condition score
+  - condition score (구조화 피처 + 텍스트 신호 혼합)
   - request-intent score(popular/new_arrival/condition_based)
   - quality score
+  - price_intent score
+  - reactive penalty (민감/따가움/안맞음)
   - promo penalty
 - 2차 Precise Rank (선택):
   - top-N에 대해 LLM rerank
   - 실패 시 fast rank 결과 사용
+
+### 5.4.1 Session Context 반영
+- 세션 키 단위 메모리(`reactive_signals`, `negative_preferences`)를 사용한다.
+- 같은 세션에서 `안 맞음/따가움/자극`이 누적되면 다음 추천에서 자동 페널티/보정이 적용된다.
+- 세션 컨텍스트는 24시간 TTL로 만료된다.
 
 ### 5.5 Secondary Recommendation
 함수: `get_secondary_recommendations(products, parsedIntent, mainItems, limit)`
@@ -111,6 +122,7 @@
 4. 그래도 결과 없을 때만 `secondary_only` 예외 반환
 
 중요: fallback 과정에서 category lock을 일반적으로 해제하지 않는다.
+중요: fallback에서도 프로모션/미니 상품을 메인으로 승격하지 않는다.
 
 ## 7. MCP 응답 계약
 `routes/mcp.js`는 `executeTool()`에서 추천 결과를 받아 다음을 보장한다.
@@ -152,10 +164,11 @@
   - `quality_score`
   - `intent_score`
   - `novelty_score`
+  - `price_intent_score`
   - `query_match_score`
   - `final_rank_reason`
 
 ## 10. 점진 개선 계획
 - Phase 1: taxonomy config 분리 + category lock 계측
-- Phase 2: attribute extraction 강화(offline enrichment 포함)
-- Phase 3: semantic retrieval/learned rank 확장
+- Phase 2: attribute extraction 강화 + session context 반영
+- Phase 3: semantic retrieval/learned rank 확장 + offline eval 자동화

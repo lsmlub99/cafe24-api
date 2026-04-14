@@ -143,6 +143,17 @@
 - `GET /debug/recommendation-metrics`
   - 반환: `total_requests`, `category_lock_violation_count`, `fallback_count`, `no_result_count`, `fallback_rate`, `no_result_rate`
 
+랭킹 디버그 로그:
+- `[Rank Debug]` 단위로 top 결과에 대해 아래 필드를 출력한다.
+  - `product`
+  - `form`
+  - `base_score`
+  - `condition_score`
+  - `quality_score`
+  - `intent_score`
+  - `novelty_score`
+  - `final_rank_reason`
+
 ## 10. 점진 개선 계획
 - Phase 1: taxonomy config 분리 + category lock 계측
 - Phase 2: attribute extraction 강화(offline enrichment 포함)

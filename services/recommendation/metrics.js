@@ -1,6 +1,7 @@
 const counters = {
   total_requests: 0,
   category_lock_violation_count: 0,
+  form_lock_violation_count: 0,
   fallback_count: 0,
   no_result_count: 0,
 };
@@ -16,6 +17,10 @@ export function trackRequest() {
 
 export function trackCategoryLockViolation() {
   counters.category_lock_violation_count += 1;
+}
+
+export function trackFormLockViolation() {
+  counters.form_lock_violation_count += 1;
 }
 
 export function trackFallback() {
@@ -38,7 +43,7 @@ export function getRecommendationMetrics() {
 export function resetRecommendationMetrics() {
   counters.total_requests = 0;
   counters.category_lock_violation_count = 0;
+  counters.form_lock_violation_count = 0;
   counters.fallback_count = 0;
   counters.no_result_count = 0;
 }
-

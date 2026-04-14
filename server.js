@@ -237,6 +237,7 @@ app.get('/debug/recommendation-metrics', (req, res) => {
     metrics: metrics || {
       total_requests: 0,
       category_lock_violation_count: 0,
+      form_lock_violation_count: 0,
       fallback_count: 0,
       no_result_count: 0,
       fallback_rate: 0,

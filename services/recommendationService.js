@@ -4,16 +4,18 @@ import { RECOMMENDATION_POLICY, RECOMMENDATION_TAXONOMY } from '../config/recomm
 import { parseUserIntent } from './recommendation/intentParser.js';
 import { normalizeCafe24Product } from './recommendation/productNormalizer.js';
 import {
-  calculateMainScore,
+  calculateMainScoreBreakdown,
   dedupeByBase,
   getSecondaryRecommendations as rankerSecondaryRecommendations,
   retrievePrimaryCandidates,
+  selectDiverseTopN,
 } from './recommendation/ranker.js';
 import { findFirstAliasKey, includesAny, parseJsonObject } from './recommendation/shared.js';
 import {
   getRecommendationMetrics,
   trackCategoryLockViolation,
   trackFallback,
+  trackFormLockViolation,
   trackNoResult,
   trackRequest,
 } from './recommendation/metrics.js';
@@ -253,14 +255,41 @@ export const recommendationService = {
     limit = RECOMMENDATION_POLICY.limits.defaultMain,
     categoryLocked = false
   ) {
+    const softContext = {
+      lineCounts: new Map(),
+      formCounts: new Map(),
+    };
+
     const scored = candidates
-      .map((p) => ({ ...p, _base_score: calculateMainScore(p, parsedIntent, categoryLocked, RECOMMENDATION_POLICY) }))
+      .map((p) => {
+        const breakdown = calculateMainScoreBreakdown(
+          p,
+          parsedIntent,
+          categoryLocked,
+          RECOMMENDATION_POLICY,
+          softContext
+        );
+        return {
+          ...p,
+          _score_breakdown: breakdown,
+          _base_score: breakdown.base_score,
+        };
+      })
       .sort((a, b) => b._base_score - a._base_score)
       .slice(0, RECOMMENDATION_POLICY.limits.stage1TopK);
 
     const deduped = dedupeByBase(scored).slice(0, RECOMMENDATION_POLICY.limits.stage2TopK);
     const reranked = await stage2Rerank(deduped, parsedIntent, RECOMMENDATION_POLICY);
-    return reranked.slice(0, Math.max(1, limit));
+    const finalSelected = selectDiverseTopN(reranked, Math.max(1, limit), RECOMMENDATION_POLICY);
+
+    finalSelected.forEach((item, idx) => {
+      const breakdown = item._score_breakdown || {};
+      logger.info(
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+      );
+    });
+
+    return finalSelected;
   },
 
   get_secondary_recommendations(
@@ -399,6 +428,7 @@ export const recommendationService = {
       );
     }
     if (hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
+      trackFormLockViolation();
       logger.warn(
         `[Policy] form lock violation detected requested_form=${parsed.requested_form || 'default'} allowed=${(
           allowed_main_forms || []
@@ -423,4 +453,3 @@ export const recommendationService = {
     );
   },
 };
-

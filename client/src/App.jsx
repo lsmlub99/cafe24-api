@@ -60,33 +60,42 @@ function normalizeWidgetData(raw) {
   const structured = findStructuredCandidate(raw);
   if (!structured) return null;
 
-  const recommendationsRaw = Array.isArray(structured.main_recommendations)
+  const mainRaw = Array.isArray(structured.main_recommendations)
     ? structured.main_recommendations
     : Array.isArray(structured.recommendations)
     ? structured.recommendations
     : Array.isArray(structured.items)
     ? structured.items
     : [];
-
-  const recommendations = recommendationsRaw.filter((item) => isObject(item) && (item.name || item.buy_url || item.image));
-  const promotions = Array.isArray(structured.promotions)
-    ? structured.promotions.filter((item) => isObject(item) && (item.name || item.buy_url))
-    : [];
-  const referenceRecommendations = Array.isArray(structured.secondary_recommendations)
-    ? structured.secondary_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
+  const secondaryRaw = Array.isArray(structured.secondary_recommendations)
+    ? structured.secondary_recommendations
     : Array.isArray(structured.reference_recommendations)
-    ? structured.reference_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
+    ? structured.reference_recommendations
     : [];
+  const promotionsRaw = Array.isArray(structured.promotions) ? structured.promotions : [];
   const summary = isObject(structured.summary) ? structured.summary : {};
 
+  const main = mainRaw.filter((item) => isObject(item) && (item.name || item.buy_url || item.image));
+  const secondary = secondaryRaw.filter((item) => isObject(item) && (item.name || item.buy_url));
+  const promotions = promotionsRaw.filter((item) => isObject(item) && (item.name || item.buy_url));
+
   return {
-    recommendations,
+    recommendations: main,
+    secondary_recommendations: secondary,
     promotions,
-    reference_recommendations: referenceRecommendations,
     summary,
     strategy: structured.strategy || summary.strategy || '',
     conclusion: structured.conclusion || summary.conclusion || '',
   };
+}
+
+function CardText({ label, text }) {
+  if (!text) return null;
+  return (
+    <div style={{ fontSize: '0.82rem', color: '#444', marginBottom: '8px', lineHeight: '1.55' }}>
+      <strong>{label}:</strong> {text}
+    </div>
+  );
 }
 
 function App() {
@@ -110,7 +119,7 @@ function App() {
         return;
       }
     } catch {
-      // fallback below
+      // fallback
     }
     window.open(href, '_blank', 'noopener,noreferrer');
   };
@@ -125,15 +134,15 @@ function App() {
       if (!nextData) return;
 
       const nextHasRecs = nextData.recommendations.length > 0;
-      const currentHasRecs = Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
+      const currentHasRecs =
+        Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
 
-      // Never overwrite a valid card state with a late empty payload.
       if (!nextHasRecs && currentHasRecs) return;
 
       const signature = JSON.stringify({
         names: nextData.recommendations.map((r) => r?.name || ''),
         promotions: nextData.promotions.map((p) => p?.name || ''),
-        references: nextData.reference_recommendations.map((p) => p?.name || ''),
+        secondary: nextData.secondary_recommendations.map((p) => p?.name || ''),
         message: nextData.summary?.message || '',
         strategy: nextData.strategy || '',
         conclusion: nextData.conclusion || '',
@@ -199,7 +208,6 @@ function App() {
         body: JSON.stringify({ query }),
       });
       const data = await response.json();
-
       setMessages((prev) => [
         ...prev,
         {
@@ -226,29 +234,42 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '16px',
+            overflowX: 'auto',
+            paddingBottom: '12px',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
           {widgetData.recommendations.map((product, idx) => (
             <div
               key={`${product.buy_url || product.name}-${idx}`}
-              style={{ minWidth: '220px', border: '1px solid #eee', borderRadius: '12px', padding: '12px', background: '#fff' }}
+              style={{
+                minWidth: '260px',
+                maxWidth: '300px',
+                border: '1px solid #eee',
+                borderRadius: '12px',
+                padding: '14px',
+                background: '#fff',
+              }}
             >
-              <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>
-                {idx === 0 ? '🥇 BEST' : `${idx + 1}위`}
+              <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>
+                {idx === 0 ? '🏅 BEST' : `${idx + 1}위`}
               </div>
-              <img src={product.image} alt={product.name} style={{ width: '100%', height: '140px', objectFit: 'contain', marginBottom: '12px' }} />
-              <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>{product.name}</div>
-              <div style={{ color: '#666', fontSize: '0.85rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
+              <img
+                src={product.image}
+                alt={product.name}
+                style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }}
+              />
+              <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
+              <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
 
-              {product.why_pick && (
-                <div style={{ fontSize: '0.78rem', color: '#444', marginBottom: '6px', lineHeight: '1.45' }}>
-                  <strong>추천 이유:</strong> {product.why_pick}
-                </div>
-              )}
-              {product.usage_tip && (
-                <div style={{ fontSize: '0.78rem', color: '#555', marginBottom: '10px', lineHeight: '1.45' }}>
-                  <strong>사용 팁:</strong> {product.usage_tip}
-                </div>
-              )}
+              <div style={{ minHeight: '124px' }}>
+                <CardText label="추천 이유" text={product.why_pick || product.key_point} />
+                <CardText label="사용 팁" text={product.usage_tip} />
+              </div>
 
               <button
                 type="button"
@@ -261,7 +282,7 @@ function App() {
                   color: '#fff',
                   padding: '10px',
                   borderRadius: '8px',
-                  fontSize: '0.85rem',
+                  fontSize: '0.9rem',
                   border: 'none',
                   cursor: 'pointer',
                   fontWeight: 'bold',
@@ -275,13 +296,21 @@ function App() {
 
         {widgetData.promotions.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>현재 행사 상품도 진행 중이에요</div>
+            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>현재 행사도 함께 진행 중이에요</div>
             {widgetData.promotions.map((product, idx) => (
-              <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
+              <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.84rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}
-                  style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
+                  style={{
+                    color: '#444',
+                    textDecoration: 'underline',
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
                 >
                   {product.name}
                 </button>
@@ -291,15 +320,23 @@ function App() {
           </div>
         )}
 
-        {widgetData.reference_recommendations.length > 0 && (
+        {widgetData.secondary_recommendations.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
             <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>참고용 추천 (다른 제형)</div>
-            {widgetData.reference_recommendations.map((product, idx) => (
-              <div key={`${product.buy_url || product.name}-ref-${idx}`} style={{ fontSize: '0.82rem', marginBottom: '6px', color: '#444' }}>
+            {widgetData.secondary_recommendations.map((product, idx) => (
+              <div key={`${product.buy_url || product.name}-ref-${idx}`} style={{ fontSize: '0.84rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}
-                  style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
+                  style={{
+                    color: '#444',
+                    textDecoration: 'underline',
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
                 >
                   {product.name}
                 </button>
@@ -310,7 +347,16 @@ function App() {
         )}
 
         {widgetData.conclusion && (
-          <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#444', fontStyle: 'italic', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+          <div
+            style={{
+              marginTop: '16px',
+              fontSize: '0.86rem',
+              color: '#444',
+              fontStyle: 'italic',
+              borderTop: '1px solid #eee',
+              paddingTop: '12px',
+            }}
+          >
             {widgetData.conclusion}
           </div>
         )}
@@ -319,6 +365,14 @@ function App() {
   }
 
   if (isWidgetMode) {
+    if (widgetData) {
+      return (
+        <div style={{ padding: '20px', color: '#555' }}>
+          <h4 style={{ color: '#B31312', marginBottom: '10px' }}>추천 결과</h4>
+          <div>{widgetData.summary?.message || '조건에 맞는 결과를 찾지 못했어요.'}</div>
+        </div>
+      );
+    }
     return (
       <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
         <Sparkles size={24} style={{ marginBottom: '10px', opacity: 0.5 }} />
@@ -344,7 +398,7 @@ function App() {
               <div className="carousel-container">
                 {msg.products.map((product, idx) => (
                   <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url)}>
-                    <div className="rank-badge">{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
+                    <div className="rank-badge">{idx === 0 ? '🏅 BEST' : `${idx + 1}위`}</div>
                     <img src={product.image} alt={product.name} className="product-img" />
                     <div className="product-name">{product.name}</div>
                     <div className="product-price">{product.price ? `${product.price}원` : ''}</div>
@@ -358,7 +412,7 @@ function App() {
           </div>
         ))}
 
-        {isLoading && <div className="message-bubble message-bot">분석 중..</div>}
+        {isLoading && <div className="message-bubble message-bot">분석 중...</div>}
         <div ref={messagesEndRef} />
       </main>
 
@@ -380,3 +434,4 @@ function App() {
 }
 
 export default App;
+

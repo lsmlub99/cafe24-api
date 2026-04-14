@@ -66,34 +66,35 @@ function buildDetail(product, parsedIntent) {
   const tips = [];
   const source = `${product.name} ${product.text}`;
 
-  if (parsedIntent.skin_type === 'dry') reasons.push('건성 기준으로 당김 부담을 줄이고 보습감 유지에 유리한 후보예요.');
-  if (parsedIntent.skin_type === 'oily' || parsedIntent.skin_type === 'combination')
-    reasons.push('지성/수부지 기준으로 유분 부담이 덜한 사용감 신호가 확인돼요.');
-  if (parsedIntent.skin_type === 'sensitive') reasons.push('민감 피부 기준으로 저자극·진정 관련 신호가 잘 맞는 후보예요.');
+  if (parsedIntent.skin_type === 'dry') reasons.push('건성 기준에서 당김 부담을 줄이는 보습/수분 신호가 확인됩니다.');
+  if (parsedIntent.skin_type === 'oily' || parsedIntent.skin_type === 'combination') {
+    reasons.push('지성/수부지 기준에서 유분 부담이 덜한 사용감 신호가 확인됩니다.');
+  }
+  if (parsedIntent.skin_type === 'sensitive') reasons.push('민감 피부 관점에서 저자극/진정 관련 신호가 상대적으로 잘 맞습니다.');
 
-  if ((parsedIntent.concern || []).includes('sebum_control')) reasons.push('유분/번들거림 고민 조건과의 일치도가 높아요.');
-  if ((parsedIntent.concern || []).includes('hydration')) reasons.push('보습/수분 니즈를 반영한 제품으로 매칭됐어요.');
-  if ((parsedIntent.concern || []).includes('soothing')) reasons.push('민감/진정 조건 신호와의 적합도가 높아요.');
-  if ((parsedIntent.concern || []).includes('tone_up')) reasons.push('톤/잡티 보정 니즈를 함께 충족하기 좋은 타입이에요.');
+  if ((parsedIntent.concern || []).includes('sebum_control')) reasons.push('유분/번들거림 고민 조건과의 일치도가 높습니다.');
+  if ((parsedIntent.concern || []).includes('hydration')) reasons.push('보습/수분 중심 조건을 함께 반영한 후보입니다.');
+  if ((parsedIntent.concern || []).includes('soothing')) reasons.push('민감/진정 조건과 맞는 신호가 확인됩니다.');
+  if ((parsedIntent.concern || []).includes('tone_up')) reasons.push('톤/잡티 보정 니즈를 함께 충족하기 좋은 타입입니다.');
 
   if ((parsedIntent.situation || []).includes('makeup_before')) {
-    tips.push('메이크업 전에는 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.');
+    tips.push('메이크업 전에는 소량씩 2~3회 레이어링하면 밀림을 줄이기 좋습니다.');
   }
   if ((parsedIntent.situation || []).includes('outdoor')) {
-    tips.push('야외 활동 시 2~3시간 간격으로 덧바르면 차단력을 안정적으로 유지할 수 있어요.');
+    tips.push('야외 활동 시 2~3시간 간격 재도포로 차단력을 안정적으로 유지해 주세요.');
   }
-  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 레이어링하면 밀착감이 좋아요.');
+  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아집니다.');
 
   if (!reasons.length) {
-    if (includesAny(source, ['가벼', '산뜻', '보송'])) reasons.push('가벼운 사용감 신호가 높아 데일리로 쓰기 편한 후보예요.');
-    else if (includesAny(source, ['보습', '수분', '촉촉'])) reasons.push('보습/수분 중심 사용감 신호가 확인돼요.');
-    else reasons.push('요청 조건과의 종합 점수가 높은 후보예요.');
+    if (includesAny(source, ['가벼', '산뜻', '보송'])) reasons.push('가벼운 사용감 신호가 있어 데일리 사용에 무난한 후보입니다.');
+    else if (includesAny(source, ['보습', '수분', '촉촉'])) reasons.push('보습/수분 중심 사용감 신호가 확인됩니다.');
+    else reasons.push('요청 조건과의 종합 일치도가 높은 후보입니다.');
   }
 
   return {
     why_pick: reasons.slice(0, 2).join(' '),
     usage_tip: tips[0],
-    caution: '외출 시간이 길면 2~3시간 간격으로 재도포해 주세요.',
+    caution: '야외 노출 시간이 길면 2~3시간 간격 재도포를 권장합니다.',
   };
 }
 
@@ -109,10 +110,21 @@ function toRecommendationItem(product, idx, parsedIntent) {
     category_ids: Array.isArray(product.category_ids) ? product.category_ids : [],
     price: product.price,
     key_point: details.why_pick,
-    why_pick: details.why_pick,
-    usage_tip: details.usage_tip,
+    why_pick: details.why_pick || '요청 조건과의 일치도가 높은 후보입니다.',
+    usage_tip: details.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아집니다.',
     caution: details.caution,
     is_promo: !!product.is_promo,
+    buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,
+    image: product.image,
+  };
+}
+
+function toPromotionItem(product) {
+  return {
+    name: product.name,
+    base_name: product.base_name,
+    form: product.form,
+    price: product.price,
     buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,
     image: product.image,
   };
@@ -175,7 +187,15 @@ async function stage2Rerank(candidates, parsedIntent, policy) {
   }
 }
 
-function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, categoryLocked, formLocked, allowedMainForms) {
+function buildMcpRecommendationResponse(
+  parsedIntent,
+  mainRecs,
+  secondaryRecs,
+  promotions,
+  categoryLocked,
+  formLocked,
+  allowedMainForms
+) {
   const sortMode = parsedIntent.sort_intent || 'popular';
   const summaryMessage = mainRecs.length ? '고객님을 위한 최적 상품입니다.' : '조건에 맞는 결과가 없습니다.';
   const summaryConclusion = mainRecs.length
@@ -198,14 +218,14 @@ function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, c
     // Backward compatibility
     recommendations: mainRecs,
     reference_recommendations: secondaryRecs,
-    promotions: [],
+    promotions: promotions || [],
     summary: {
       message: summaryMessage,
       strategy:
         sortMode === 'new_arrival'
           ? '요청 카테고리 내에서 신제품 우선 정책으로 정렬했습니다.'
           : sortMode === 'popular'
-          ? '요청 카테고리 내 인기/품질 신호 기준으로 우선 정렬했습니다.'
+          ? '요청 카테고리 내 인기/품질 신호를 우선 반영해 정렬했습니다.'
           : '요청 카테고리 내 조건 적합도를 우선 반영해 정렬했습니다.',
       conclusion: summaryConclusion,
     },
@@ -214,9 +234,7 @@ function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, c
 
 function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLocked) {
   if (!categoryLocked || !parsedIntent.requested_category || !Array.isArray(mainRecommendations)) return false;
-  const requestedIds = (parsedIntent.requested_category_ids || [])
-    .map((n) => Number(n))
-    .filter((n) => Number.isFinite(n));
+  const requestedIds = (parsedIntent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
 
   if (requestedIds.length > 0) {
     return mainRecommendations.some((item) => {
@@ -230,6 +248,26 @@ function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLoc
 function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked) {
   if (!formLocked || !Array.isArray(allowedMainForms) || !allowedMainForms.length) return false;
   return mainRecommendations.some((item) => item?.form && !allowedMainForms.includes(item.form));
+}
+
+function categoryMatches(item, parsedIntent) {
+  const requestedIds = (parsedIntent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  if (requestedIds.length > 0) {
+    return (item.category_ids || []).some((id) => requestedIds.includes(Number(id)));
+  }
+  return item.category_key === parsedIntent.requested_category;
+}
+
+function collectPromotions(normalizedProducts, parsedIntent, mainRecommendations, maxCount = 4) {
+  const usedBase = new Set((mainRecommendations || []).map((item) => item.base_name));
+
+  const promos = normalizedProducts
+    .filter((p) => p.is_promo)
+    .filter((p) => !usedBase.has(p.base_name))
+    .filter((p) => !parsedIntent.requested_category || categoryMatches(p, parsedIntent))
+    .sort((a, b) => b.price_value - a.price_value);
+
+  return dedupeByBase(promos).slice(0, maxCount).map(toPromotionItem);
 }
 
 export const recommendationService = {
@@ -262,13 +300,7 @@ export const recommendationService = {
 
     const scored = candidates
       .map((p) => {
-        const breakdown = calculateMainScoreBreakdown(
-          p,
-          parsedIntent,
-          categoryLocked,
-          RECOMMENDATION_POLICY,
-          softContext
-        );
+        const breakdown = calculateMainScoreBreakdown(p, parsedIntent, categoryLocked, RECOMMENDATION_POLICY, softContext);
         return {
           ...p,
           _score_breakdown: breakdown,
@@ -316,6 +348,7 @@ export const recommendationService = {
     parsedIntent,
     mainRecs = [],
     secondaryRecs = [],
+    promotions = [],
     categoryLocked = false,
     formLocked = false,
     allowedMainForms = []
@@ -324,6 +357,7 @@ export const recommendationService = {
       parsedIntent,
       mainRecs,
       secondaryRecs,
+      promotions,
       categoryLocked,
       formLocked,
       allowedMainForms
@@ -358,24 +392,21 @@ export const recommendationService = {
     });
     const parsed = this.parse_user_request(args);
 
-    // Strict pass: category + default/explicit form lock
-    let primary = this.get_primary_candidates(normalized, parsed, { relaxForm: false });
+    let primary = this.get_primary_candidates(normalized, parsed, { relaxForm: false, includePromo: false });
     let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
 
     let usedFallback = false;
     let ranked = await this.rank_primary_recommendations(candidates, parsed, limit, category_locked);
 
-    // Fallback 1: keep category/form lock, relax condition filters only.
     if (!ranked.length && category_locked) {
       usedFallback = true;
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       ranked = await this.rank_primary_recommendations(candidates, relaxed, limit, category_locked);
     }
 
-    // Fallback 2: keep category lock, relax form lock within same category.
     if (!ranked.length && category_locked) {
       usedFallback = true;
-      primary = this.get_primary_candidates(normalized, parsed, { relaxForm: true });
+      primary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
       candidates = primary.candidates;
       category_locked = primary.category_locked;
       form_locked = primary.form_locked;
@@ -384,8 +415,8 @@ export const recommendationService = {
     }
 
     const mainRecommendations = ranked.map((p, idx) => toRecommendationItem(p, idx, parsed));
+    const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
 
-    // Fallback 3: no main candidates under category lock -> explicit secondary only.
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
       trackNoResult();
@@ -411,11 +442,11 @@ export const recommendationService = {
         },
         recommendations: [],
         reference_recommendations: secondaryOnly,
-        promotions: [],
+        promotions,
         summary: {
-          message: '요청 카테고리 상품이 부족해 참고용 유사 카테고리만 제안드려요.',
-          strategy: '카테고리 잠금 정책을 유지한 상태에서 예외 fallback이 적용되었습니다.',
-          conclusion: '요청 카테고리 재고/매칭이 부족했습니다.',
+          message: '요청 카테고리 상품이 부족해 참고용 후보를 먼저 안내드렸습니다.',
+          strategy: '카테고리 잠금 정책을 유지한 상태에서 fallback이 적용되었습니다.',
+          conclusion: '요청 카테고리 내 매칭 가능한 본품 후보가 충분하지 않았습니다.',
         },
       };
     }
@@ -451,9 +482,11 @@ export const recommendationService = {
       parsed,
       mainRecommendations,
       secondary,
+      promotions,
       category_locked,
       form_locked,
       allowed_main_forms
     );
   },
 };
+

@@ -14,20 +14,17 @@ export function detectProductForm(nameText = '', fullText = '', taxonomy) {
   const nameSource = lower(nameText);
   const textSource = lower(fullText);
 
-  // Form-specific terms should win over broad category words.
   const priority = ['spray', 'stick', 'cushion', 'serum', 'lotion', 'cream', 'toner', 'mist'];
   for (const form of priority) {
     const aliases = taxonomy.forms?.[form] || [];
     if (aliases.some((a) => a && nameSource.includes(lower(a)))) return form;
   }
 
-  // Fallback on body text with conservative matching to reduce over-classification.
   for (const form of priority) {
     const aliases = taxonomy.forms?.[form] || [];
     const longAliases = aliases.filter((a) => String(a || '').length >= 2);
     if (longAliases.some((a) => a && textSource.includes(lower(a)))) return form;
   }
-
   return 'other';
 }
 
@@ -40,7 +37,7 @@ function pickSignals(source = '', groups = {}) {
   return out;
 }
 
-export function extractProductAttributes(raw = {}, name = '', text = '') {
+export function extractProductAttributes(raw = {}, name = '') {
   const signalSource = lower(
     [
       name,
@@ -69,7 +66,7 @@ export function extractProductAttributes(raw = {}, name = '', text = '') {
   const useCaseSignals = pickSignals(signalSource, {
     outdoor: ['야외', '러닝', '운동', '골프', '등산', '재도포'],
     daily: ['데일리', '매일', 'daily'],
-    reapply_friendly: ['재도포', '덧바름', '휴대', 'portable'],
+    reapply_friendly: ['재도포', '덧바르', '휴대', 'portable'],
   });
 
   const lineTags = Array.isArray(raw.attributes?.line_tags) ? raw.attributes.line_tags : [];
@@ -82,14 +79,13 @@ export function extractProductAttributes(raw = {}, name = '', text = '') {
   const lineKey = lineTags[0] ? lower(String(lineTags[0]).trim()) : lower(nameLineGuess);
 
   const concernSignals = pickSignals(signalSource, {
-    hydration: ['보습', '수분', '촉촉', '아쿠아', 'hydra', 'moist'],
-    soothing: ['진정', '카밍', '시카', '민감', '패리어', 'calming', 'cica'],
+    hydration: ['보습', '수분', '촉촉', '수분감', 'hydra', 'moist'],
+    soothing: ['진정', '카밍', '시카', '민감', '배리어', 'calming', 'cica'],
     sebum_control: ['유분', '피지', '번들', '보송', '모공', '포어', 'pore', 'sebum'],
-    tone_up: ['톤업', '잡티', '토닝', '커버', 'tone', 'cover'],
+    tone_up: ['톤업', '잡티', '톤정리', '커버', 'tone', 'cover'],
     uv_protection: ['자외선', 'uv', 'sun', 'spf', 'pa++++'],
   });
 
-  // Lightweight inference from form itself.
   if (signalSource.includes('스프레이') || signalSource.includes('spray') || signalSource.includes('미스트')) {
     useCaseSignals.push('reapply_friendly');
     textureSignals.push('lightweight');
@@ -99,10 +95,10 @@ export function extractProductAttributes(raw = {}, name = '', text = '') {
   }
 
   return {
-    texture_signals: textureSignals,
-    finish_signals: finishSignals,
-    use_case_signals: useCaseSignals,
-    concern_signals: concernSignals,
+    texture_signals: [...new Set(textureSignals)],
+    finish_signals: [...new Set(finishSignals)],
+    use_case_signals: [...new Set(useCaseSignals)],
+    concern_signals: [...new Set(concernSignals)],
     line_key: lineKey || '',
   };
 }
@@ -126,7 +122,7 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
   const concernTags = Array.isArray(raw.attributes?.concern_tags) ? raw.attributes.concern_tags : [];
   const lineTags = Array.isArray(raw.attributes?.line_tags) ? raw.attributes.line_tags : [];
   const textureTags = Array.isArray(raw.attributes?.texture_tags) ? raw.attributes.texture_tags : [];
-  const derivedAttrs = extractProductAttributes(raw, name, text);
+  const derivedAttrs = extractProductAttributes(raw, name);
 
   return {
     id: String(raw.product_no || raw.product_id || raw.id || ''),
@@ -150,3 +146,4 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
     image,
   };
 }
+

@@ -113,3 +113,4 @@ export const RECOMMENDATION_TAXONOMY = {
     bb: ['sunscreen', 'toner'],
   },
 };
+

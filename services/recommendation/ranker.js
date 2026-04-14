@@ -14,9 +14,7 @@ function mapIntentSignals(intent = {}) {
     texture.add('lightweight');
     texture.add('low_oily');
   }
-  if (intent.skin_type === 'sensitive') {
-    concerns.add('soothing');
-  }
+  if (intent.skin_type === 'sensitive') concerns.add('soothing');
 
   if (concerns.has('hydration')) texture.add('moisturizing');
   if (concerns.has('sebum_control')) {
@@ -54,12 +52,13 @@ export function getQualityScore(product, policy) {
   const review = Math.min(policy.scoring.reviewCap, Math.log10((product.review_count || 0) + 1) * 10);
   const rating = Math.min(policy.scoring.ratingCap, Math.max(0, (product.rating || 0) * 4));
   const sales = Math.min(policy.scoring.salesCap, Math.log10((product.sales_count || 0) + 1) * 10);
-  const bestTag = includesAny(`${product.name} ${product.text}`, ['best', '베스트', '인기', 'best seller']) ? policy.scoring.bestTagBonus : 0;
+  const bestTag = includesAny(`${product.name} ${product.text}`, ['best', '베스트', '인기', 'best seller'])
+    ? policy.scoring.bestTagBonus
+    : 0;
 
   const direct = review + rating + sales + bestTag;
   if (direct > 0) return direct;
 
-  // Fallback quality proxy when commerce signals are missing from source payload.
   const textLen = String(product.text || '').length;
   const richness = Math.min(12, Math.floor(textLen / 120));
   const hasImage = product.image ? 2 : 0;
@@ -92,7 +91,7 @@ function scoreByKeywordHints(product, intentSignals) {
     low_white_cast: ['백탁 적', '무백탁', 'white cast'],
     makeup_friendly: ['메이크업', '밀림 적', '궁합'],
     outdoor: ['야외', '골프', '러닝', '운동'],
-    reapply_friendly: ['재도포', '덧바름', '휴대'],
+    reapply_friendly: ['재도포', '덧바르', '휴대'],
     daily: ['데일리', '매일'],
   };
 
@@ -154,7 +153,7 @@ export function getRequestIntentScore(product, intent, policy, conditionScore = 
   return getQualityScore(product, policy) * 0.6;
 }
 
-function getFormMismatchPenalty(product, intent, allowedMainForms, policy) {
+function getFormMismatchPenalty(product, allowedMainForms, policy) {
   if (!Array.isArray(allowedMainForms) || !allowedMainForms.length) return 0;
   if (!product?.form) return policy.scoring.formMismatchPenalty;
   return allowedMainForms.includes(product.form) ? 0 : policy.scoring.formMismatchPenalty;
@@ -179,7 +178,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const conditionPriorityBonus =
     hasConditionSignal && condition >= policy.scoring.conditionStrongMatchThreshold ? policy.scoring.conditionPriorityBonus : 0;
 
-  const formMismatchPenalty = getFormMismatchPenalty(product, intent, intent.allowed_main_forms || [], policy);
+  const formMismatchPenalty = getFormMismatchPenalty(product, intent.allowed_main_forms || [], policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
   const queryMatch = getQueryMatchScore(product, intent);
 
@@ -195,7 +194,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     formMismatchPenalty -
     diversityPenalty;
 
-  const final_rank_reason = hasConditionSignal
+  const finalRankReason = hasConditionSignal
     ? `condition_priority(${condition.toFixed(1)}) over quality(${quality.toFixed(1)})`
     : `popular_quality(${quality.toFixed(1)})`;
 
@@ -211,12 +210,8 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     condition_priority_bonus: conditionPriorityBonus,
     form_mismatch_penalty: formMismatchPenalty,
     diversity_penalty: Number(diversityPenalty.toFixed(3)),
-    final_rank_reason,
+    final_rank_reason: finalRankReason,
   };
-}
-
-export function calculateMainScore(product, intent, categoryLocked, policy, context = null) {
-  return calculateMainScoreBreakdown(product, intent, categoryLocked, policy, context).base_score;
 }
 
 export function dedupeByBase(products = []) {
@@ -234,10 +229,7 @@ function resolveAllowedMainForms(intent = {}, policy = {}) {
   if (Array.isArray(intent.allowed_main_forms) && intent.allowed_main_forms.length > 0) return intent.allowed_main_forms;
   if (!intent?.requested_category) return [];
   const formPolicy = policy.formPolicy || {};
-
-  if (formPolicy.strictOnExplicitForm && intent.explicit_form_request && intent.requested_form) {
-    return [intent.requested_form];
-  }
+  if (formPolicy.strictOnExplicitForm && intent.explicit_form_request && intent.requested_form) return [intent.requested_form];
   return formPolicy.defaultMainFormsByCategory?.[intent.requested_category] || [];
 }
 
@@ -249,9 +241,7 @@ function resolveRelaxedForms(intent = {}, policy = {}) {
 function filterByCategory(products, intent, taxonomy) {
   const requestedIds = (intent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
 
-  if (!intent.requested_category && requestedIds.length === 0) {
-    return { pool: products, category_locked: false };
-  }
+  if (!intent.requested_category && requestedIds.length === 0) return { pool: products, category_locked: false };
 
   let pool = products;
   if (requestedIds.length > 0) {
@@ -264,19 +254,24 @@ function filterByCategory(products, intent, taxonomy) {
 }
 
 export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy, policy, options = {}) {
-  const { relaxForm = false } = options;
+  const { relaxForm = false, includePromo = false } = options;
   const { pool, category_locked } = filterByCategory(products, intent, taxonomy);
 
+  let workingPool = pool;
+  if (!includePromo) {
+    workingPool = workingPool.filter((p) => !p.is_promo);
+  }
+
   if (!category_locked) {
-    return { candidates: pool, category_locked: false, form_locked: false, allowed_main_forms: [] };
+    return { candidates: workingPool, category_locked: false, form_locked: false, allowed_main_forms: [] };
   }
 
   const allowedMainForms = relaxForm ? resolveRelaxedForms(intent, policy) : resolveAllowedMainForms(intent, policy);
   if (!Array.isArray(allowedMainForms) || !allowedMainForms.length) {
-    return { candidates: pool, category_locked: true, form_locked: false, allowed_main_forms: [] };
+    return { candidates: workingPool, category_locked: true, form_locked: false, allowed_main_forms: [] };
   }
 
-  const formFiltered = pool.filter((p) => allowedMainForms.includes(p.form));
+  const formFiltered = workingPool.filter((p) => allowedMainForms.includes(p.form));
   return {
     candidates: formFiltered,
     category_locked: true,
@@ -319,7 +314,6 @@ export function selectDiverseTopN(candidates = [], limit = 3, policy = {}) {
       selected.push(item);
     }
   }
-
   return selected;
 }
 
@@ -362,3 +356,4 @@ export function getSecondaryRecommendations(allProducts, intent, mainItems, taxo
 
   return dedupeByBase([...sameCategoryDifferentForms, ...crossCategory]).slice(0, policy.limits.defaultSecondary);
 }
+

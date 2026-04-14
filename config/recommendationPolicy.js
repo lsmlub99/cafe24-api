@@ -4,6 +4,7 @@ export const RECOMMENDATION_POLICY = {
     defaultSecondary: 2,
     stage1TopK: 60,
     stage2TopK: 15,
+    sameCategorySecondaryMax: 2,
   },
   rerank: {
     llmWeight: 0.45,
@@ -19,14 +20,33 @@ export const RECOMMENDATION_POLICY = {
     conditionHitWeight: 6,
     conditionCap: 48,
   },
+  formPolicy: {
+    strictOnExplicitForm: true,
+    defaultMainFormsByCategory: {
+      sunscreen: ['cream', 'lotion'],
+      toner: ['toner'],
+      serum: ['serum'],
+      cream: ['cream', 'lotion'],
+      cushion: ['cushion'],
+      bb: ['cream', 'cushion'],
+    },
+    relaxedMainFormsByCategory: {
+      sunscreen: ['cream', 'lotion', 'serum', 'stick', 'spray', 'cushion'],
+      toner: ['toner', 'mist'],
+      serum: ['serum', 'cream'],
+      cream: ['cream', 'lotion', 'serum'],
+      cushion: ['cushion', 'cream'],
+      bb: ['cream', 'cushion'],
+    },
+  },
 };
 
 export const RECOMMENDATION_TAXONOMY = {
   categories: {
-    sunscreen: ['선크림', '썬크림', '선케어', 'sun', 'sunscreen', 'uv', '자외선'],
+    sunscreen: ['선케어', '선크림', '썬크림', '선스틱', '선스프레이', '선세럼', 'sunscreen', 'sun'],
     toner: ['토너', '스킨', 'toner'],
     serum: ['세럼', '앰플', 'serum', 'ampoule'],
-    cream: ['크림', '수분크림', '보습크림', '로션', 'cream', 'lotion'],
+    cream: ['크림', '로션', '수분크림', '보습크림', 'cream', 'lotion'],
     cushion: ['쿠션', 'cushion'],
     bb: ['비비', '비비크림', 'bb'],
     cleansing: ['클렌징', '세안', 'cleansing'],
@@ -34,28 +54,30 @@ export const RECOMMENDATION_TAXONOMY = {
     inner: ['이너뷰티', 'inner'],
   },
   forms: {
-    cream: ['선크림', '썬크림', '크림', 'cream', 'sunscreen', 'sun cream'],
-    lotion: ['로션', 'lotion', 'sun lotion'],
-    cushion: ['쿠션', 'cushion', 'sun cushion'],
-    serum: ['세럼', '앰플', 'serum', 'ampoule', 'sun serum'],
-    spray: ['스프레이', '미스트', 'spray', 'mist', 'sun spray'],
-    stick: ['스틱', '스틱밤', 'stick', 'stick balm', 'sun stick'],
+    cream: ['크림', '선크림', '썬크림', 'sun cream', 'sunscreen', 'cream'],
+    lotion: ['로션', '선로션', 'sun lotion', 'lotion'],
+    serum: ['세럼', '선세럼', '앰플', 'sun serum', 'serum', 'ampoule'],
+    stick: ['스틱', '선스틱', '스틱밤', 'sun stick', 'stick'],
+    spray: ['스프레이', '선스프레이', '미스트', 'sun spray', 'spray', 'mist'],
+    cushion: ['쿠션', '선쿠션', 'sun cushion', 'cushion'],
+    toner: ['토너', '스킨', 'toner'],
+    mist: ['미스트', 'mist'],
   },
   skinTypes: {
     dry: ['건성', 'dry'],
     oily: ['지성', 'oily'],
-    combination: ['복합성', '수부지', 'combination'],
+    combination: ['수부지', '복합성', 'combination'],
     sensitive: ['민감', '민감성', 'sensitive'],
   },
   concerns: {
-    hydration: ['보습', '수분', '건조', '당김', 'moist', 'hydration'],
-    soothing: ['진정', '민감', '붉은기', '열감', 'soothing', 'calming'],
-    sebum_control: ['유분', '번들', '피지', '모공', 'sebum', 'oily'],
+    hydration: ['보습', '수분', '건조', '당김', 'hydration', 'moist'],
+    soothing: ['진정', '붉은기', '열감', '민감', 'soothing', 'calming'],
+    sebum_control: ['유분', '피지', '번들', '모공', 'sebum', 'oily'],
     tone_up: ['톤업', '잡티', '톤 보정', '커버', 'tone', 'cover'],
     uv_protection: ['자외선', 'uv', 'sun'],
   },
   situations: {
-    outdoor: ['야외', '골프', '등산', '운동', '러닝', 'outside', 'outdoor'],
+    outdoor: ['야외', '골프', '등산', '운동', '러닝', 'outdoor'],
     makeup_before: ['메이크업 전', '화장 전', '밀림', '궁합', 'makeup'],
     daily: ['데일리', '매일', 'daily'],
   },
@@ -75,3 +97,4 @@ export const RECOMMENDATION_TAXONOMY = {
     bb: ['sunscreen', 'toner'],
   },
 };
+

@@ -85,43 +85,112 @@ export function dedupeByBase(products = []) {
   return out;
 }
 
-export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy) {
-  const requestedIds = (intent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
+function resolveAllowedMainForms(intent = {}, policy = {}) {
+  if (Array.isArray(intent.allowed_main_forms) && intent.allowed_main_forms.length > 0) {
+    return intent.allowed_main_forms;
+  }
+  if (!intent?.requested_category) return [];
+  const formPolicy = policy.formPolicy || {};
+
+  if (formPolicy.strictOnExplicitForm && intent.explicit_form_request && intent.requested_form) {
+    return [intent.requested_form];
+  }
+
+  return formPolicy.defaultMainFormsByCategory?.[intent.requested_category] || [];
+}
+
+function resolveRelaxedForms(intent = {}, policy = {}) {
+  if (!intent?.requested_category) return [];
+  return policy.formPolicy?.relaxedMainFormsByCategory?.[intent.requested_category] || [];
+}
+
+function filterByCategory(products, intent, taxonomy) {
+  const requestedIds = (intent.requested_category_ids || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
 
   if (!intent.requested_category && requestedIds.length === 0) {
-    return { candidates: products, category_locked: false };
+    return { pool: products, category_locked: false };
   }
 
   let pool = products;
   if (requestedIds.length > 0) {
-    pool = pool.filter((p) => (p.category_ids || []).some((id) => requestedIds.includes(id)));
+    pool = pool.filter((p) => (p.category_ids || []).some((id) => requestedIds.includes(Number(id))));
   } else if (intent.requested_category) {
     const aliases = taxonomy.categories[intent.requested_category] || [];
     pool = pool.filter((p) => includesAny(`${p.name} ${p.text}`, aliases));
   }
 
-  return { candidates: pool, category_locked: true };
+  return { pool, category_locked: true };
+}
+
+export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy, policy, options = {}) {
+  const { relaxForm = false } = options;
+  const { pool, category_locked } = filterByCategory(products, intent, taxonomy);
+
+  if (!category_locked) {
+    return { candidates: pool, category_locked: false, form_locked: false, allowed_main_forms: [] };
+  }
+
+  const allowedMainForms = relaxForm ? resolveRelaxedForms(intent, policy) : resolveAllowedMainForms(intent, policy);
+  if (!Array.isArray(allowedMainForms) || !allowedMainForms.length) {
+    return { candidates: pool, category_locked: true, form_locked: false, allowed_main_forms: [] };
+  }
+
+  const formFiltered = pool.filter((p) => allowedMainForms.includes(p.form));
+  return {
+    candidates: formFiltered,
+    category_locked: true,
+    form_locked: true,
+    allowed_main_forms: allowedMainForms,
+  };
+}
+
+function categoryMatch(item, intent) {
+  const requestedIds = (intent.requested_category_ids || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  if (requestedIds.length > 0) {
+    return (item.category_ids || []).some((id) => requestedIds.includes(Number(id)));
+  }
+  return item.category_key === intent.requested_category;
 }
 
 export function getSecondaryRecommendations(allProducts, intent, mainItems, taxonomy, policy) {
   if (!intent.requested_category) return [];
-  const wanted = taxonomy.crossSellCategory[intent.requested_category] || [];
-  if (!wanted.length) return [];
 
   const mainBaseSet = new Set((mainItems || []).map((x) => x.base_name));
-  const scored = allProducts
+  const requestedIds = (intent.requested_category_ids || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  const allowedMainForms = resolveAllowedMainForms(intent, policy);
+
+  const sameCategoryDifferentForms = allProducts
     .filter((p) => !mainBaseSet.has(p.base_name))
-    .map((p) => {
-      const pseudoCategory = findFirstAliasKey(`${p.name} ${p.text}`, taxonomy.categories);
-      if (!wanted.includes(pseudoCategory)) return null;
-      return {
-        ...p,
-        _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy),
-      };
-    })
-    .filter(Boolean)
+    .filter((p) => categoryMatch(p, intent))
+    .filter((p) => !allowedMainForms.includes(p.form))
+    .map((p) => ({
+      ...p,
+      _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy) + 8,
+    }))
     .sort((a, b) => b._secondary_score - a._secondary_score);
 
-  return dedupeByBase(scored).slice(0, policy.limits.defaultSecondary);
-}
+  const crossSellCategories = taxonomy.crossSellCategory[intent.requested_category] || [];
+  const crossCategory = allProducts
+    .filter((p) => !mainBaseSet.has(p.base_name))
+    .filter((p) => {
+      if (requestedIds.length > 0 && (p.category_ids || []).some((id) => requestedIds.includes(Number(id)))) {
+        return false;
+      }
+      const pseudoCategory = p.category_key || findFirstAliasKey(`${p.name} ${p.text}`, taxonomy.categories);
+      return crossSellCategories.includes(pseudoCategory);
+    })
+    .map((p) => ({
+      ...p,
+      _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy),
+    }))
+    .sort((a, b) => b._secondary_score - a._secondary_score);
 
+  const merged = dedupeByBase([...sameCategoryDifferentForms, ...crossCategory]).slice(0, policy.limits.defaultSecondary);
+  return merged;
+}

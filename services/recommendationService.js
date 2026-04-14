@@ -25,7 +25,6 @@ async function getOpenAIClient() {
   if (openaiClient) return openaiClient;
   if (openaiLoadAttempted) return null;
   openaiLoadAttempted = true;
-
   if (!config.OPENAI_API_KEY) return null;
 
   try {
@@ -50,6 +49,7 @@ function inferProductCategory(product) {
 function buildReasoningTags(parsedIntent) {
   const tags = [];
   if (parsedIntent.requested_category) tags.push(`category:${parsedIntent.requested_category}`);
+  if (parsedIntent.requested_form) tags.push(`form:${parsedIntent.requested_form}`);
   if (parsedIntent.skin_type) tags.push(`skin_type:${parsedIntent.skin_type}`);
   for (const c of parsedIntent.concern || []) tags.push(`concern:${c}`);
   for (const s of parsedIntent.situation || []) tags.push(`situation:${s}`);
@@ -64,34 +64,34 @@ function buildDetail(product, parsedIntent) {
   const tips = [];
   const source = `${product.name} ${product.text}`;
 
-  if (parsedIntent.skin_type === 'dry') reasons.push('건성 기준으로 당김을 줄이고 보습감을 유지하기 좋은 후보예요.');
+  if (parsedIntent.skin_type === 'dry') reasons.push('건성 기준으로 당김 부담을 줄이고 보습감 유지에 유리한 후보예요.');
   if (parsedIntent.skin_type === 'oily' || parsedIntent.skin_type === 'combination')
     reasons.push('지성/수부지 기준으로 유분 부담이 덜한 사용감 신호가 확인돼요.');
-  if (parsedIntent.skin_type === 'sensitive') reasons.push('민감 피부 기준으로 저자극/진정 관련 신호가 비교적 잘 맞아요.');
+  if (parsedIntent.skin_type === 'sensitive') reasons.push('민감 피부 기준으로 저자극·진정 관련 신호가 잘 맞는 후보예요.');
 
   if ((parsedIntent.concern || []).includes('sebum_control')) reasons.push('유분/번들거림 고민 조건과의 일치도가 높아요.');
-  if ((parsedIntent.concern || []).includes('hydration')) reasons.push('보습/수분 관련 니즈를 같이 반영한 후보예요.');
-  if ((parsedIntent.concern || []).includes('soothing')) reasons.push('진정/민감 관련 조건 매칭 신호가 있어요.');
+  if ((parsedIntent.concern || []).includes('hydration')) reasons.push('보습/수분 니즈를 반영한 제품으로 매칭됐어요.');
+  if ((parsedIntent.concern || []).includes('soothing')) reasons.push('민감/진정 조건 신호와의 적합도가 높아요.');
   if ((parsedIntent.concern || []).includes('tone_up')) reasons.push('톤/잡티 보정 니즈를 함께 충족하기 좋은 타입이에요.');
 
   if ((parsedIntent.situation || []).includes('makeup_before')) {
-    tips.push('메이크업 전에는 한 번에 많이 바르기보다 얇게 2~3회 레이어링해 주세요.');
+    tips.push('메이크업 전에는 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.');
   }
   if ((parsedIntent.situation || []).includes('outdoor')) {
-    tips.push('야외 활동 시 2~3시간 간격으로 재도포하면 차단력을 더 안정적으로 유지할 수 있어요.');
+    tips.push('야외 활동 시 2~3시간 간격으로 덧바르면 차단력을 안정적으로 유지할 수 있어요.');
   }
-  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.');
+  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 레이어링하면 밀착감이 좋아요.');
 
   if (!reasons.length) {
-    if (includesAny(source, ['가벼', '산뜻', '보송'])) reasons.push('가벼운 사용감 신호가 있어 데일리로 쓰기 편한 후보예요.');
-    else if (includesAny(source, ['보습', '수분', '촉촉'])) reasons.push('보습/수분 중심 신호가 확인돼요.');
+    if (includesAny(source, ['가벼', '산뜻', '보송'])) reasons.push('가벼운 사용감 신호가 높아 데일리로 쓰기 편한 후보예요.');
+    else if (includesAny(source, ['보습', '수분', '촉촉'])) reasons.push('보습/수분 중심 사용감 신호가 확인돼요.');
     else reasons.push('요청 조건과의 종합 점수가 높은 후보예요.');
   }
 
   return {
     why_pick: reasons.slice(0, 2).join(' '),
     usage_tip: tips[0],
-    caution: '외출 시간이 길면 2~3시간 간격으로 덧발라 주세요.',
+    caution: '외출 시간이 길면 2~3시간 간격으로 재도포해 주세요.',
   };
 }
 
@@ -119,6 +119,7 @@ function toRecommendationItem(product, idx, parsedIntent) {
 async function stage2Rerank(candidates, parsedIntent, policy) {
   if (!config.OPENAI_API_KEY) return candidates;
   if (!Array.isArray(candidates) || candidates.length < 2) return candidates;
+
   const openai = await getOpenAIClient();
   if (!openai) return candidates;
 
@@ -135,8 +136,8 @@ async function stage2Rerank(candidates, parsedIntent, policy) {
   }));
 
   const systemPrompt = [
-    'You rerank product candidates for a category-locked recommendation engine.',
-    'Do not prioritize candidates that break requested category intent.',
+    'You rerank product candidates for a category-locked and form-aware recommendation engine.',
+    'Never prioritize items that violate category/form policy.',
     'Focus on skin_type/concern/situation fit.',
     'Return JSON only: {"ordered_ids":["id1","id2"]}.',
   ].join(' ');
@@ -172,7 +173,7 @@ async function stage2Rerank(candidates, parsedIntent, policy) {
   }
 }
 
-function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, categoryLocked) {
+function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, categoryLocked, formLocked, allowedMainForms) {
   const sortMode = parsedIntent.sort_intent || 'popular';
   const summaryMessage = mainRecs.length ? '고객님을 위한 최적 상품입니다.' : '조건에 맞는 결과가 없습니다.';
   const summaryConclusion = mainRecs.length
@@ -186,6 +187,9 @@ function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, c
     reasoning_tags: buildReasoningTags(parsedIntent),
     applied_policy: {
       category_locked: Boolean(categoryLocked && parsedIntent.requested_category),
+      form_locked: Boolean(formLocked),
+      requested_form: parsedIntent.requested_form || null,
+      allowed_main_forms: Array.isArray(allowedMainForms) ? allowedMainForms : [],
       sort_mode: sortMode,
     },
 
@@ -218,8 +222,12 @@ function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLoc
       return !ids.some((id) => requestedIds.includes(Number(id)));
     });
   }
-
   return mainRecommendations.some((item) => item?.category_key && item.category_key !== parsedIntent.requested_category);
+}
+
+function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked) {
+  if (!formLocked || !Array.isArray(allowedMainForms) || !allowedMainForms.length) return false;
+  return mainRecommendations.some((item) => item?.form && !allowedMainForms.includes(item.form));
 }
 
 export const recommendationService = {
@@ -227,7 +235,6 @@ export const recommendationService = {
     return parseUserIntent(args, RECOMMENDATION_TAXONOMY);
   },
 
-  // legacy alias used by /api/recommend route
   normalizeUserIntent(args = {}) {
     const parsed = this.parse_user_request(args);
     return {
@@ -236,8 +243,8 @@ export const recommendationService = {
     };
   },
 
-  get_primary_candidates(products = [], parsedIntent = {}) {
-    return retrievePrimaryCandidates(products, parsedIntent, RECOMMENDATION_TAXONOMY);
+  get_primary_candidates(products = [], parsedIntent = {}, options = {}) {
+    return retrievePrimaryCandidates(products, parsedIntent, RECOMMENDATION_TAXONOMY, RECOMMENDATION_POLICY, options);
   },
 
   async rank_primary_recommendations(
@@ -272,8 +279,22 @@ export const recommendationService = {
     return picked.slice(0, Math.max(0, limit));
   },
 
-  build_recommendation_response(parsedIntent, mainRecs = [], secondaryRecs = [], categoryLocked = false) {
-    return buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, categoryLocked);
+  build_recommendation_response(
+    parsedIntent,
+    mainRecs = [],
+    secondaryRecs = [],
+    categoryLocked = false,
+    formLocked = false,
+    allowedMainForms = []
+  ) {
+    return buildMcpRecommendationResponse(
+      parsedIntent,
+      mainRecs,
+      secondaryRecs,
+      categoryLocked,
+      formLocked,
+      allowedMainForms
+    );
   },
 
   getMetricsSnapshot() {
@@ -290,7 +311,7 @@ export const recommendationService = {
         main_recommendations: [],
         secondary_recommendations: [],
         reasoning_tags: ['empty_cache'],
-        applied_policy: { category_locked: false, sort_mode: 'popular' },
+        applied_policy: { category_locked: false, form_locked: false, sort_mode: 'popular' },
         recommendations: [],
         reference_recommendations: [],
         promotions: [],
@@ -303,21 +324,35 @@ export const recommendationService = {
       return { ...item, category_key: inferProductCategory(item) };
     });
     const parsed = this.parse_user_request(args);
-    const { candidates, category_locked } = this.get_primary_candidates(normalized, parsed);
+
+    // Strict pass: category + default/explicit form lock
+    let primary = this.get_primary_candidates(normalized, parsed, { relaxForm: false });
+    let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
 
     let usedFallback = false;
     let ranked = await this.rank_primary_recommendations(candidates, parsed, limit, category_locked);
 
-    // fallback 1: keep category lock, relax conditions only.
+    // Fallback 1: keep category/form lock, relax condition filters only.
     if (!ranked.length && category_locked) {
       usedFallback = true;
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       ranked = await this.rank_primary_recommendations(candidates, relaxed, limit, category_locked);
     }
 
+    // Fallback 2: keep category lock, relax form lock within same category.
+    if (!ranked.length && category_locked) {
+      usedFallback = true;
+      primary = this.get_primary_candidates(normalized, parsed, { relaxForm: true });
+      candidates = primary.candidates;
+      category_locked = primary.category_locked;
+      form_locked = primary.form_locked;
+      allowed_main_forms = primary.allowed_main_forms || [];
+      ranked = await this.rank_primary_recommendations(candidates, parsed, limit, category_locked);
+    }
+
     const mainRecommendations = ranked.map((p, idx) => toRecommendationItem(p, idx, parsed));
 
-    // fallback 2: no main candidates under lock -> explicit secondary only.
+    // Fallback 3: no main candidates under category lock -> explicit secondary only.
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
       trackNoResult();
@@ -334,7 +369,13 @@ export const recommendationService = {
         main_recommendations: [],
         secondary_recommendations: secondaryOnly,
         reasoning_tags: [...buildReasoningTags(parsed), 'fallback:secondary_only'],
-        applied_policy: { category_locked: true, sort_mode: parsed.sort_intent },
+        applied_policy: {
+          category_locked: true,
+          form_locked: Boolean(form_locked),
+          requested_form: parsed.requested_form || null,
+          allowed_main_forms: Array.isArray(allowed_main_forms) ? allowed_main_forms : [],
+          sort_mode: parsed.sort_intent,
+        },
         recommendations: [],
         reference_recommendations: secondaryOnly,
         promotions: [],
@@ -348,6 +389,7 @@ export const recommendationService = {
 
     if (usedFallback) trackFallback();
     if (!mainRecommendations.length) trackNoResult();
+
     if (hasCategoryLockViolation(mainRecommendations, parsed, category_locked)) {
       trackCategoryLockViolation();
       logger.warn(
@@ -356,13 +398,29 @@ export const recommendationService = {
           .join(', ')}`
       );
     }
+    if (hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
+      logger.warn(
+        `[Policy] form lock violation detected requested_form=${parsed.requested_form || 'default'} allowed=${(
+          allowed_main_forms || []
+        ).join(',')} main=${mainRecommendations.map((x) => `${x.name}:${x.form || 'unknown'}`).join(', ')}`
+      );
+    }
 
     const secondary = this.get_secondary_recommendations(
       normalized,
-      parsed,
+      { ...parsed, allowed_main_forms },
       mainRecommendations,
       RECOMMENDATION_POLICY.limits.defaultSecondary
     );
-    return this.build_recommendation_response(parsed, mainRecommendations, secondary, category_locked);
+
+    return this.build_recommendation_response(
+      parsed,
+      mainRecommendations,
+      secondary,
+      category_locked,
+      form_locked,
+      allowed_main_forms
+    );
   },
 };
+

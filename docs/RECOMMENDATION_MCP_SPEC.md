@@ -17,6 +17,7 @@
 
 ## 3. 설계 원칙
 - 카테고리 잠금 우선: requested_category가 있으면 primary 후보는 해당 카테고리로 제한
+- 제형 잠금 우선: requested_form이 있거나 카테고리 기본 제형 정책이 있으면 main은 해당 form으로 제한
 - fallback도 카테고리 유지: 조건 완화는 허용, 카테고리 이탈은 금지
 - cross-sell 분리: secondary에서만 노출
 - fast path 우선: 구조화된 retrieval/ranking을 기본으로 사용
@@ -30,6 +31,10 @@
   - limits: 기본 main/secondary 개수, stage1/stage2 후보 크기
   - rerank: LLM weight, default model
   - scoring: category gate, promo penalty, quality caps
+  - formPolicy:
+    - `strictOnExplicitForm`: 제형 명시 시 main form 강제
+    - `defaultMainFormsByCategory`: 카테고리별 기본 main 제형
+    - `relaxedMainFormsByCategory`: fallback 시 같은 카테고리 내 완화 제형 범위
 - `RECOMMENDATION_TAXONOMY`
   - categories/forms/skinTypes/concerns/situations/preferences
   - novelty/popularity keywords
@@ -41,6 +46,8 @@
 구조화 결과:
 - `requested_category`
 - `requested_category_ids`
+- `requested_form`
+- `explicit_form_request`
 - `skin_type`
 - `concern[]`
 - `situation[]`
@@ -61,7 +68,9 @@
 함수: `get_primary_candidates(products, parsedIntent)`  
 규칙:
 - `requested_category` 또는 `requested_category_ids`가 있으면 `category_locked=true`
+- form policy 적용 시 `form_locked=true` 및 `allowed_main_forms` 계산
 - primary 후보는 category filter를 통과한 상품만 허용
+- form lock이 걸린 경우 primary 후보는 `allowed_main_forms`를 통과한 상품만 허용
 
 ### 5.4 Ranking
 함수: `rank_primary_recommendations(candidates, parsedIntent, limit, categoryLocked)`
@@ -97,8 +106,9 @@
 
 ## 6. Fallback 정책
 1. 카테고리 잠금 상태에서 조건 완화 fallback
-2. 동일 카테고리 인기 fallback
-3. 그래도 결과 없을 때만 `secondary_only` 예외 반환
+2. 동일 카테고리 내 form 완화 fallback
+3. 동일 카테고리 인기 fallback
+4. 그래도 결과 없을 때만 `secondary_only` 예외 반환
 
 중요: fallback 과정에서 category lock을 일반적으로 해제하지 않는다.
 
@@ -122,6 +132,7 @@
 
 ## 9. 운영 지표
 - `category_lock_violation_count`
+- `form_lock_violation_count` (로그 기반 운영 지표, 현재는 warning 로그로 추적)
 - `no_result_rate`
 - `fallback_rate`
 - `top1_click_rate`

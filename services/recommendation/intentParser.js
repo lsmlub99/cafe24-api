@@ -13,8 +13,10 @@ function detectSortIntent(parsedIntent, query, taxonomy) {
 export function parseUserIntent(args = {}, taxonomy) {
   const q = `${args.q || ''} ${args.query || ''}`.trim();
   const categoryText = `${args.category || ''} ${q}`.trim();
+  const formText = `${args.form || ''} ${args.category || ''} ${q}`.trim();
 
   const requestedCategory = findFirstAliasKey(categoryText, taxonomy.categories);
+  const requestedForm = findFirstAliasKey(formText, taxonomy.forms);
   const skinTypeFromField = findFirstAliasKey(args.skin_type || '', taxonomy.skinTypes);
   const skinTypeFromQuery = findFirstAliasKey(q, taxonomy.skinTypes);
   const skinType = skinTypeFromField || skinTypeFromQuery || null;
@@ -26,10 +28,13 @@ export function parseUserIntent(args = {}, taxonomy) {
   const situation = findAllAliasKeys(q, taxonomy.situations);
   const preference = findAllAliasKeys(q, taxonomy.preferences);
   const noveltyRequest = includesAny(q, taxonomy.noveltyKeywords || []);
+  const explicitFormRequest = Boolean(requestedForm);
 
   const parsed = {
     requested_category: requestedCategory,
     requested_category_ids: Array.isArray(args.target_category_ids) ? args.target_category_ids : [],
+    requested_form: requestedForm,
+    explicit_form_request: explicitFormRequest,
     skin_type: skinType,
     concern,
     situation,
@@ -42,4 +47,3 @@ export function parseUserIntent(args = {}, taxonomy) {
   parsed.sort_intent = detectSortIntent(parsed, q, taxonomy);
   return parsed;
 }
-

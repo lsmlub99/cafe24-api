@@ -1,6 +1,9 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
+try {
+  const dotenv = await import('dotenv');
+  dotenv?.default?.config?.();
+} catch {
+  // Optional in environments where process env is already injected.
+}
 
 function toBool(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') return defaultValue;

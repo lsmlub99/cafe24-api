@@ -27,7 +27,15 @@ function findStructuredCandidate(node, depth = 0) {
   }
 
   if (!isObject(parsed)) return null;
-  if (Array.isArray(parsed.recommendations) || Array.isArray(parsed.items) || isObject(parsed.summary)) return parsed;
+  if (
+    Array.isArray(parsed.main_recommendations) ||
+    Array.isArray(parsed.secondary_recommendations) ||
+    Array.isArray(parsed.recommendations) ||
+    Array.isArray(parsed.items) ||
+    isObject(parsed.summary)
+  ) {
+    return parsed;
+  }
 
   const directKeys = ['structuredContent', 'output', 'data', 'result', 'payload', 'toolOutput', '_meta', 'params'];
   for (const key of directKeys) {
@@ -52,7 +60,9 @@ function normalizeWidgetData(raw) {
   const structured = findStructuredCandidate(raw);
   if (!structured) return null;
 
-  const recommendationsRaw = Array.isArray(structured.recommendations)
+  const recommendationsRaw = Array.isArray(structured.main_recommendations)
+    ? structured.main_recommendations
+    : Array.isArray(structured.recommendations)
     ? structured.recommendations
     : Array.isArray(structured.items)
     ? structured.items
@@ -62,7 +72,9 @@ function normalizeWidgetData(raw) {
   const promotions = Array.isArray(structured.promotions)
     ? structured.promotions.filter((item) => isObject(item) && (item.name || item.buy_url))
     : [];
-  const referenceRecommendations = Array.isArray(structured.reference_recommendations)
+  const referenceRecommendations = Array.isArray(structured.secondary_recommendations)
+    ? structured.secondary_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
+    : Array.isArray(structured.reference_recommendations)
     ? structured.reference_recommendations.filter((item) => isObject(item) && (item.name || item.buy_url))
     : [];
   const summary = isObject(structured.summary) ? structured.summary : {};
@@ -368,4 +380,3 @@ function App() {
 }
 
 export default App;
-

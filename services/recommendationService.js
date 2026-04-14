@@ -1,617 +1,368 @@
-import OpenAI from 'openai';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { RECOMMENDATION_POLICY, RECOMMENDATION_TAXONOMY } from '../config/recommendationPolicy.js';
+import { parseUserIntent } from './recommendation/intentParser.js';
+import { normalizeCafe24Product } from './recommendation/productNormalizer.js';
+import {
+  calculateMainScore,
+  dedupeByBase,
+  getSecondaryRecommendations as rankerSecondaryRecommendations,
+  retrievePrimaryCandidates,
+} from './recommendation/ranker.js';
+import { findFirstAliasKey, includesAny, parseJsonObject } from './recommendation/shared.js';
+import {
+  getRecommendationMetrics,
+  trackCategoryLockViolation,
+  trackFallback,
+  trackNoResult,
+  trackRequest,
+} from './recommendation/metrics.js';
 
-const openai = new OpenAI({
-  apiKey: config.OPENAI_API_KEY,
-  timeout: 10000,
-});
+let openaiClient = null;
+let openaiLoadAttempted = false;
 
-const STAGE1_TOP_K = 50;
-const STAGE2_TOP_K = 14;
-const DEFAULT_LIMIT = 3;
-const LLM_WEIGHT = 0.5;
-const TOP1_LOCK_TTL_MS = 1000 * 60 * 20;
+async function getOpenAIClient() {
+  if (openaiClient) return openaiClient;
+  if (openaiLoadAttempted) return null;
+  openaiLoadAttempted = true;
 
-const top1Lock = new Map();
+  if (!config.OPENAI_API_KEY) return null;
 
-const FORM_KEYWORDS = {
-  cream: ['선크림', '썬크림', '크림', 'sunscreen', 'sun cream', 'cream', 'gel cream'],
-  serum: ['선세럼', '썬세럼', '세럼', '앰플', 'sun serum', 'serum', 'ampoule'],
-  spray: ['선스프레이', '썬스프레이', '스프레이', '미스트', 'sun spray', 'spray', 'mist'],
-  stick: ['선스틱', '썬스틱', '스틱', '스틱밤', 'sun stick', 'stick', 'stick balm'],
-  cushion: ['선쿠션', '썬쿠션', '쿠션', 'sun cushion', 'cushion'],
-  lotion: ['선로션', '썬로션', '로션', 'sun lotion', 'lotion'],
-};
-
-const FORM_REGEX = {
-  spray: /(스프레이|미스트|sun\s*spray|spray|mist)/i,
-  stick: /(스틱밤|선스틱|썬스틱|스틱|stick\s*balm|sun\s*stick|stick|balm)/i,
-  cushion: /(선쿠션|썬쿠션|쿠션|sun\s*cushion|cushion)/i,
-  lotion: /(선로션|썬로션|로션|sun\s*lotion|lotion)/i,
-  serum: /(선세럼|썬세럼|세럼|앰플|sun\s*serum|serum|ampoule)/i,
-  cream: /(선크림|썬크림|선케어|자외선|크림|sun\s*cream|sunscreen|cream|gel\s*cream)/i,
-};
-
-const CATEGORY_KEYWORDS = {
-  선크림: ['선크림', '썬크림', '선케어', '자외선', 'sunscreen', 'sun'],
-  선스틱: ['선스틱', '썬스틱', 'stick', 'sun stick'],
-  선스프레이: ['선스프레이', '썬스프레이', 'spray', 'sun spray', 'mist'],
-  선세럼: ['선세럼', '썬세럼', 'serum', 'sun serum', 'ampoule'],
-  크림: ['크림', '보습크림', '수분크림', 'cream'],
-  세럼: ['세럼', '앰플', 'serum', 'ampoule'],
-  비비크림: ['비비', 'bb', '비비크림'],
-  토너: ['토너', '스킨', 'toner'],
-  클렌징: ['클렌징', '세안', 'cleansing'],
-  마스크팩: ['마스크', '팩', 'mask'],
-};
-
-const CONCERN_KEYWORDS = {
-  자외선차단: ['자외선', 'uv', 'sun', 'sunscreen'],
-  민감: ['민감', '저자극', '진정', 'sensitive', 'calm'],
-  보습: ['보습', '수분', '건조', 'moist', 'hydrat'],
-  산뜻함: ['산뜻', '가벼움', '번들', '유분', 'light', 'fresh'],
-  쿨링: ['쿨링', '시원', '열감', 'cool'],
-  모공: ['모공', '피지', 'pore', 'sebum'],
-  톤보정: ['톤', '잡티', '커버', 'bb', 'tone', 'cover'],
-};
-
-function lower(v) {
-  return String(v || '').toLowerCase();
-}
-
-function toBaseName(name = '') {
-  return String(name || '')
-    .replace(/\[[^\]]*]/g, ' ')
-    .replace(/\b(1\+1|2\+1|3\+1)\b/gi, ' ')
-    .replace(/\b(mini|미니|미니어처)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isPromoName(name = '') {
-  const t = lower(name);
-  return (
-    t.includes('1+1') ||
-    t.includes('2+1') ||
-    t.includes('3+1') ||
-    t.includes('미니') ||
-    t.includes('mini') ||
-    t.includes('증정') ||
-    t.includes('기획') ||
-    t.includes('한정')
-  );
-}
-
-function parsePrice(value) {
-  const num = parseFloat(String(value || '0').replace(/,/g, ''));
-  return Number.isFinite(num) ? Math.floor(num) : 0;
-}
-
-function includesAny(text, words = []) {
-  const t = lower(text);
-  return words.some((w) => t.includes(lower(w)));
-}
-
-function countHits(text, words = []) {
-  const t = lower(text);
-  if (!t) return 0;
-  let hit = 0;
-  for (const w of [...new Set(words.map((x) => lower(x)))]) {
-    if (w && t.includes(w)) hit += 1;
-  }
-  return hit;
-}
-
-function parseJsonObject(text = '') {
-  const s = text.indexOf('{');
-  const e = text.lastIndexOf('}');
-  if (s < 0 || e < 0 || e <= s) return null;
   try {
-    return JSON.parse(text.slice(s, e + 1));
-  } catch {
+    const mod = await import('openai');
+    const OpenAI = mod?.default;
+    if (!OpenAI) return null;
+    openaiClient = new OpenAI({
+      apiKey: config.OPENAI_API_KEY,
+      timeout: 10000,
+    });
+    return openaiClient;
+  } catch (error) {
+    logger.warn(`[Rerank] OpenAI client unavailable: ${error.message}`);
     return null;
   }
 }
 
-function buildIntentSignature(intent, args = {}) {
-  const a = [...(intent.target_categories || [])].sort().join('|');
-  const b = [...(intent.concerns || [])].sort().join('|');
-  const c = String(args.skin_type || '').trim();
-  const d = String(intent.requested_form || '').trim();
-  return `${a}__${b}__${c}__${d}`;
+function inferProductCategory(product) {
+  return findFirstAliasKey(`${product?.name || ''} ${product?.text || ''}`, RECOMMENDATION_TAXONOMY.categories);
 }
 
-function getLockedTop1(signature) {
-  const row = top1Lock.get(signature);
-  if (!row) return null;
-  if (Date.now() - row.ts > TOP1_LOCK_TTL_MS) {
-    top1Lock.delete(signature);
-    return null;
+function buildReasoningTags(parsedIntent) {
+  const tags = [];
+  if (parsedIntent.requested_category) tags.push(`category:${parsedIntent.requested_category}`);
+  if (parsedIntent.skin_type) tags.push(`skin_type:${parsedIntent.skin_type}`);
+  for (const c of parsedIntent.concern || []) tags.push(`concern:${c}`);
+  for (const s of parsedIntent.situation || []) tags.push(`situation:${s}`);
+  for (const p of parsedIntent.preference || []) tags.push(`preference:${p}`);
+  if (parsedIntent.novelty_request) tags.push('novelty:new_arrival');
+  tags.push(`sort:${parsedIntent.sort_intent}`);
+  return tags;
+}
+
+function buildDetail(product, parsedIntent) {
+  const reasons = [];
+  const tips = [];
+  const source = `${product.name} ${product.text}`;
+
+  if (parsedIntent.skin_type === 'dry') reasons.push('건성 기준으로 당김을 줄이고 보습감을 유지하기 좋은 후보예요.');
+  if (parsedIntent.skin_type === 'oily' || parsedIntent.skin_type === 'combination')
+    reasons.push('지성/수부지 기준으로 유분 부담이 덜한 사용감 신호가 확인돼요.');
+  if (parsedIntent.skin_type === 'sensitive') reasons.push('민감 피부 기준으로 저자극/진정 관련 신호가 비교적 잘 맞아요.');
+
+  if ((parsedIntent.concern || []).includes('sebum_control')) reasons.push('유분/번들거림 고민 조건과의 일치도가 높아요.');
+  if ((parsedIntent.concern || []).includes('hydration')) reasons.push('보습/수분 관련 니즈를 같이 반영한 후보예요.');
+  if ((parsedIntent.concern || []).includes('soothing')) reasons.push('진정/민감 관련 조건 매칭 신호가 있어요.');
+  if ((parsedIntent.concern || []).includes('tone_up')) reasons.push('톤/잡티 보정 니즈를 함께 충족하기 좋은 타입이에요.');
+
+  if ((parsedIntent.situation || []).includes('makeup_before')) {
+    tips.push('메이크업 전에는 한 번에 많이 바르기보다 얇게 2~3회 레이어링해 주세요.');
   }
-  return row.baseName;
+  if ((parsedIntent.situation || []).includes('outdoor')) {
+    tips.push('야외 활동 시 2~3시간 간격으로 재도포하면 차단력을 더 안정적으로 유지할 수 있어요.');
+  }
+  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.');
+
+  if (!reasons.length) {
+    if (includesAny(source, ['가벼', '산뜻', '보송'])) reasons.push('가벼운 사용감 신호가 있어 데일리로 쓰기 편한 후보예요.');
+    else if (includesAny(source, ['보습', '수분', '촉촉'])) reasons.push('보습/수분 중심 신호가 확인돼요.');
+    else reasons.push('요청 조건과의 종합 점수가 높은 후보예요.');
+  }
+
+  return {
+    why_pick: reasons.slice(0, 2).join(' '),
+    usage_tip: tips[0],
+    caution: '외출 시간이 길면 2~3시간 간격으로 덧발라 주세요.',
+  };
 }
 
-function setLockedTop1(signature, baseName) {
-  if (!signature || !baseName) return;
-  top1Lock.set(signature, { baseName, ts: Date.now() });
+function toRecommendationItem(product, idx, parsedIntent) {
+  const details = buildDetail(product, parsedIntent);
+  return {
+    rank: idx + 1,
+    rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
+    name: product.name,
+    base_name: product.base_name,
+    form: product.form,
+    category_key: product.category_key || inferProductCategory(product) || null,
+    category_ids: Array.isArray(product.category_ids) ? product.category_ids : [],
+    price: product.price,
+    key_point: details.why_pick,
+    why_pick: details.why_pick,
+    usage_tip: details.usage_tip,
+    caution: details.caution,
+    is_promo: !!product.is_promo,
+    buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,
+    image: product.image,
+  };
 }
 
-const FORM_LABEL = {
-  cream: '크림형',
-  serum: '세럼형',
-  spray: '스프레이형',
-  stick: '스틱형',
-  cushion: '쿠션형',
-  lotion: '로션형',
-  other: '기본형',
-};
+async function stage2Rerank(candidates, parsedIntent, policy) {
+  if (!config.OPENAI_API_KEY) return candidates;
+  if (!Array.isArray(candidates) || candidates.length < 2) return candidates;
+  const openai = await getOpenAIClient();
+  if (!openai) return candidates;
+
+  const model = config.RERANK_MODEL || policy.rerank.model;
+  const payload = candidates.map((p) => ({
+    id: p.id,
+    name: p.name,
+    form: p.form,
+    category_key: p.category_key || null,
+    score: p._base_score,
+    concern_tags: p.attributes?.concern_tags || [],
+    texture_tags: p.attributes?.texture_tags || [],
+    summary: p.summary_description,
+  }));
+
+  const systemPrompt = [
+    'You rerank product candidates for a category-locked recommendation engine.',
+    'Do not prioritize candidates that break requested category intent.',
+    'Focus on skin_type/concern/situation fit.',
+    'Return JSON only: {"ordered_ids":["id1","id2"]}.',
+  ].join(' ');
+
+  try {
+    const res = await openai.responses.create({
+      model,
+      temperature: 0.2,
+      input: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify({ intent: parsedIntent, candidates: payload }) },
+      ],
+    });
+
+    const parsed = parseJsonObject((res.output_text || '').trim());
+    const ordered = Array.isArray(parsed?.ordered_ids) ? parsed.ordered_ids.map(String) : [];
+    if (!ordered.length) return candidates;
+
+    const rankMap = new Map(ordered.map((id, i) => [id, ordered.length - i]));
+    return candidates
+      .map((p) => {
+        const llm = rankMap.get(p.id) || 0;
+        const llmNorm = (llm / Math.max(ordered.length, 1)) * 100;
+        return {
+          ...p,
+          _final_score: p._base_score * (1 - policy.rerank.llmWeight) + llmNorm * policy.rerank.llmWeight,
+        };
+      })
+      .sort((a, b) => (b._final_score || 0) - (a._final_score || 0));
+  } catch (error) {
+    logger.warn(`[Rerank] skipped: ${error.message}`);
+    return candidates;
+  }
+}
+
+function buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, categoryLocked) {
+  const sortMode = parsedIntent.sort_intent || 'popular';
+  const summaryMessage = mainRecs.length ? '고객님을 위한 최적 상품입니다.' : '조건에 맞는 결과가 없습니다.';
+  const summaryConclusion = mainRecs.length
+    ? `분석 결과, ${mainRecs[0].name} 제품이 현재 요청 조건에 가장 적합합니다.`
+    : '요청 카테고리에서 조건에 맞는 후보를 찾지 못했습니다.';
+
+  return {
+    requested_category: parsedIntent.requested_category || null,
+    main_recommendations: mainRecs,
+    secondary_recommendations: secondaryRecs,
+    reasoning_tags: buildReasoningTags(parsedIntent),
+    applied_policy: {
+      category_locked: Boolean(categoryLocked && parsedIntent.requested_category),
+      sort_mode: sortMode,
+    },
+
+    // Backward compatibility
+    recommendations: mainRecs,
+    reference_recommendations: secondaryRecs,
+    promotions: [],
+    summary: {
+      message: summaryMessage,
+      strategy:
+        sortMode === 'new_arrival'
+          ? '요청 카테고리 내에서 신제품 우선 정책으로 정렬했습니다.'
+          : sortMode === 'popular'
+          ? '요청 카테고리 내 인기/품질 신호 기준으로 우선 정렬했습니다.'
+          : '요청 카테고리 내 조건 적합도를 우선 반영해 정렬했습니다.',
+      conclusion: summaryConclusion,
+    },
+  };
+}
+
+function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLocked) {
+  if (!categoryLocked || !parsedIntent.requested_category || !Array.isArray(mainRecommendations)) return false;
+  const requestedIds = (parsedIntent.requested_category_ids || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+
+  if (requestedIds.length > 0) {
+    return mainRecommendations.some((item) => {
+      const ids = Array.isArray(item?.category_ids) ? item.category_ids : [];
+      return !ids.some((id) => requestedIds.includes(Number(id)));
+    });
+  }
+
+  return mainRecommendations.some((item) => item?.category_key && item.category_key !== parsedIntent.requested_category);
+}
 
 export const recommendationService = {
+  parse_user_request(args = {}) {
+    return parseUserIntent(args, RECOMMENDATION_TAXONOMY);
+  },
+
+  // legacy alias used by /api/recommend route
   normalizeUserIntent(args = {}) {
-    const q = lower(args.q || args.query || '');
-    const skinType = String(args.skin_type || '').trim();
-
-    const categories = new Set(args.category_aliases || [args.category].filter(Boolean));
-    const concerns = new Set(Array.isArray(args.concerns) ? args.concerns : []);
-
-    if (q) {
-      for (const [cat, words] of Object.entries(CATEGORY_KEYWORDS)) {
-        if (words.some((w) => q.includes(lower(w)))) categories.add(cat);
-      }
-      for (const [concern, words] of Object.entries(CONCERN_KEYWORDS)) {
-        if (words.some((w) => q.includes(lower(w)))) concerns.add(concern);
-      }
-    }
-
-    const preferredLines = new Set();
-    const textures = new Set();
-    const avoidTextures = new Set();
-
-    if (concerns.has('민감')) preferredLines.add('패리어');
-    if (concerns.has('보습')) preferredLines.add('아쿠아티카');
-    if (concerns.has('모공')) preferredLines.add('포어');
-
-    const skinTokens = String(skinType).split(/[,\s/]+/).map((x) => x.trim()).filter(Boolean);
-    for (const token of skinTokens) {
-      if (token === '지성' || token === '복합성' || token === '수부지') {
-        ['가벼운', '산뜻', '논코메도'].forEach((x) => textures.add(x));
-      }
-      if (token === '건성') ['촉촉', '보습', '리치'].forEach((x) => textures.add(x));
-      if (token === '민감성') avoidTextures.add('알코올');
-    }
-
+    const parsed = this.parse_user_request(args);
     return {
-      query: q,
-      skin_type: skinType,
-      target_categories: Array.from(categories),
-      target_category_ids: Array.isArray(args.target_category_ids) ? args.target_category_ids : [],
-      concerns: Array.from(concerns),
-      preferred_lines: preferredLines,
-      textures: Array.from(textures),
-      avoid_textures: Array.from(avoidTextures),
-      requested_form: null,
-      has_intent:
-        categories.size > 0 ||
-        concerns.size > 0 ||
-        skinTokens.length > 0 ||
-        (Array.isArray(args.target_category_ids) && args.target_category_ids.length > 0),
+      ...parsed,
+      target_categories: parsed.requested_category ? [parsed.requested_category] : [],
     };
   },
 
-  detectRequestedForm(intent, args = {}) {
-    const raw = lower(`${args.category || ''} ${args.query || ''} ${args.q || ''}`);
-    for (const [form, words] of Object.entries(FORM_KEYWORDS)) {
-      if (words.some((w) => raw.includes(lower(w)))) return form;
-    }
-    if ((intent.target_categories || []).includes('선크림')) return 'cream';
-    return null;
+  get_primary_candidates(products = [], parsedIntent = {}) {
+    return retrievePrimaryCandidates(products, parsedIntent, RECOMMENDATION_TAXONOMY);
   },
 
-  detectProductForm(productName = '', fullText = '') {
-    const nameText = String(productName || '');
-    for (const [form, re] of Object.entries(FORM_REGEX)) {
-      if (re.test(nameText)) return form;
-    }
-    const t = String(fullText || '');
-    for (const [form, re] of Object.entries(FORM_REGEX)) {
-      if (re.test(t)) return form;
-    }
-    return 'other';
+  async rank_primary_recommendations(
+    candidates = [],
+    parsedIntent = {},
+    limit = RECOMMENDATION_POLICY.limits.defaultMain,
+    categoryLocked = false
+  ) {
+    const scored = candidates
+      .map((p) => ({ ...p, _base_score: calculateMainScore(p, parsedIntent, categoryLocked, RECOMMENDATION_POLICY) }))
+      .sort((a, b) => b._base_score - a._base_score)
+      .slice(0, RECOMMENDATION_POLICY.limits.stage1TopK);
+
+    const deduped = dedupeByBase(scored).slice(0, RECOMMENDATION_POLICY.limits.stage2TopK);
+    const reranked = await stage2Rerank(deduped, parsedIntent, RECOMMENDATION_POLICY);
+    return reranked.slice(0, Math.max(1, limit));
   },
 
-  normalizeProduct(raw = {}) {
-    const name = raw.product_name || raw.name || '';
-    const resolvedPrice = parsePrice(raw.price || raw.retail_price || 0);
-    const categoryIds = Array.isArray(raw.categories)
-      ? raw.categories.map((c) => Number(c?.category_no)).filter((n) => Number.isFinite(n))
-      : Array.isArray(raw.category_ids)
-      ? raw.category_ids.map((n) => Number(n)).filter((n) => Number.isFinite(n))
-      : [];
-
-    let image = raw.list_image || raw.detail_image || raw.tiny_image || raw.image || '';
-    if (image.startsWith('//')) image = `https:${image}`;
-    else if (image.startsWith('/')) image = `https://cellfusionc.co.kr${image}`;
-    image = image.replace('http:', 'https:');
-
-    const fullText = lower(
-      `${name} ${raw.summary_description || ''} ${raw.simple_description || ''} ${raw.search_preview || ''} ${
-        raw.search_features || ''
-      }`
+  get_secondary_recommendations(
+    products = [],
+    parsedIntent = {},
+    mainItems = [],
+    limit = RECOMMENDATION_POLICY.limits.defaultSecondary
+  ) {
+    const picked = rankerSecondaryRecommendations(
+      products,
+      parsedIntent,
+      mainItems,
+      RECOMMENDATION_TAXONOMY,
+      RECOMMENDATION_POLICY
     );
-
-    return {
-      id: String(raw.product_no || raw.product_id || raw.id || ''),
-      name,
-      base_name: toBaseName(name),
-      is_promo: isPromoName(name),
-      price: resolvedPrice.toLocaleString(),
-      thumbnail: image,
-      summary_description: raw.summary_description || raw.simple_description || '',
-      ingredient_text: raw.ingredient_text || '',
-      search_preview: raw.search_preview || '',
-      search_features: raw.search_features || '',
-      keywords: Array.isArray(raw.keywords) ? raw.keywords : [],
-      attributes: raw.attributes || { concern_tags: [], line_tags: [], texture_tags: [] },
-      category_ids: categoryIds,
-      form: this.detectProductForm(name, fullText),
-      full_text: fullText,
-    };
+    return picked.slice(0, Math.max(0, limit));
   },
 
-  stage1Score(product, intent) {
-    const text = product.full_text;
-    const productCatIds = (product.category_ids || []).map((id) => String(id));
-    const targetCatIds = (intent.target_category_ids || []).map((id) => String(id));
-
-    if (targetCatIds.length > 0 && !productCatIds.some((id) => targetCatIds.includes(id))) {
-      return -999;
-    }
-
-    let score = 0;
-    const hasCategoryMatch =
-      (intent.target_categories || []).some((cat) => text.includes(lower(cat))) ||
-      productCatIds.some((id) => targetCatIds.includes(id));
-
-    if (hasCategoryMatch) score += 120;
-    else if ((intent.target_categories || []).length > 0) score -= 40;
-
-    const lineTags = product.attributes?.line_tags || [];
-    if (intent.preferred_lines.size > 0 && lineTags.some((l) => intent.preferred_lines.has(l))) score += 28;
-
-    const concernTags = product.attributes?.concern_tags || [];
-    score += concernTags.filter((c) => (intent.concerns || []).includes(c)).length * 22;
-
-    const textureTags = product.attributes?.texture_tags || [];
-    if ((intent.textures || []).some((t) => textureTags.some((pt) => String(pt).includes(t)))) score += 18;
-    if ((intent.avoid_textures || []).some((t) => textureTags.some((pt) => String(pt).includes(t)))) score -= 38;
-
-    const concernWords = [];
-    for (const c of intent.concerns || []) {
-      concernWords.push(c);
-      if (c === '자외선차단') concernWords.push('uv', 'sun', 'sunscreen', '자외선');
-      if (c === '민감') concernWords.push('민감', '저자극', '진정', '시카', '패리어');
-      if (c === '보습') concernWords.push('보습', '수분', 'moist', 'hydrat');
-      if (c === '산뜻함') concernWords.push('산뜻', '가벼움', '유분', '번들', 'light');
-      if (c === '쿨링') concernWords.push('쿨링', '시원', '열감', 'cool');
-      if (c === '모공') concernWords.push('모공', '피지', 'pore', 'sebum');
-      if (c === '톤보정') concernWords.push('톤', '커버', '잡티', 'bb');
-    }
-    score += Math.min(40, countHits(text, concernWords) * 6);
-
-    if (intent.requested_form && product.form === intent.requested_form) score += 60;
-    if (intent.requested_form && product.form !== intent.requested_form) score -= 85;
-
-    if (product.is_promo) score -= 14;
-    return score;
+  build_recommendation_response(parsedIntent, mainRecs = [], secondaryRecs = [], categoryLocked = false) {
+    return buildMcpRecommendationResponse(parsedIntent, mainRecs, secondaryRecs, categoryLocked);
   },
 
-  async stage2Rerank(candidates, intent, args = {}) {
-    if (!Array.isArray(candidates) || candidates.length < 2) return candidates;
-    if (!config.OPENAI_API_KEY) return candidates;
-
-    const model = config.RERANK_MODEL || 'gpt-4o-mini';
-    const payload = candidates.map((p) => ({
-      id: p.id,
-      name: p.name,
-      base_name: p.base_name,
-      is_promo: p.is_promo,
-      form: p.form,
-      base_score: p._stage1,
-      price: p.price,
-      summary: p.summary_description,
-      preview: String(p.search_preview || '').slice(0, 300),
-      concern_tags: p.attributes?.concern_tags || [],
-      texture_tags: p.attributes?.texture_tags || [],
-    }));
-
-    const systemPrompt = [
-      'You rerank skincare product candidates.',
-      'Never invent products.',
-      'Keep recommendations aligned to user intent.',
-      'If requested form exists, prioritize that form for main ranking.',
-      'Prefer non-promo item for rank #1 unless promo is clearly better.',
-      'Return JSON only:',
-      '{"ordered_ids":["id1","id2"],"reason":"short"}',
-    ].join(' ');
-
-    const userPrompt = JSON.stringify({
-      intent: {
-        category: args.category || '',
-        skin_type: args.skin_type || '',
-        concerns: intent.concerns || [],
-        query: intent.query || '',
-        requested_form: intent.requested_form || null,
-      },
-      candidates: payload,
-    });
-
-    try {
-      const res = await openai.responses.create({
-        model,
-        temperature: 0.2,
-        input: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      });
-
-      const parsed = parseJsonObject((res.output_text || '').trim());
-      const ordered = Array.isArray(parsed?.ordered_ids) ? parsed.ordered_ids.map((x) => String(x)) : [];
-      if (!ordered.length) return candidates;
-
-      const idSet = new Set(candidates.map((p) => p.id));
-      const valid = ordered.filter((id) => idSet.has(id));
-      if (!valid.length) return candidates;
-
-      const maxBase = Math.max(...candidates.map((p) => p._stage1 || 0), 1);
-      const rankMap = new Map(valid.map((id, idx) => [id, valid.length - idx]));
-      return candidates
-        .map((p) => {
-          const baseNorm = ((p._stage1 || 0) / maxBase) * 100;
-          const llmNorm = ((rankMap.get(p.id) || 0) / valid.length) * 100;
-          return { ...p, _final: baseNorm * (1 - LLM_WEIGHT) + llmNorm * LLM_WEIGHT };
-        })
-        .sort((a, b) => (b._final || 0) - (a._final || 0));
-    } catch (error) {
-      logger.warn(`[Rerank] skipped: ${error.message}`);
-      return candidates;
-    }
+  getMetricsSnapshot() {
+    return getRecommendationMetrics();
   },
 
-  buildRecommendationDetails(product, intent) {
-    const concerns = Array.isArray(intent.concerns) ? intent.concerns.map((x) => String(x)) : [];
-    const skinType = String(intent.skin_type || '').trim();
-    const lineTags = Array.isArray(product.attributes?.line_tags) ? product.attributes.line_tags : [];
-    const concernTags = Array.isArray(product.attributes?.concern_tags) ? product.attributes.concern_tags : [];
-    const textureTags = Array.isArray(product.attributes?.texture_tags) ? product.attributes.texture_tags : [];
-    const text = String(product.full_text || '').toLowerCase();
-    const name = String(product.name || '').toLowerCase();
+  async scoreAndFilterProducts(cachedProducts, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
+    trackRequest();
 
-    const reasons = [];
-    const tips = [];
-    const cautions = [];
-
-    if (intent.requested_form && product.form === intent.requested_form) {
-      reasons.push(`요청하신 ${FORM_LABEL[product.form] || '해당'} 제형과 정확히 일치해요.`);
-    }
-    if (skinType) {
-      reasons.push(`${skinType} 피부 기준으로 부담을 낮춘 사용감에 가깝게 맞춰진 후보예요.`);
-    }
-    if (concernTags.length > 0) {
-      reasons.push(`요청 고민과 맞닿는 태그(${concernTags.slice(0, 2).join(', ')})가 실제로 포함돼 있어요.`);
-    } else if (concerns.length > 0) {
-      reasons.push(`요청 고민(${concerns.slice(0, 2).join(', ')}) 기준의 신호가 제품 정보에서 높게 확인돼요.`);
-    } else if (lineTags.length > 0 || textureTags.length > 0) {
-      const hint = [...lineTags.slice(0, 1), ...textureTags.slice(0, 1)].join(', ');
-      reasons.push(`제품 특성(${hint})이 현재 요청 방향과 잘 맞아요.`);
-    }
-    if (includesAny(name, ['잡티', 'tone', 'toning'])) reasons.push('톤 보정/잡티 보완 니즈까지 함께 가져가기 좋아요.');
-    if (includesAny(name, ['cool', '쿨링', '아쿠아'])) reasons.push('답답함이 적은 가벼운 사용감 쪽 신호가 있어요.');
-    if (includesAny(name, ['barrier', '패리어', 'cica', '시카', 'calming', '카밍'])) reasons.push('민감/진정 케어 관점에서도 무난한 라인 특성이 있어요.');
-    if (includesAny(text, ['uv', 'sun', '자외선'])) reasons.push('자외선 차단 목적의 데일리 사용 시나리오가 명확해요.');
-
-    if (product.form === 'spray') {
-      tips.push('분사 후 손바닥으로 한 번 눌러 밀착시키면 들뜸과 유분 뜸을 줄이기 좋아요.');
-    } else if (product.form === 'stick') {
-      tips.push('스틱은 한 번에 여러 번 문지르기보다 얇게 2~3회 레이어링하면 더 깔끔해요.');
-    } else if (product.form === 'serum') {
-      tips.push('세럼형은 소량을 얇게 레이어링하면 밀림 없이 가볍게 마무리되기 좋아요.');
-    } else {
-      tips.push('기초 마지막 단계에서 2~3회 나눠 바르면 밀림을 줄이고 밀착감을 높일 수 있어요.');
-    }
-
-    cautions.push('야외 활동이 길면 2~3시간 간격으로 재도포해 차단력을 유지해주세요.');
-    if (includesAny(text, ['tone', 'cover', '커버'])) cautions.push('톤/커버 계열은 한 번에 많이 바르기보다 얇게 나눠 바르면 뭉침이 덜해요.');
-
-    return {
-      why_pick:
-        reasons.length > 0
-          ? reasons.slice(0, 2).join(' ')
-          : '요청 조건과의 종합 일치도가 높고, 카테고리/고민/제형 신호가 안정적으로 맞는 후보예요.',
-      usage_tip: tips.join(' '),
-      caution: cautions.join(' '),
-    };
-  },
-
-  async scoreAndFilterProducts(cachedProducts, args = {}, limit = DEFAULT_LIMIT) {
-    if (!Array.isArray(cachedProducts) || cachedProducts.length === 0) {
-      return { recommendations: [], promotions: [], summary: { message: '데이터가 없습니다.' } };
-    }
-
-    const intent = this.normalizeUserIntent(args);
-    intent.requested_form = this.detectRequestedForm(intent, args);
-
-    if (!intent.has_intent) {
+    if (!Array.isArray(cachedProducts) || !cachedProducts.length) {
+      trackNoResult();
       return {
+        requested_category: null,
+        main_recommendations: [],
+        secondary_recommendations: [],
+        reasoning_tags: ['empty_cache'],
+        applied_policy: { category_locked: false, sort_mode: 'popular' },
         recommendations: [],
+        reference_recommendations: [],
         promotions: [],
-        summary: { message: '원하는 피부 타입이나 제품군을 말씀해주시면 더 정확히 추천해드릴게요.' },
+        summary: { message: '데이터가 없습니다.', strategy: '', conclusion: '' },
       };
     }
 
-    const normalized = cachedProducts.map((p) => this.normalizeProduct(p));
-    const stage1 = normalized
-      .map((p) => ({ ...p, _stage1: this.stage1Score(p, intent) }))
-      .filter((p) => p._stage1 > 0)
-      .sort((a, b) => b._stage1 - a._stage1)
-      .slice(0, STAGE1_TOP_K);
-
-    if (!stage1.length) {
-      return { recommendations: [], promotions: [], summary: { message: '조건에 맞는 결과가 없습니다.' } };
-    }
-
-    const seenBase = new Set();
-    const dedup = [];
-    for (const p of stage1) {
-      if (seenBase.has(p.base_name)) continue;
-      seenBase.add(p.base_name);
-      dedup.push(p);
-      if (dedup.length >= STAGE2_TOP_K) break;
-    }
-
-    const reranked = await this.stage2Rerank(dedup, intent, args);
-    let ordered = reranked;
-
-    if (intent.requested_form) {
-      const sameForm = reranked.filter((p) => p.form === intent.requested_form);
-      const otherForm = reranked.filter((p) => p.form !== intent.requested_form);
-      if (sameForm.length > 0) ordered = [...sameForm, ...otherForm];
-    }
-
-    const shouldUseTop1Lock = Boolean(intent.skin_type) || (intent.concerns || []).length > 0;
-    if (shouldUseTop1Lock) {
-      const signature = buildIntentSignature(intent, args);
-      const lockedTop1 = getLockedTop1(signature);
-      if (lockedTop1) {
-        const lockIdx = ordered.findIndex((p) => p.base_name === lockedTop1);
-        if (lockIdx > 0) {
-          const [row] = ordered.splice(lockIdx, 1);
-          ordered = [row, ...ordered];
-        }
-      }
-      if (ordered[0]?.base_name) setLockedTop1(signature, ordered[0].base_name);
-    }
-
-    const targetCount = Math.max(1, limit);
-    const coreOrdered = ordered.filter((p) => !p.is_promo);
-    const topSource = coreOrdered.length ? coreOrdered : ordered;
-    const top = [];
-
-    const pushUniqueByBase = (acc, pool = []) => {
-      for (const item of pool) {
-        if (acc.length >= targetCount) break;
-        if (!item || acc.some((x) => x.base_name === item.base_name)) continue;
-        acc.push(item);
-      }
-    };
-
-    if (intent.requested_form) {
-      const sameFormTopSource = topSource.filter((p) => p.form === intent.requested_form);
-      const sameFormOrdered = ordered.filter((p) => p.form === intent.requested_form);
-      const sameFormStage1 = stage1.filter((p) => p.form === intent.requested_form);
-      const sameFormFromAll = normalized
-        .map((p) => ({ ...p, _stage1: this.stage1Score(p, intent) }))
-        .filter((p) => p.form === intent.requested_form && p._stage1 > 0)
-        .sort((a, b) => {
-          if (!!a.is_promo !== !!b.is_promo) return Number(a.is_promo) - Number(b.is_promo);
-          return b._stage1 - a._stage1;
-        });
-
-      // Main cards: requested form first (and in most cases only).
-      pushUniqueByBase(top, sameFormTopSource);
-      pushUniqueByBase(top, sameFormOrdered);
-      pushUniqueByBase(top, sameFormStage1);
-      pushUniqueByBase(top, sameFormFromAll);
-
-      // If absolutely no same-form candidate exists, show generic top picks instead of empty cards.
-      if (top.length === 0) {
-        pushUniqueByBase(top, topSource);
-      }
-    } else {
-      pushUniqueByBase(top, topSource);
-    }
-
-    const recommendations = top.map((p, idx) => {
-      const details = this.buildRecommendationDetails(p, intent);
-      const key =
-        p.form === 'spray'
-          ? '가벼운 재도포 편의'
-          : p.form === 'stick'
-          ? '휴대/수정 편의'
-          : p.form === 'serum'
-          ? '얇은 레이어링 사용감'
-          : includesAny(p.name, ['잡티', 'tone', 'toning'])
-          ? '톤/잡티 보완'
-          : includesAny(p.name, ['쿨링', 'cool'])
-          ? '산뜻한 데일리 사용감'
-          : '요청 조건 종합 적합';
-
-      return {
-        rank: idx + 1,
-        rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
-        name: p.name,
-        base_name: p.base_name,
-        form: p.form,
-        price: p.price,
-        key_point: key,
-        why_pick: details.why_pick,
-        usage_tip: details.usage_tip,
-        caution: details.caution,
-        is_promo: !!p.is_promo,
-        buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
-        image: p.thumbnail,
-      };
+    const normalized = cachedProducts.map((p) => {
+      const item = normalizeCafe24Product(p, RECOMMENDATION_TAXONOMY);
+      return { ...item, category_key: inferProductCategory(item) };
     });
+    const parsed = this.parse_user_request(args);
+    const { candidates, category_locked } = this.get_primary_candidates(normalized, parsed);
 
-    if (!recommendations.length) {
-      return { recommendations: [], promotions: [], summary: { message: '조건에 맞는 결과가 없습니다.' } };
+    let usedFallback = false;
+    let ranked = await this.rank_primary_recommendations(candidates, parsed, limit, category_locked);
+
+    // fallback 1: keep category lock, relax conditions only.
+    if (!ranked.length && category_locked) {
+      usedFallback = true;
+      const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
+      ranked = await this.rank_primary_recommendations(candidates, relaxed, limit, category_locked);
     }
 
-    const recBase = new Set(recommendations.map((r) => r.base_name));
-    const referenceRecommendations = ordered
-      .filter((p) => !recBase.has(p.base_name))
-      .filter((p) => !intent.requested_form || p.form !== intent.requested_form)
-      .slice(0, 2)
-      .map((p) => ({
-        name: p.name,
-        base_name: p.base_name,
-        form: p.form,
-        price: p.price,
-        key_point:
-          p.form === 'spray'
-            ? '덧바르기 편의'
-            : p.form === 'stick'
-            ? '휴대/수정 편의'
-            : '다른 제형 대안',
-        buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
-        image: p.thumbnail,
-      }));
+    const mainRecommendations = ranked.map((p, idx) => toRecommendationItem(p, idx, parsed));
 
-    const promotions = normalized
-      .filter((p) => p.is_promo && recBase.has(p.base_name))
-      .slice(0, 4)
-      .map((p) => ({
-        name: p.name,
-        base_name: p.base_name,
-        price: p.price,
-        buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.id}`,
-        image: p.thumbnail,
-      }));
+    // fallback 2: no main candidates under lock -> explicit secondary only.
+    if (!mainRecommendations.length && category_locked) {
+      usedFallback = true;
+      trackNoResult();
+      trackFallback();
 
-    const strategy = '피부 타입, 고민, 제형을 함께 반영해 가장 잘 맞는 후보를 추천했습니다.';
-    const conclusion = `분석 결과, ${recommendations[0].name} 제품이 현재 요청 조건에 가장 적합합니다.`;
+      const secondaryOnly = this.get_secondary_recommendations(
+        normalized,
+        parsed,
+        [],
+        RECOMMENDATION_POLICY.limits.defaultSecondary
+      );
+      return {
+        requested_category: parsed.requested_category,
+        main_recommendations: [],
+        secondary_recommendations: secondaryOnly,
+        reasoning_tags: [...buildReasoningTags(parsed), 'fallback:secondary_only'],
+        applied_policy: { category_locked: true, sort_mode: parsed.sort_intent },
+        recommendations: [],
+        reference_recommendations: secondaryOnly,
+        promotions: [],
+        summary: {
+          message: '요청 카테고리 상품이 부족해 참고용 유사 카테고리만 제안드려요.',
+          strategy: '카테고리 잠금 정책을 유지한 상태에서 예외 fallback이 적용되었습니다.',
+          conclusion: '요청 카테고리 재고/매칭이 부족했습니다.',
+        },
+      };
+    }
 
-    return {
-      recommendations,
-      reference_recommendations: referenceRecommendations,
-      promotions,
-      summary: {
-        message: '고객님을 위한 최적 상품입니다.',
-        strategy,
-        conclusion,
-      },
-    };
+    if (usedFallback) trackFallback();
+    if (!mainRecommendations.length) trackNoResult();
+    if (hasCategoryLockViolation(mainRecommendations, parsed, category_locked)) {
+      trackCategoryLockViolation();
+      logger.warn(
+        `[Policy] category lock violation detected requested=${parsed.requested_category} main=${mainRecommendations
+          .map((x) => `${x.name}:${x.category_key || 'unknown'}`)
+          .join(', ')}`
+      );
+    }
+
+    const secondary = this.get_secondary_recommendations(
+      normalized,
+      parsed,
+      mainRecommendations,
+      RECOMMENDATION_POLICY.limits.defaultSecondary
+    );
+    return this.build_recommendation_response(parsed, mainRecommendations, secondary, category_locked);
   },
 };
-

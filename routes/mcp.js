@@ -365,6 +365,43 @@ function buildFollowUpQuestions(args = {}) {
   ];
 }
 
+function buildConsultNarrativeV4(recommendations, promotions = [], referenceRecommendations = [], args = {}) {
+  const lines = [];
+  const skinType = String(args.skin_type || '').trim();
+  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
+
+  const condition = [skinType ? `${skinType} 피부` : '', concerns.length ? `고민: ${concerns.join(', ')}` : '']
+    .filter(Boolean)
+    .join(' / ');
+  if (condition) {
+    lines.push(`요청 조건(${condition}) 기준으로 다시 정리해드릴게요.`);
+    lines.push('');
+  }
+
+  recommendations.forEach((item, idx) => {
+    lines.push(`${idx + 1}. ${item.name}`);
+    lines.push(`- 추천 이유: ${item.why_pick || item.key_point || '요청 조건과의 일치도가 높은 후보예요.'}`);
+    lines.push(`- 사용 팁: ${item.usage_tip || '기초 마지막 단계에서 2~3회 나눠 바르면 밀림이 덜해요.'}`);
+    if (item.caution) lines.push(`- 체크 포인트: ${item.caution}`);
+    lines.push('');
+  });
+
+  if (promotions.length > 0) {
+    lines.push('행사 구성은 카드 아래 배너에서 같이 확인하실 수 있어요.');
+    lines.push('');
+  }
+
+  if (Array.isArray(referenceRecommendations) && referenceRecommendations.length > 0) {
+    lines.push('지금 추천이 사용감과 맞지 않으면 참고용 다른 제형 후보로 바로 바꿔드릴 수 있어요.');
+    lines.push('');
+  }
+
+  lines.push('원하시면 다음 단계로 이어서 도와드릴게요.');
+  lines.push('- 예산에 맞춘 2~3개 루틴 조합');
+  lines.push('- 오전/야외/메이크업용으로 상황별 분리 추천');
+  return lines.join('\n');
+}
+
 function normalizeCategory(category) {
   const rawCat = String(category || '').toLowerCase().trim();
   if (!rawCat) return { rawCat: '', standardCat: '' };
@@ -444,13 +481,28 @@ async function executeTool(args = {}) {
     3
   );
 
-  const { recommendations, promotions, summary, reference_recommendations: referenceRecommendations = [] } = result;
+  const {
+    requested_category: requestedCategory = null,
+    main_recommendations: mainRecommendations = [],
+    secondary_recommendations: secondaryRecommendations = [],
+    reasoning_tags: reasoningTags = [],
+    applied_policy: appliedPolicy = {},
+    recommendations,
+    promotions,
+    summary,
+    reference_recommendations: referenceRecommendations = [],
+  } = result;
   const safeSummary = summary || { message: '조건에 맞는 상품을 찾지 못했습니다.' };
 
   if (!Array.isArray(recommendations) || recommendations.length === 0) {
     return {
       content: [{ type: 'text', text: safeSummary.message }],
       structuredContent: {
+        requested_category: requestedCategory,
+        main_recommendations: [],
+        secondary_recommendations: [],
+        reasoning_tags: reasoningTags,
+        applied_policy: appliedPolicy,
         recommendations: [],
         promotions: [],
         reference_recommendations: [],
@@ -462,12 +514,22 @@ async function executeTool(args = {}) {
         ui: { resourceUri: WIDGET_HTTP_URI },
         'openai/outputTemplate': WIDGET_HTTP_URI,
         'openai/widgetAccessible': true,
-        widgetData: { recommendations: [], promotions: [], reference_recommendations: [], summary: safeSummary },
+        widgetData: {
+          requested_category: requestedCategory,
+          main_recommendations: [],
+          secondary_recommendations: [],
+          reasoning_tags: reasoningTags,
+          applied_policy: appliedPolicy,
+          recommendations: [],
+          promotions: [],
+          reference_recommendations: [],
+          summary: safeSummary,
+        },
       },
     };
   }
 
-  const consultText = buildConsultNarrativeV3(
+  const consultText = buildConsultNarrativeV4(
     recommendations,
     promotions || [],
     referenceRecommendations || [],
@@ -477,6 +539,11 @@ async function executeTool(args = {}) {
   return {
     content: [{ type: 'text', text: consultText }],
     structuredContent: {
+      requested_category: requestedCategory,
+      main_recommendations: mainRecommendations,
+      secondary_recommendations: secondaryRecommendations,
+      reasoning_tags: reasoningTags,
+      applied_policy: appliedPolicy,
       recommendations,
       promotions: promotions || [],
       reference_recommendations: referenceRecommendations || [],
@@ -489,6 +556,11 @@ async function executeTool(args = {}) {
       'openai/outputTemplate': WIDGET_HTTP_URI,
       'openai/widgetAccessible': true,
       widgetData: {
+        requested_category: requestedCategory,
+        main_recommendations: mainRecommendations,
+        secondary_recommendations: secondaryRecommendations,
+        reasoning_tags: reasoningTags,
+        applied_policy: appliedPolicy,
         recommendations,
         promotions: promotions || [],
         reference_recommendations: referenceRecommendations || [],
@@ -598,10 +670,18 @@ async function handleMcpMessage(req, res) {
         finalResult.output = toolResult.structuredContent;
       }
 
-      const recCount = Array.isArray(toolResult?.structuredContent?.recommendations)
+      const recCount = Array.isArray(toolResult?.structuredContent?.main_recommendations)
+        ? toolResult.structuredContent.main_recommendations.length
+        : Array.isArray(toolResult?.structuredContent?.recommendations)
         ? toolResult.structuredContent.recommendations.length
         : 0;
-      logger.info(`[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}`);
+      const metric = recommendationService.getMetricsSnapshot?.();
+      logger.info(
+        `[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}` +
+          (metric
+            ? ` no_result_rate=${metric.no_result_rate} fallback_rate=${metric.fallback_rate} category_lock_violation_count=${metric.category_lock_violation_count}`
+            : '')
+      );
 
       sendToClient({ jsonrpc: '2.0', id, result: finalResult });
       return;

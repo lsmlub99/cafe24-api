@@ -24,6 +24,10 @@ function mapIntentSignals(intent = {}) {
   if (concerns.has('tone_up')) finish.add('tone_up');
   if (concerns.has('uv_protection')) useCase.add('daily');
   if (concerns.has('soothing')) useCase.add('daily');
+  if (concerns.has('not_fit')) {
+    texture.add('lightweight');
+    useCase.add('daily');
+  }
 
   for (const s of intent.situation || []) {
     if (s === 'outdoor') {
@@ -228,7 +232,11 @@ function getRepeatPenalty(product, intent, policy) {
   const seen = intent.session_context?.recent_main_base_names || [];
   const base = String(product.base_name || '').trim();
   if (!base || !Array.isArray(seen) || !seen.length) return 0;
-  return seen.includes(base) ? policy.scoring.repeatRecommendationPenalty : 0;
+  if (!seen.includes(base)) return 0;
+
+  const needsVariety = Boolean(intent.variety_intent || (intent.concern || []).includes('not_fit'));
+  const weight = needsVariety ? 1.8 : 1;
+  return policy.scoring.repeatRecommendationPenalty * weight;
 }
 
 export function calculateMainScoreBreakdown(product, intent, categoryLocked, policy, context = null) {

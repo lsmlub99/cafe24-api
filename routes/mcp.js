@@ -185,41 +185,6 @@ function computeEnrichMaxFetch(args = {}) {
   return shouldEnrich ? config.ENRICH_MAX_FETCH_INGREDIENT : config.ENRICH_MAX_FETCH_BASE;
 }
 
-function buildConsultNarrative(mainRecommendations = [], promotions = [], secondaryRecommendations = [], args = {}) {
-  if (!mainRecommendations.length) return '요청하신 조건에 맞는 본품 후보를 찾지 못했어요.';
-
-  const lines = [];
-  const skinType = String(args.skin_type || '').trim();
-  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
-  const conditionText = [skinType ? `${skinType} 피부` : '', concerns.length ? `고민: ${concerns.join(', ')}` : '']
-    .filter(Boolean)
-    .join(' / ');
-
-  if (conditionText) lines.push(`요청 조건(${conditionText}) 기준으로 본품 위주로 정리해드릴게요.`);
-  else lines.push('요청하신 카테고리에서 본품 위주로 먼저 추천드릴게요.');
-  lines.push('');
-
-  mainRecommendations.forEach((item, idx) => {
-    lines.push(`${idx + 1}. ${item.name}`);
-    lines.push(`- 추천 이유: ${item.why_pick || '요청 조건과의 일치도가 높은 후보입니다.'}`);
-    lines.push(`- 사용 팁: ${item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 발라 주세요.'}`);
-    lines.push('');
-  });
-
-  if (promotions.length > 0) {
-    lines.push('현재 행사도 함께 진행 중이에요. 카드 하단 행사 섹션에서 확인해 주세요.');
-    lines.push('');
-  }
-
-  if (secondaryRecommendations.length > 0) {
-    lines.push('제형을 넓혀서 함께 볼 만한 참고 추천도 아래에 정리해두었어요.');
-    lines.push('');
-  }
-
-  lines.push('원하시면 다음으로 예산 기준 루틴이나 함께 쓰기 좋은 조합까지 바로 맞춰드릴게요.');
-  return lines.join('\n');
-}
-
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -310,7 +275,7 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = buildConsultNarrative(
+  const consultText = await recommendationService.generate_consult_narrative(
     recommendations,
     promotions || [],
     referenceRecommendations || secondaryRecommendations || [],

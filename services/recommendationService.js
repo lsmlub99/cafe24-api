@@ -72,6 +72,7 @@ function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
   const negativePreferences = sessionContext.negative_preferences || [];
 
   if (reactiveSignals.includes('irritation')) mergedConcern.add('soothing');
+  if (reactiveSignals.includes('not_fit')) mergedConcern.add('not_fit');
   if (negativePreferences.includes('oily')) mergedConcern.add('sebum_control');
   if (negativePreferences.includes('heavy')) mergedPreference.add('lightweight');
 
@@ -258,6 +259,86 @@ function buildMcpRecommendationResponse(
   };
 }
 
+function buildDeterministicNarrative(mainRecommendations = [], promotions = [], secondaryRecommendations = [], args = {}) {
+  if (!mainRecommendations.length) return '요청하신 조건에 맞는 본품 후보를 찾지 못했어요.';
+
+  const lines = [];
+  const skinType = String(args.skin_type || '').trim();
+  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
+  const conditionText = [skinType ? `${skinType} 피부` : '', concerns.length ? `고민: ${concerns.join(', ')}` : '']
+    .filter(Boolean)
+    .join(' / ');
+
+  lines.push(conditionText ? `요청 조건(${conditionText}) 기준으로 본품 위주로 정리해드릴게요.` : '요청하신 카테고리에서 본품 위주로 먼저 추천드릴게요.');
+  lines.push('');
+
+  mainRecommendations.forEach((item, idx) => {
+    lines.push(`${idx + 1}. ${item.name}`);
+    lines.push(`- 추천 이유: ${item.why_pick || '요청 조건과의 일치도가 높은 후보입니다.'}`);
+    lines.push(`- 사용 팁: ${item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 발라 주세요.'}`);
+    lines.push('');
+  });
+
+  if (promotions.length > 0) {
+    lines.push('현재 행사도 함께 진행 중이에요. 카드 하단 행사 섹션에서 확인해 주세요.');
+    lines.push('');
+  }
+  if (secondaryRecommendations.length > 0) {
+    lines.push('제형을 넓혀서 함께 볼 만한 참고 추천도 아래에 정리해두었어요.');
+    lines.push('');
+  }
+  lines.push('원하시면 다음으로 예산 기준 루틴이나 함께 쓰기 좋은 조합까지 바로 맞춰드릴게요.');
+  return lines.join('\n');
+}
+
+async function generateNarrativeWithLLM(mainRecommendations = [], promotions = [], secondaryRecommendations = [], args = {}) {
+  const openai = await getOpenAIClient();
+  if (!openai) return null;
+
+  const compactItems = mainRecommendations.slice(0, 3).map((x) => ({
+    name: x.name,
+    why_pick: x.why_pick || x.key_point || '',
+    usage_tip: x.usage_tip || '',
+  }));
+
+  const promptPayload = {
+    user_context: {
+      category: args.category || '',
+      skin_type: args.skin_type || '',
+      concerns: Array.isArray(args.concerns) ? args.concerns : [],
+      query: args.query || args.q || '',
+    },
+    main_recommendations: compactItems,
+    secondary_count: secondaryRecommendations.length,
+    promotions_count: promotions.length,
+  };
+
+  const systemPrompt = [
+    '너는 백화점 뷰티 카운터의 전문 상담사 톤으로 한국어 안내문을 작성한다.',
+    '추천 결과는 바꾸지 말고, 이미 주어진 main_recommendations를 설명만 자연스럽게 정리한다.',
+    '공감 과장/과도한 감탄/반말 금지. 핵심 중심으로 8~14문장 내 작성.',
+    '카드와 중복되는 가격 나열은 피하고, 선택 기준/사용 가이드를 실용적으로 정리한다.',
+    '반드시 JSON만 반환: {"text":"..."}',
+  ].join(' ');
+
+  try {
+    const res = await openai.responses.create({
+      model: config.NARRATOR_MODEL || config.RERANK_MODEL || RECOMMENDATION_POLICY.rerank.model,
+      temperature: 0.3,
+      input: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify(promptPayload) },
+      ],
+    });
+    const parsed = parseJsonObject((res.output_text || '').trim());
+    const text = String(parsed?.text || '').trim();
+    return text || null;
+  } catch (error) {
+    logger.warn(`[Narrator] skipped: ${error.message}`);
+    return null;
+  }
+}
+
 function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLocked) {
   if (!categoryLocked || !parsedIntent.requested_category || !Array.isArray(mainRecommendations)) return false;
   const requestedIds = (parsedIntent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
@@ -394,6 +475,12 @@ export const recommendationService = {
     return getRecommendationMetrics();
   },
 
+  async generate_consult_narrative(mainRecommendations = [], promotions = [], secondaryRecommendations = [], args = {}) {
+    const llmText = await generateNarrativeWithLLM(mainRecommendations, promotions, secondaryRecommendations, args);
+    if (llmText) return llmText;
+    return buildDeterministicNarrative(mainRecommendations, promotions, secondaryRecommendations, args);
+  },
+
   async scoreAndFilterProducts(cachedProducts, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
     trackRequest();
 
@@ -419,8 +506,11 @@ export const recommendationService = {
     const sessionKey = String(args.__session_key || args.session_key || 'global');
     const sessionContext = getSessionContext(sessionKey);
     const parsed = applySessionContextToIntent(this.parse_user_request(args), sessionContext);
+    logger.info(
+      `[Intent] category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} variety=${parsed.variety_intent ? '1' : '0'}`
+    );
 
-    const shouldRelaxFormAtStart = Boolean(parsed.variety_intent);
+    const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
     let primary = this.get_primary_candidates(normalized, parsed, { relaxForm: shouldRelaxFormAtStart, includePromo: false });
     let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
 

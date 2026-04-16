@@ -13,7 +13,16 @@ const IRRITATION_WORDS = [
 const VARIETY_WORDS = ['다른', '다른거', '다른 건', '말고', '또 뭐', '더 있', '없나요', '없어?', 'other option'];
 const PRODUCT_NEGATIVE_SCOPE_WORDS = ['이거', '이 제품', '지금 쓰는', '현재 쓰는', '이 선크림', '방금 추천'];
 const CATEGORY_NEGATIVE_SCOPE_WORDS = ['자체가', '다 안', '전부 안', '전체가 안', '카테고리'];
-const CATEGORY_EXIT_WORDS = ['말고', '대신', '다른 카테고리', '아예 다른 제품', '선크림 말고'];
+const CATEGORY_EXIT_WORDS = [
+  '아예 다른 카테고리',
+  '카테고리 바꿔',
+  '카테고리 변경',
+  '선케어 말고 토너',
+  '선크림 말고 토너',
+  '선케어 말고 세럼',
+  '선크림 말고 세럼',
+  '완전 다른 카테고리',
+];
 
 function detectNegativeScope(query = '', requestedCategory = '') {
   const q = lower(query);

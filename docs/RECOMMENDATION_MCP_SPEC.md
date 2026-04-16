@@ -138,6 +138,10 @@
 ## 8. 성능 가이드
 - Fast path가 기본이며 대부분 요청은 rule/structured ranking으로 처리
 - LLM rerank는 top-N 후보에서만 수행하여 latency/cost 제한
+- Semantic retrieval(embedding)은 primary candidate에 의미 점수를 부여하는 보조 레이어로 동작
+  - ENV: `SEMANTIC_RETRIEVAL_ENABLED=true|false`
+  - ENV: `EMBEDDING_MODEL=text-embedding-3-small` (기본)
+  - category/form/promo policy lock은 semantic 단계에서도 유지
 - 권장 목표:
   - Fast path P95 < 800ms
   - Precise path P95 < 2500ms

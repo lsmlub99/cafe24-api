@@ -291,6 +291,9 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const repeatPenalty = getRepeatPenalty(product, intent, policy);
   const negativeScopePenalty = getNegativeScopePenalty(product, intent);
   const queryMatch = getQueryMatchScore(product, intent);
+  const semanticScore = Number(product._semantic_score || 0);
+  const semanticWeight = Number(product._semantic_weight || policy.scoring.semanticWeight || 0);
+  const semanticBoost = semanticScore > 0 ? (semanticScore / 100) * semanticWeight * 12 : 0;
 
   const baseScore =
     categoryGate +
@@ -298,6 +301,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     quality * policy.scoring.qualityWeight +
     intentFit * policy.scoring.intentWeight +
     novelty * policy.scoring.noveltyWeight +
+    semanticBoost +
     priceIntentScore +
     queryMatch +
     promoPenalty +
@@ -319,6 +323,8 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     intent_score: Number(intentFit.toFixed(3)),
     price_intent_score: Number(priceIntentScore.toFixed(3)),
     novelty_score: Number(novelty.toFixed(3)),
+    semantic_score: Number(semanticScore.toFixed(3)),
+    semantic_boost: Number(semanticBoost.toFixed(3)),
     query_match_score: Number(queryMatch.toFixed(3)),
     promo_penalty: promoPenalty,
     category_gate: categoryGate,

@@ -30,6 +30,14 @@ export const RECOMMENDATION_POLICY = {
     sameFormPenalty: 5,
     reactiveToneUpPenalty: -22,
     repeatRecommendationPenalty: 28,
+    semanticWeight: 1.1,
+  },
+  semantic: {
+    enabled: true,
+    model: 'text-embedding-3-small',
+    minCandidateCount: 3,
+    maxPool: 40,
+    batchSize: 32,
   },
   diversity: {
     enabled: true,

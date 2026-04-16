@@ -21,6 +21,7 @@ import {
   trackRequest,
 } from './recommendation/metrics.js';
 import { getSessionContext, updateSessionContext } from './recommendation/sessionContext.js';
+import { applySemanticSignals } from './recommendation/semanticRetriever.js';
 
 let openaiClient = null;
 let openaiLoadAttempted = false;
@@ -435,7 +436,7 @@ export const recommendationService = {
     finalSelected.forEach((item, idx) => {
       const breakdown = item._score_breakdown || {};
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 
@@ -538,12 +539,33 @@ export const recommendationService = {
     let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
 
     let usedFallback = false;
-    let ranked = await this.rank_primary_recommendations(candidates, parsed, limit, category_locked);
+    let semanticCandidates = await applySemanticSignals(candidates, parsed, {
+      openai,
+      enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
+      model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
+      minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
+      maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
+      batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
+      semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
+      logger,
+    });
+
+    let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, limit, category_locked);
 
     if (!ranked.length && category_locked) {
       usedFallback = true;
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
-      ranked = await this.rank_primary_recommendations(candidates, relaxed, limit, category_locked);
+      semanticCandidates = await applySemanticSignals(candidates, relaxed, {
+        openai,
+        enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
+        model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
+        minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
+        maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
+        batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
+        semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
+        logger,
+      });
+      ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, limit, category_locked);
     }
 
     if (!ranked.length && category_locked) {
@@ -553,7 +575,17 @@ export const recommendationService = {
       category_locked = primary.category_locked;
       form_locked = primary.form_locked;
       allowed_main_forms = primary.allowed_main_forms || [];
-      ranked = await this.rank_primary_recommendations(candidates, parsed, limit, category_locked);
+      semanticCandidates = await applySemanticSignals(candidates, parsed, {
+        openai,
+        enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
+        model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
+        minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
+        maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
+        batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
+        semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
+        logger,
+      });
+      ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, limit, category_locked);
     }
 
     const mainRecommendations = ranked.map((p, idx) => toRecommendationItem(p, idx, parsed));

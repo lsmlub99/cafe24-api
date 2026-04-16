@@ -35,6 +35,15 @@
 | TC-11 | 선크림인데 예산 2만원 | price_intent 반영 |
 | TC-12 | 결과 없는 모호 입력(예: 응가) | 안전 fallback + 위젯 깨짐 없음 |
 
+## 3-1) Negative Scope Branch Cases (Required)
+
+| Case ID | User Input | Expected Behavior |
+|---|---|---|
+| NS-01 | 이 선크림이 안 맞아요 | `negative_scope=product`, 동일 base_name 강한 감점, 같은 카테고리 대체 우선 |
+| NS-02 | 선크림이 전반적으로 안 맞아요 | `negative_scope=category`, 메인 카테고리 유지 + secondary 대체 제안 강화 |
+| NS-03 | 선크림이 밀리고 답답해요 | `negative_scope=form`, 최근 제형 감점, 가벼운 제형 우선 |
+| NS-04 | 선크림 말고 다른 제품 추천해줘 | `allow_category_switch=true`, 메인 카테고리 전환 허용 |
+
 ## 4) Execution Log Table
 
 각 케이스는 최소 2회 실행 권장(재현성 확인).
@@ -87,4 +96,3 @@
 - Max Response Time:
 - Residual Issues:
 - Go / No-Go:
-

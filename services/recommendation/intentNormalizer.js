@@ -42,7 +42,9 @@ function mergeIntent(base = {}, normalized = {}) {
     novelty_request: Boolean(base.novelty_request || normalized.novelty_request),
     popularity_intent: Boolean(base.popularity_intent || normalized.popularity_intent),
     negative_scope: base.negative_scope || normalized.negative_scope || null,
-    allow_category_switch: Boolean(base.allow_category_switch || normalized.allow_category_switch),
+    allow_category_switch: base.requested_category
+      ? Boolean(base.allow_category_switch)
+      : Boolean(base.allow_category_switch || normalized.allow_category_switch),
     skin_type:
       base.skin_type && base.skin_type !== '모든 피부'
         ? base.skin_type

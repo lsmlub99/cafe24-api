@@ -27,6 +27,8 @@ export const config = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || process.env.BASE_URL || '',
   RERANK_MODEL: process.env.RERANK_MODEL || 'gpt-4o-mini',
+  EMBEDDING_MODEL: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+  SEMANTIC_RETRIEVAL_ENABLED: toBool(process.env.SEMANTIC_RETRIEVAL_ENABLED, true),
   LOG_LEVEL: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   LOG_MCP_VERBOSE: toBool(process.env.LOG_MCP_VERBOSE, false),
   LOG_CACHE_FILTER: toBool(process.env.LOG_CACHE_FILTER, false),

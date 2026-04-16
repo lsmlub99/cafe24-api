@@ -28,6 +28,13 @@ function mapIntentSignals(intent = {}) {
     texture.add('lightweight');
     useCase.add('daily');
   }
+  for (const issue of intent.fit_issue || []) {
+    if (issue === 'irritation' || issue === 'eye_sting' || issue === 'breakout') concerns.add('soothing');
+    if (issue === 'heavy_feel' || issue === 'oily_residue' || issue === 'pilling') {
+      texture.add('lightweight');
+      texture.add('low_oily');
+    }
+  }
 
   for (const s of intent.situation || []) {
     if (s === 'outdoor') {
@@ -207,9 +214,13 @@ function getFormMismatchPenalty(product, allowedMainForms, policy) {
 }
 
 function getReactivePenalty(product, intent, policy) {
+  const fitIssues = intent.fit_issue || [];
   const reactiveIntent =
     (intent.concern || []).includes('soothing') ||
     intent.skin_type === 'sensitive' ||
+    fitIssues.includes('irritation') ||
+    fitIssues.includes('eye_sting') ||
+    fitIssues.includes('breakout') ||
     includesAny(intent.query || '', ['따가', '자극', '눈시림', '트러블', '안 맞']);
   if (!reactiveIntent) return 0;
 

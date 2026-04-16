@@ -2,6 +2,7 @@ import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { RECOMMENDATION_POLICY, RECOMMENDATION_TAXONOMY } from '../config/recommendationPolicy.js';
 import { parseUserIntent } from './recommendation/intentParser.js';
+import { normalizeIntentWithLLM } from './recommendation/intentNormalizer.js';
 import { normalizeCafe24Product } from './recommendation/productNormalizer.js';
 import {
   calculateMainScoreBreakdown,
@@ -57,6 +58,7 @@ function buildReasoningTags(parsedIntent) {
   for (const c of parsedIntent.concern || []) tags.push(`concern:${c}`);
   for (const s of parsedIntent.situation || []) tags.push(`situation:${s}`);
   for (const p of parsedIntent.preference || []) tags.push(`preference:${p}`);
+  for (const f of parsedIntent.fit_issue || []) tags.push(`fit_issue:${f}`);
   if (parsedIntent.variety_intent) tags.push('intent:variety');
   if (parsedIntent.sensitivity_signal) tags.push(`sensitivity:${parsedIntent.sensitivity_signal}`);
   if (parsedIntent.price_intent?.max_price_krw) tags.push(`price_max:${parsedIntent.price_intent.max_price_krw}`);
@@ -80,6 +82,7 @@ function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
     ...parsedIntent,
     concern: [...mergedConcern],
     preference: [...mergedPreference],
+    fit_issue: [...new Set([...(parsedIntent.fit_issue || []), ...(reactiveSignals.includes('irritation') ? ['irritation'] : [])])],
     session_context: {
       reactive_signals: reactiveSignals,
       negative_preferences: negativePreferences,
@@ -505,9 +508,17 @@ export const recommendationService = {
     });
     const sessionKey = String(args.__session_key || args.session_key || 'global');
     const sessionContext = getSessionContext(sessionKey);
-    const parsed = applySessionContextToIntent(this.parse_user_request(args), sessionContext);
+    const ruleParsed = this.parse_user_request(args);
+    const openai = await getOpenAIClient();
+    const normalizedIntentResult = await normalizeIntentWithLLM(
+      openai,
+      args,
+      ruleParsed,
+      config.INTENT_NORMALIZER_MODEL || config.RERANK_MODEL || RECOMMENDATION_POLICY.rerank.model
+    );
+    const parsed = applySessionContextToIntent(normalizedIntentResult.intent, sessionContext);
     logger.info(
-      `[Intent] category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} variety=${parsed.variety_intent ? '1' : '0'}`
+      `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} variety=${parsed.variety_intent ? '1' : '0'}`
     );
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));

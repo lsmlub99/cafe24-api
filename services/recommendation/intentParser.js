@@ -93,6 +93,7 @@ export function parseUserIntent(args = {}, taxonomy) {
     variety_intent: varietyIntent,
     price_intent: priceIntent,
     sensitivity_signal: sensitivitySignal,
+    fit_issue: [],
     sort_intent: 'popular',
     query: q,
   };

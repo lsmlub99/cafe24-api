@@ -34,7 +34,7 @@ function detectFeedbackSignals(query = '') {
   const q = String(query || '');
   const signals = {
     irritation: includesAny(q, ['따가', '자극', '화끈', '눈시림', '간지러', '알러지', '알레르기']),
-    not_fit: includesAny(q, ['안 맞', '안맞', '별로', '실패']),
+    not_fit: includesAny(q, ['안 맞', '안맞', '별로', '실패', '밀림', '뜨', '겉돌', '안 맞아요']),
     oily_dislike: includesAny(q, ['번들', '유분', '기름짐', '끈적']),
     heavy_dislike: includesAny(q, ['답답', '무겁', '겉돌']),
   };

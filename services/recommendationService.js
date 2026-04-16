@@ -385,6 +385,37 @@ function collectPromotions(normalizedProducts, parsedIntent, mainRecommendations
   return dedupeByBase(promos).slice(0, maxCount).map(toPromotionItem);
 }
 
+function isCategoryMatchedByIntent(item = {}, parsedIntent = {}) {
+  const requestedIds = (parsedIntent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  if (requestedIds.length > 0) {
+    const ids = Array.isArray(item.category_ids) ? item.category_ids : [];
+    return ids.some((id) => requestedIds.includes(Number(id)));
+  }
+  if (!parsedIntent.requested_category) return true;
+  return item.category_key === parsedIntent.requested_category;
+}
+
+function enforceMainPolicyOnRanked(
+  ranked = [],
+  parsedIntent = {},
+  categoryLocked = false,
+  formLocked = false,
+  allowedMainForms = [],
+  limit = RECOMMENDATION_POLICY.limits.defaultMain
+) {
+  const filtered = (ranked || []).filter((item) => {
+    if (!item || item.is_promo) return false;
+    if (categoryLocked && !isCategoryMatchedByIntent(item, parsedIntent)) return false;
+    if (formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0) {
+      if (!item.form || !allowedMainForms.includes(item.form)) return false;
+    }
+    return true;
+  });
+
+  const deduped = dedupeByBase(filtered);
+  return deduped.slice(0, Math.max(1, limit));
+}
+
 export const recommendationService = {
   parse_user_request(args = {}) {
     return parseUserIntent(args, RECOMMENDATION_TAXONOMY);
@@ -532,11 +563,20 @@ export const recommendationService = {
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
       : parsed;
 
-    let primary = this.get_primary_candidates(normalized, retrievalIntent, {
-      relaxForm: shouldRelaxFormAtStart,
+    const strictPrimary = this.get_primary_candidates(normalized, retrievalIntent, {
+      relaxForm: false,
       includePromo: false,
     });
-    let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
+    const broadPrimary = this.get_primary_candidates(normalized, retrievalIntent, {
+      relaxForm: true,
+      includePromo: false,
+    });
+
+    let { category_locked, form_locked, allowed_main_forms = [] } = strictPrimary;
+    let candidates = Array.isArray(broadPrimary.candidates) ? broadPrimary.candidates : [];
+    if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
+      candidates = strictPrimary.candidates;
+    }
 
     let usedFallback = false;
     let semanticCandidates = await applySemanticSignals(candidates, parsed, {
@@ -550,9 +590,17 @@ export const recommendationService = {
       logger,
     });
 
-    let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, limit, category_locked);
+    let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+    let policyMain = enforceMainPolicyOnRanked(
+      ranked,
+      parsed,
+      category_locked,
+      form_locked,
+      allowed_main_forms,
+      limit
+    );
 
-    if (!ranked.length && category_locked) {
+    if (!policyMain.length && category_locked) {
       usedFallback = true;
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       semanticCandidates = await applySemanticSignals(candidates, relaxed, {
@@ -565,16 +613,24 @@ export const recommendationService = {
         semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
         logger,
       });
-      ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, limit, category_locked);
+      ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
+      policyMain = enforceMainPolicyOnRanked(
+        ranked,
+        parsed,
+        category_locked,
+        form_locked,
+        allowed_main_forms,
+        limit
+      );
     }
 
-    if (!ranked.length && category_locked) {
+    if (!policyMain.length && category_locked) {
       usedFallback = true;
-      primary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
-      candidates = primary.candidates;
-      category_locked = primary.category_locked;
-      form_locked = primary.form_locked;
-      allowed_main_forms = primary.allowed_main_forms || [];
+      const fallbackPrimary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
+      candidates = fallbackPrimary.candidates;
+      category_locked = strictPrimary.category_locked;
+      form_locked = strictPrimary.form_locked;
+      allowed_main_forms = strictPrimary.allowed_main_forms || [];
       semanticCandidates = await applySemanticSignals(candidates, parsed, {
         openai,
         enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
@@ -585,10 +641,18 @@ export const recommendationService = {
         semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
         logger,
       });
-      ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, limit, category_locked);
+      ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+      policyMain = enforceMainPolicyOnRanked(
+        ranked,
+        parsed,
+        category_locked,
+        form_locked,
+        allowed_main_forms,
+        limit
+      );
     }
 
-    const mainRecommendations = ranked.map((p, idx) => toRecommendationItem(p, idx, parsed));
+    const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
 
     if (!mainRecommendations.length && category_locked) {

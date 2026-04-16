@@ -9,6 +9,7 @@ const ALLOWED = {
   situation: ['outdoor', 'makeup_before', 'daily'],
   preference: ['lightweight', 'moisturizing', 'low_white_cast'],
   fit_issue: ['irritation', 'pilling', 'eye_sting', 'breakout', 'heavy_feel', 'oily_residue', 'unknown'],
+  negative_scope: ['product', 'form', 'category'],
 };
 
 function sanitizeArray(input, allowed) {
@@ -40,6 +41,8 @@ function mergeIntent(base = {}, normalized = {}) {
     sort_intent: normalized.sort_intent || base.sort_intent || 'popular',
     novelty_request: Boolean(base.novelty_request || normalized.novelty_request),
     popularity_intent: Boolean(base.popularity_intent || normalized.popularity_intent),
+    negative_scope: base.negative_scope || normalized.negative_scope || null,
+    allow_category_switch: Boolean(base.allow_category_switch || normalized.allow_category_switch),
     skin_type:
       base.skin_type && base.skin_type !== '모든 피부'
         ? base.skin_type
@@ -59,7 +62,7 @@ function buildSystemPrompt() {
     '사용자 부정/불만 표현(안 맞음, 답답, 밀림, 눈시림, 트러블)을 fit_issue로 정규화한다.',
     '값은 허용된 enum만 사용한다.',
     'JSON schema:',
-    '{"requested_category":"sunscreen|toner|serum|cream|cushion|bb|cleansing|mask|inner|null","requested_form":"cream|lotion|serum|stick|spray|cushion|toner|mist|other|null","sort_intent":"popular|condition_based|new_arrival|null","novelty_request":false,"popularity_intent":false,"skin_type":"dry|oily|combination|sensitive|null","concern":[],"situation":[],"preference":[],"fit_issue":[],"variety_intent":false}',
+    '{"requested_category":"sunscreen|toner|serum|cream|cushion|bb|cleansing|mask|inner|null","requested_form":"cream|lotion|serum|stick|spray|cushion|toner|mist|other|null","sort_intent":"popular|condition_based|new_arrival|null","novelty_request":false,"popularity_intent":false,"skin_type":"dry|oily|combination|sensitive|null","concern":[],"situation":[],"preference":[],"fit_issue":[],"negative_scope":"product|form|category|null","allow_category_switch":false,"variety_intent":false}',
   ].join(' ');
 }
 
@@ -82,6 +85,8 @@ function buildUserPrompt(args = {}, parsedIntent = {}) {
       situation: parsedIntent.situation || [],
       preference: parsedIntent.preference || [],
       fit_issue: parsedIntent.fit_issue || [],
+      negative_scope: parsedIntent.negative_scope || null,
+      allow_category_switch: Boolean(parsedIntent.allow_category_switch),
       variety_intent: Boolean(parsedIntent.variety_intent),
     },
   });
@@ -116,6 +121,8 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
       situation: sanitizeArray(parsed.situation, ALLOWED.situation),
       preference: sanitizeArray(parsed.preference, ALLOWED.preference),
       fit_issue: sanitizeArray(parsed.fit_issue, ALLOWED.fit_issue),
+      negative_scope: sanitizeEnum(parsed.negative_scope, ALLOWED.negative_scope),
+      allow_category_switch: Boolean(parsed.allow_category_switch),
       variety_intent: Boolean(parsed.variety_intent),
     };
 

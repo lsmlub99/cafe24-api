@@ -56,6 +56,8 @@ export function getSessionContext(sessionKey = 'global') {
     reactive_signals: Array.isArray(current.reactive_signals) ? current.reactive_signals : [],
     negative_preferences: Array.isArray(current.negative_preferences) ? current.negative_preferences : [],
     recent_main_base_names: Array.isArray(current.recent_main_base_names) ? current.recent_main_base_names : [],
+    recent_main_forms: Array.isArray(current.recent_main_forms) ? current.recent_main_forms : [],
+    recent_main_category: current.recent_main_category || null,
     updated_at_ms: current.updated_at_ms || 0,
   };
 }
@@ -66,6 +68,7 @@ export function updateSessionContext(sessionKey = 'global', { query = '', parsed
   const signalSet = new Set(previous.reactive_signals || []);
   const negativeSet = new Set(previous.negative_preferences || []);
   const recentBaseNames = Array.isArray(previous.recent_main_base_names) ? [...previous.recent_main_base_names] : [];
+  const recentForms = Array.isArray(previous.recent_main_forms) ? [...previous.recent_main_forms] : [];
 
   const feedback = detectFeedbackSignals(query);
   if (feedback.irritation) signalSet.add('irritation');
@@ -80,11 +83,17 @@ export function updateSessionContext(sessionKey = 'global', { query = '', parsed
     .map((x) => String(x?.base_name || '').trim())
     .filter(Boolean);
   const mergedBases = [...new Set([...latestBases, ...recentBaseNames])].slice(0, 12);
+  const latestForms = (Array.isArray(mainRecommendations) ? mainRecommendations : [])
+    .map((x) => String(x?.form || '').trim())
+    .filter(Boolean);
+  const mergedForms = [...new Set([...latestForms, ...recentForms])].slice(0, 6);
 
   sessionStore.set(key, {
     reactive_signals: [...signalSet],
     negative_preferences: [...negativeSet],
     recent_main_base_names: mergedBases,
+    recent_main_forms: mergedForms,
+    recent_main_category: parsedIntent?.requested_category || previous.recent_main_category || null,
     updated_at_ms: now(),
   });
 }

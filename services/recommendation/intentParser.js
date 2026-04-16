@@ -11,6 +11,19 @@ const IRRITATION_WORDS = [
   '\uAC04\uC9C0\uB7EC', // 간지러
 ];
 const VARIETY_WORDS = ['다른', '다른거', '다른 건', '말고', '또 뭐', '더 있', '없나요', '없어?', 'other option'];
+const PRODUCT_NEGATIVE_SCOPE_WORDS = ['이거', '이 제품', '지금 쓰는', '현재 쓰는', '이 선크림', '방금 추천'];
+const CATEGORY_NEGATIVE_SCOPE_WORDS = ['자체가', '다 안', '전부 안', '전체가 안', '카테고리'];
+const CATEGORY_EXIT_WORDS = ['말고', '대신', '다른 카테고리', '아예 다른 제품', '선크림 말고'];
+
+function detectNegativeScope(query = '', requestedCategory = '') {
+  const q = lower(query);
+  const hasNegative = includesAny(q, IRRITATION_WORDS) || includesAny(q, ['안 맞', '안맞', '실패', '별로', '밀림', '뜨']);
+  if (!hasNegative) return null;
+  if (includesAny(q, CATEGORY_NEGATIVE_SCOPE_WORDS)) return 'category';
+  if (includesAny(q, PRODUCT_NEGATIVE_SCOPE_WORDS)) return 'product';
+  if (requestedCategory && includesAny(q, [requestedCategory])) return 'form';
+  return 'form';
+}
 
 function detectSortIntent(parsedIntent, query, taxonomy, contextText = '') {
   const q = lower(query);
@@ -71,6 +84,8 @@ export function parseUserIntent(args = {}, taxonomy) {
   const priceIntent = parsePriceIntent(q);
   const sensitivitySignal = detectSensitivitySignal(q, concern);
   const explicitFormRequest = Boolean(requestedForm);
+  const negativeScope = detectNegativeScope(q, requestedCategory);
+  const allowCategorySwitch = includesAny(q, CATEGORY_EXIT_WORDS);
 
   const contextText = [
     q,
@@ -94,6 +109,8 @@ export function parseUserIntent(args = {}, taxonomy) {
     price_intent: priceIntent,
     sensitivity_signal: sensitivitySignal,
     fit_issue: [],
+    negative_scope: negativeScope,
+    allow_category_switch: allowCategorySwitch,
     sort_intent: 'popular',
     query: q,
   };

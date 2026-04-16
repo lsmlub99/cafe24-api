@@ -59,6 +59,7 @@ function buildReasoningTags(parsedIntent) {
   for (const s of parsedIntent.situation || []) tags.push(`situation:${s}`);
   for (const p of parsedIntent.preference || []) tags.push(`preference:${p}`);
   for (const f of parsedIntent.fit_issue || []) tags.push(`fit_issue:${f}`);
+  if (parsedIntent.negative_scope) tags.push(`negative_scope:${parsedIntent.negative_scope}`);
   if (parsedIntent.variety_intent) tags.push('intent:variety');
   if (parsedIntent.sensitivity_signal) tags.push(`sensitivity:${parsedIntent.sensitivity_signal}`);
   if (parsedIntent.price_intent?.max_price_krw) tags.push(`price_max:${parsedIntent.price_intent.max_price_krw}`);
@@ -83,10 +84,13 @@ function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
     concern: [...mergedConcern],
     preference: [...mergedPreference],
     fit_issue: [...new Set([...(parsedIntent.fit_issue || []), ...(reactiveSignals.includes('irritation') ? ['irritation'] : [])])],
+    negative_scope: parsedIntent.negative_scope || (reactiveSignals.includes('not_fit') ? 'form' : null),
     session_context: {
       reactive_signals: reactiveSignals,
       negative_preferences: negativePreferences,
       recent_main_base_names: sessionContext.recent_main_base_names || [],
+      recent_main_forms: sessionContext.recent_main_forms || [],
+      recent_main_category: sessionContext.recent_main_category || null,
     },
   };
 }
@@ -431,7 +435,7 @@ export const recommendationService = {
     finalSelected.forEach((item, idx) => {
       const breakdown = item._score_breakdown || {};
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 
@@ -518,11 +522,19 @@ export const recommendationService = {
     );
     const parsed = applySessionContextToIntent(normalizedIntentResult.intent, sessionContext);
     logger.info(
-      `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} variety=${parsed.variety_intent ? '1' : '0'}`
+      `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'}`
     );
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
-    let primary = this.get_primary_candidates(normalized, parsed, { relaxForm: shouldRelaxFormAtStart, includePromo: false });
+    const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
+    const retrievalIntent = shouldUnlockCategoryForMain
+      ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
+      : parsed;
+
+    let primary = this.get_primary_candidates(normalized, retrievalIntent, {
+      relaxForm: shouldRelaxFormAtStart,
+      includePromo: false,
+    });
     let { candidates, category_locked, form_locked, allowed_main_forms = [] } = primary;
 
     let usedFallback = false;

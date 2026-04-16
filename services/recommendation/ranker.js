@@ -250,6 +250,27 @@ function getRepeatPenalty(product, intent, policy) {
   return policy.scoring.repeatRecommendationPenalty * weight;
 }
 
+function getNegativeScopePenalty(product, intent) {
+  const scope = intent.negative_scope;
+  if (!scope) return 0;
+
+  const recentBases = intent.session_context?.recent_main_base_names || [];
+  const recentForms = intent.session_context?.recent_main_forms || [];
+  const productBase = String(product.base_name || '').trim();
+  const productForm = String(product.form || '').trim();
+
+  if (scope === 'product') {
+    return recentBases.includes(productBase) ? 26 : 0;
+  }
+  if (scope === 'form') {
+    return recentForms.includes(productForm) ? 18 : 0;
+  }
+  if (scope === 'category') {
+    return recentBases.includes(productBase) ? 14 : 0;
+  }
+  return 0;
+}
+
 export function calculateMainScoreBreakdown(product, intent, categoryLocked, policy, context = null) {
   const condition = getConditionScore(product, intent, policy);
   const quality = getQualityScore(product, policy);
@@ -268,6 +289,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const reactivePenalty = getReactivePenalty(product, intent, policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
   const repeatPenalty = getRepeatPenalty(product, intent, policy);
+  const negativeScopePenalty = getNegativeScopePenalty(product, intent);
   const queryMatch = getQueryMatchScore(product, intent);
 
   const baseScore =
@@ -283,6 +305,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     formMismatchPenalty -
     reactivePenalty -
     repeatPenalty -
+    negativeScopePenalty -
     diversityPenalty;
 
   const finalRankReason = hasConditionSignal
@@ -303,6 +326,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     form_mismatch_penalty: formMismatchPenalty,
     reactive_penalty: reactivePenalty,
     repeat_penalty: repeatPenalty,
+    negative_scope_penalty: negativeScopePenalty,
     diversity_penalty: Number(diversityPenalty.toFixed(3)),
     final_rank_reason: finalRankReason,
   };
@@ -424,13 +448,15 @@ export function getSecondaryRecommendations(allProducts, intent, mainItems, taxo
   const requestedIds = (intent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
   const allowedMainForms = resolveAllowedMainForms(intent, policy);
 
+  const isNegativeFlow = Boolean(intent.negative_scope || (intent.fit_issue || []).length > 0);
+
   const sameCategoryDifferentForms = allProducts
     .filter((p) => !mainBaseSet.has(p.base_name))
     .filter((p) => categoryMatch(p, intent))
     .filter((p) => !allowedMainForms.includes(p.form))
     .map((p) => ({
       ...p,
-      _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy) + 12,
+      _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy) + (isNegativeFlow ? 6 : 12),
     }))
     .sort((a, b) => b._secondary_score - a._secondary_score);
 
@@ -444,7 +470,7 @@ export function getSecondaryRecommendations(allProducts, intent, mainItems, taxo
     })
     .map((p) => ({
       ...p,
-      _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy),
+      _secondary_score: getQualityScore(p, policy) + getConditionScore(p, intent, policy) + (isNegativeFlow ? 14 : 0),
     }))
     .sort((a, b) => b._secondary_score - a._secondary_score);
 

@@ -70,7 +70,37 @@ function buildComposedQueryTokens(intent = {}) {
   for (const f of intent.fit_issue || []) if (f && f !== 'unknown') tokens.push(f);
   for (const s of intent.situation || []) if (s && s !== 'unknown') tokens.push(s);
   for (const p of intent.preference || []) if (p && p !== 'unknown') tokens.push(p);
-  return [...new Set(tokens)];
+
+  const unique = [...new Set(tokens)];
+  if (unique.length >= 3) return unique;
+
+  const coldStartDefaults = getColdStartDefaultTokens(intent);
+  return [...new Set([...unique, ...coldStartDefaults])];
+}
+
+function getColdStartDefaultTokens(intent = {}) {
+  const defaults = ['daily'];
+  const category = String(intent.requested_category || '').trim();
+
+  if (category === 'sunscreen') {
+    defaults.push('uv_protection', 'lightweight');
+  } else if (category === 'toner') {
+    defaults.push('hydration', 'soothing');
+  } else if (category === 'serum') {
+    defaults.push('targeted_care', 'lightweight');
+  } else if (category === 'cream') {
+    defaults.push('hydration', 'moisturizing');
+  } else if (category === 'cushion' || category === 'bb') {
+    defaults.push('coverage', 'makeup_before');
+  } else {
+    defaults.push('skincare', 'recommended');
+  }
+
+  if (intent.sort_intent === 'popular') defaults.push('popular');
+  if (intent.novelty_request) defaults.push('new_arrival');
+  if (intent.skin_type) defaults.push(intent.skin_type);
+
+  return defaults;
 }
 
 function resolveQueryText(intent = {}) {

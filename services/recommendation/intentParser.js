@@ -1,36 +1,78 @@
 import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower } from './shared.js';
 
-const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?만\s?원|\s?원)/g;
-const IRRITATION_WORDS = [
-  '\uB530\uAC00', // 따가
-  '\uC790\uADF9', // 자극
-  '\uB208\uC2DC\uB9BC', // 눈시림
-  '\uD2B8\uB7EC\uBE14', // 트러블
-  '\uC548 \uB9DE', // 안 맞
-  '\uD654\uB048', // 화끈
-  '\uAC04\uC9C0\uB7EC', // 간지러
-];
-const VARIETY_WORDS = ['다른', '다른거', '다른 건', '말고', '또 뭐', '더 있', '없나요', '없어?', 'other option'];
-const PRODUCT_NEGATIVE_SCOPE_WORDS = ['이거', '이 제품', '지금 쓰는', '현재 쓰는', '이 선크림', '방금 추천'];
-const CATEGORY_NEGATIVE_SCOPE_WORDS = ['자체가', '다 안', '전부 안', '전체가 안', '카테고리'];
+const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)/g;
+
+const NEGATIVE_SCOPE_CATEGORY_WORDS = ['카테고리', '전체가', '아예'];
+const NEGATIVE_SCOPE_PRODUCT_WORDS = ['이거', '지금', '방금', '이 제품'];
 const CATEGORY_EXIT_WORDS = [
   '아예 다른 카테고리',
   '카테고리 바꿔',
   '카테고리 변경',
-  '선케어 말고 토너',
-  '선크림 말고 토너',
-  '선케어 말고 세럼',
-  '선크림 말고 세럼',
-  '완전 다른 카테고리',
+  '선크림 말고 다른',
+  '선케어 말고 다른',
+  '전혀 다른 카테고리',
 ];
+const VARIETY_WORDS = ['다른', '다른건', '다른 거', '말고', '또 뭐', '또 있', '없나요', '없어?', 'other option'];
+
+const CONCERN_NORMALIZATION = [
+  { key: 'sebum_control', words: ['유분', '번들', '피지', '기름짐', '번들거'] },
+  { key: 'hydration', words: ['건조', '당김', '수분 부족', '속건조', '보습'] },
+  { key: 'soothing', words: ['따가', '자극', '화끈', '붉어', '눈시림', '민감'] },
+  { key: 'tone_up', words: ['톤업', '잡티', '커버', '톤 보정'] },
+  { key: 'not_fit', words: ['안 맞', '별로', '불편', '실패', '못 쓰겠'] },
+];
+
+const FIT_ISSUE_NORMALIZATION = [
+  { key: 'irritation', words: ['따가', '자극', '화끈', '붉어'] },
+  { key: 'pilling', words: ['밀림', '밀려', '뭉침', '겉돌'] },
+  { key: 'eye_sting', words: ['눈시림', '눈 따가'] },
+  { key: 'breakout', words: ['트러블', '좁쌀', '여드름'] },
+  { key: 'heavy_feel', words: ['답답', '무거'] },
+  { key: 'oily_residue', words: ['번들', '유분', '기름짐'] },
+];
+
+function parsePriceIntent(text = '') {
+  const src = String(text || '');
+  let matched = null;
+  let m;
+  while ((m = PRICE_REGEX.exec(src)) !== null) matched = m;
+  PRICE_REGEX.lastIndex = 0;
+  if (!matched) return null;
+
+  const amount = Number.parseInt(matched[1], 10);
+  const unit = matched[2] || '';
+  if (!Number.isFinite(amount)) return null;
+  return unit.includes('만')
+    ? { max_price_krw: amount * 10000, raw: matched[0] }
+    : { max_price_krw: amount, raw: matched[0] };
+}
+
+function normalizeSemanticSignals(text = '') {
+  const src = lower(text);
+  const concern = [];
+  const fit_issue = [];
+
+  for (const rule of CONCERN_NORMALIZATION) {
+    if (rule.words.some((w) => src.includes(lower(w)))) concern.push(rule.key);
+  }
+  for (const rule of FIT_ISSUE_NORMALIZATION) {
+    if (rule.words.some((w) => src.includes(lower(w)))) fit_issue.push(rule.key);
+  }
+
+  return {
+    concern: uniq(concern),
+    fit_issue: uniq(fit_issue.length ? fit_issue : src.trim() ? [] : []),
+  };
+}
 
 function detectNegativeScope(query = '', requestedCategory = '') {
   const q = lower(query);
-  const hasNegative = includesAny(q, IRRITATION_WORDS) || includesAny(q, ['안 맞', '안맞', '실패', '별로', '밀림', '뜨']);
+  const { concern, fit_issue } = normalizeSemanticSignals(q);
+  const hasNegative = concern.includes('not_fit') || fit_issue.length > 0;
   if (!hasNegative) return null;
-  if (includesAny(q, CATEGORY_NEGATIVE_SCOPE_WORDS)) return 'category';
-  if (includesAny(q, PRODUCT_NEGATIVE_SCOPE_WORDS)) return 'product';
-  if (requestedCategory && includesAny(q, [requestedCategory])) return 'form';
+  if (includesAny(q, NEGATIVE_SCOPE_CATEGORY_WORDS)) return 'category';
+  if (includesAny(q, NEGATIVE_SCOPE_PRODUCT_WORDS)) return 'product';
+  if (requestedCategory && q.includes(lower(requestedCategory))) return 'form';
   return 'form';
 }
 
@@ -45,35 +87,19 @@ function detectSortIntent(parsedIntent, query, taxonomy, contextText = '') {
   return 'popular';
 }
 
-function parsePriceIntent(text = '') {
-  const src = String(text || '');
-  let matched = null;
-  let m;
-  while ((m = PRICE_REGEX.exec(src)) !== null) {
-    matched = m;
-  }
-  PRICE_REGEX.lastIndex = 0;
-  if (!matched) return null;
-
-  const amount = Number.parseInt(matched[1], 10);
-  const unit = matched[2] || '';
-  if (!Number.isFinite(amount)) return null;
-  if (unit.includes('\uB9CC')) {
-    return { max_price_krw: amount * 10000, raw: matched[0] };
-  }
-  return { max_price_krw: amount, raw: matched[0] };
-}
-
-function detectSensitivitySignal(q = '', concern = []) {
+function detectSensitivitySignal(query = '', concern = [], fitIssue = []) {
   if (concern.includes('soothing')) return 'irritation';
-  if (includesAny(q, IRRITATION_WORDS)) return 'irritation';
+  if (fitIssue.includes('irritation') || fitIssue.includes('eye_sting') || fitIssue.includes('breakout')) return 'irritation';
+  if (includesAny(query, ['민감', '자극', '따가'])) return 'irritation';
   return null;
 }
 
 export function parseUserIntent(args = {}, taxonomy) {
   const q = `${args.q || ''} ${args.query || ''}`.trim();
+  const concernsText = Array.isArray(args.concerns) ? args.concerns.join(' ') : '';
   const categoryText = `${args.category || ''} ${q}`.trim();
   const formText = `${args.form || ''} ${args.category || ''} ${q}`.trim();
+  const fullSignalText = `${q} ${concernsText} ${args.category || ''}`.trim();
 
   const requestedCategory = findFirstAliasKey(categoryText, taxonomy.categories);
   const requestedForm = findFirstAliasKey(formText, taxonomy.forms);
@@ -81,27 +107,26 @@ export function parseUserIntent(args = {}, taxonomy) {
   const skinTypeFromQuery = findFirstAliasKey(q, taxonomy.skinTypes);
   const skinType = skinTypeFromField || skinTypeFromQuery || null;
 
-  const concern = uniq([
-    ...findAllAliasKeys(Array.isArray(args.concerns) ? args.concerns.join(' ') : '', taxonomy.concerns),
+  const aliasConcern = uniq([
+    ...findAllAliasKeys(concernsText, taxonomy.concerns),
     ...findAllAliasKeys(q, taxonomy.concerns),
   ]);
+  const normalizedSignals = normalizeSemanticSignals(fullSignalText);
+  const concern = uniq([...aliasConcern, ...normalizedSignals.concern]);
+  const fitIssue = uniq(normalizedSignals.fit_issue);
+
   const situation = findAllAliasKeys(q, taxonomy.situations);
   const preference = findAllAliasKeys(q, taxonomy.preferences);
   const noveltyRequest = includesAny(q, taxonomy.noveltyKeywords || []);
   const popularityIntent = includesAny(q, taxonomy.popularityKeywords || []);
   const varietyIntent = includesAny(q, VARIETY_WORDS);
   const priceIntent = parsePriceIntent(q);
-  const sensitivitySignal = detectSensitivitySignal(q, concern);
   const explicitFormRequest = Boolean(requestedForm);
-  const negativeScope = detectNegativeScope(q, requestedCategory);
-  const allowCategorySwitch = includesAny(q, CATEGORY_EXIT_WORDS);
+  const negativeScope = detectNegativeScope(fullSignalText, requestedCategory);
+  const allowCategorySwitch = includesAny(fullSignalText, CATEGORY_EXIT_WORDS);
+  const sensitivitySignal = detectSensitivitySignal(fullSignalText, concern, fitIssue);
 
-  const contextText = [
-    q,
-    args.category || '',
-    args.skin_type || '',
-    Array.isArray(args.concerns) ? args.concerns.join(' ') : '',
-  ].join(' ');
+  const contextText = [q, args.category || '', args.skin_type || '', concernsText].join(' ');
 
   const parsed = {
     requested_category: requestedCategory,
@@ -117,12 +142,19 @@ export function parseUserIntent(args = {}, taxonomy) {
     variety_intent: varietyIntent,
     price_intent: priceIntent,
     sensitivity_signal: sensitivitySignal,
-    fit_issue: [],
+    fit_issue: fitIssue,
     negative_scope: negativeScope,
     allow_category_switch: allowCategorySwitch,
     sort_intent: 'popular',
     query: q,
   };
+
+  if (
+    (fitIssue.includes('irritation') || fitIssue.includes('eye_sting') || fitIssue.includes('breakout')) &&
+    !parsed.concern.includes('soothing')
+  ) {
+    parsed.concern.push('soothing');
+  }
 
   parsed.sort_intent = detectSortIntent(parsed, q, taxonomy, contextText);
   return parsed;

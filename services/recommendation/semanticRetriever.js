@@ -1,5 +1,3 @@
-import { lower } from './shared.js';
-
 const productEmbeddingCache = new Map();
 const queryEmbeddingCache = new Map();
 
@@ -31,15 +29,15 @@ function featureHints(product = {}) {
   const fv = product.feature_vector || {};
   const hints = [];
 
-  if ((fv.lightweight_score || 0) >= 4) hints.push('가벼운 사용감');
-  if ((fv.moisturizing_score || 0) >= 4) hints.push('촉촉한 보습감');
-  if ((fv.toneup_score || 0) >= 3) hints.push('톤업/커버');
-  if ((fv.soothing_score || 0) >= 3) hints.push('민감 피부/진정');
-  if ((fv.reapply_fit || 0) >= 3) hints.push('덧바르기 편함');
-  if ((fv.makeup_compat || 0) >= 3) hints.push('메이크업 궁합');
-  if ((fv.irritation_risk || 0) >= 5) hints.push('자극 주의');
-  if (product.form) hints.push(`제형:${product.form}`);
-  if (product.category_key) hints.push(`카테고리:${product.category_key}`);
+  if ((fv.lightweight_score || 0) >= 4) hints.push('lightweight');
+  if ((fv.moisturizing_score || 0) >= 4) hints.push('moisturizing');
+  if ((fv.toneup_score || 0) >= 3) hints.push('tone_up');
+  if ((fv.soothing_score || 0) >= 3) hints.push('soothing');
+  if ((fv.reapply_fit || 0) >= 3) hints.push('reapply');
+  if ((fv.makeup_compat || 0) >= 3) hints.push('makeup_compatible');
+  if ((fv.irritation_risk || 0) >= 5) hints.push('irritation_risk');
+  if (product.form) hints.push(`form:${product.form}`);
+  if (product.category_key) hints.push(`category:${product.category_key}`);
 
   return hints.join(', ');
 }
@@ -63,27 +61,65 @@ function buildProductEmbeddingText(product = {}) {
     .slice(0, 2200);
 }
 
-function buildQueryEmbeddingText(intent = {}) {
+function buildComposedQueryTokens(intent = {}) {
+  const tokens = [];
+  if (intent.requested_category) tokens.push(intent.requested_category);
+  if (intent.requested_form) tokens.push(intent.requested_form);
+  if (intent.skin_type) tokens.push(intent.skin_type);
+  for (const c of intent.concern || []) if (c && c !== 'unknown') tokens.push(c);
+  for (const f of intent.fit_issue || []) if (f && f !== 'unknown') tokens.push(f);
+  for (const s of intent.situation || []) if (s && s !== 'unknown') tokens.push(s);
+  for (const p of intent.preference || []) if (p && p !== 'unknown') tokens.push(p);
+  return [...new Set(tokens)];
+}
+
+function resolveQueryText(intent = {}) {
+  const original = String(intent.query || '').trim();
+  if (original.length >= 2) {
+    return {
+      text: original,
+      source: 'original',
+      token_count: original.split(/\s+/).filter(Boolean).length,
+      skip_reason: null,
+    };
+  }
+
+  const composedTokens = buildComposedQueryTokens(intent);
+  if (composedTokens.length < 3) {
+    return {
+      text: '',
+      source: 'composed',
+      token_count: composedTokens.length,
+      skip_reason: 'empty_query',
+    };
+  }
+
+  return {
+    text: composedTokens.join(' '),
+    source: 'composed',
+    token_count: composedTokens.length,
+    skip_reason: null,
+  };
+}
+
+function buildQueryEmbeddingText(intent = {}, queryText = '') {
   const parts = [
-    intent.query || '',
-    intent.requested_category ? `카테고리:${intent.requested_category}` : '',
-    intent.requested_form ? `제형:${intent.requested_form}` : '',
-    intent.skin_type ? `피부:${intent.skin_type}` : '',
-    (intent.concern || []).length ? `고민:${(intent.concern || []).join(',')}` : '',
-    (intent.situation || []).length ? `상황:${(intent.situation || []).join(',')}` : '',
-    (intent.preference || []).length ? `선호:${(intent.preference || []).join(',')}` : '',
-    (intent.fit_issue || []).length ? `불편:${(intent.fit_issue || []).join(',')}` : '',
-    intent.negative_scope ? `부정범위:${intent.negative_scope}` : '',
+    queryText || '',
+    intent.requested_category ? `category:${intent.requested_category}` : '',
+    intent.requested_form ? `form:${intent.requested_form}` : '',
+    intent.skin_type ? `skin:${intent.skin_type}` : '',
+    (intent.concern || []).length ? `concern:${(intent.concern || []).join(',')}` : '',
+    (intent.situation || []).length ? `situation:${(intent.situation || []).join(',')}` : '',
+    (intent.preference || []).length ? `preference:${(intent.preference || []).join(',')}` : '',
+    (intent.fit_issue || []).length ? `fit_issue:${(intent.fit_issue || []).join(',')}` : '',
+    intent.negative_scope ? `negative_scope:${intent.negative_scope}` : '',
   ];
   return parts.filter(Boolean).join(' | ').slice(0, 1200);
 }
 
 async function embedInputs(openai, model, inputs = []) {
   if (!inputs.length) return [];
-  const res = await openai.embeddings.create({
-    model,
-    input: inputs,
-  });
+  const res = await openai.embeddings.create({ model, input: inputs });
   const list = Array.isArray(res?.data) ? res.data : [];
   return list.map((row) => normalizeVector(row?.embedding || []));
 }
@@ -94,10 +130,7 @@ async function ensureProductEmbeddings(products = [], openai, model, batchSize =
     const text = buildProductEmbeddingText(p);
     const key = `${model}:${p.id}:${hashText(text)}`;
     p._semantic_embedding_key = key;
-    p._semantic_text = text;
-    if (!productEmbeddingCache.has(key)) {
-      missing.push({ key, text });
-    }
+    if (!productEmbeddingCache.has(key)) missing.push({ key, text });
   }
 
   for (let i = 0; i < missing.length; i += batchSize) {
@@ -107,19 +140,31 @@ async function ensureProductEmbeddings(products = [], openai, model, batchSize =
       model,
       chunk.map((x) => x.text)
     );
-    chunk.forEach((item, idx) => {
-      productEmbeddingCache.set(item.key, vectors[idx] || []);
-    });
+    chunk.forEach((item, idx) => productEmbeddingCache.set(item.key, vectors[idx] || []));
   }
 }
 
-async function getQueryEmbedding(intent, openai, model) {
-  const text = buildQueryEmbeddingText(intent);
+async function getQueryEmbedding(intent, openai, model, queryText) {
+  const text = buildQueryEmbeddingText(intent, queryText);
   const key = `${model}:${hashText(text)}`;
   if (queryEmbeddingCache.has(key)) return queryEmbeddingCache.get(key);
   const [vec] = await embedInputs(openai, model, [text]);
   queryEmbeddingCache.set(key, vec || []);
   return vec || [];
+}
+
+function buildDiagnostics(base = {}, overrides = {}) {
+  return {
+    semantic_enabled: true,
+    embedding_model: base.embedding_model || null,
+    semantic_candidates_count: Number(base.semantic_candidates_count || 0),
+    semantic_nonzero_count: Number(base.semantic_nonzero_count || 0),
+    semantic_nonzero_ratio: Number(base.semantic_nonzero_ratio || 0),
+    semantic_skip_reason: base.semantic_skip_reason ?? null,
+    semantic_query_source: base.semantic_query_source || 'original',
+    semantic_query_token_count: Number(base.semantic_query_token_count || 0),
+    ...overrides,
+  };
 }
 
 export async function applySemanticSignals(candidates = [], intent = {}, options = {}) {
@@ -135,71 +180,73 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
   } = options;
 
   const emptyScores = (list = []) => list.map((p) => ({ ...p, _semantic_score: 0, _semantic_weight: 0 }));
+  const queryInfo = resolveQueryText(intent);
 
   if (!enabled) {
     return {
       candidates: emptyScores(candidates),
-      diagnostics: {
-        semantic_enabled: false,
-        embedding_model: model,
-        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
-        semantic_nonzero_count: 0,
-        semantic_skip_reason: 'semantic_disabled',
-      },
-    };
-  }
-  if (!openai) {
-    return {
-      candidates: emptyScores(candidates),
-      diagnostics: {
-        semantic_enabled: true,
-        embedding_model: model,
-        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
-        semantic_nonzero_count: 0,
-        semantic_skip_reason: 'openai_unavailable',
-      },
+      diagnostics: buildDiagnostics(
+        {
+          embedding_model: model,
+          semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
+          semantic_skip_reason: 'semantic_disabled',
+          semantic_query_source: queryInfo.source,
+          semantic_query_token_count: queryInfo.token_count,
+        },
+        { semantic_enabled: false }
+      ),
     };
   }
   if (!Array.isArray(candidates) || candidates.length < minCandidateCount) {
     return {
       candidates: emptyScores(candidates),
-      diagnostics: {
-        semantic_enabled: true,
+      diagnostics: buildDiagnostics({
         embedding_model: model,
         semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
-        semantic_nonzero_count: 0,
         semantic_skip_reason: 'too_few_candidates',
-      },
+        semantic_query_source: queryInfo.source,
+        semantic_query_token_count: queryInfo.token_count,
+      }),
     };
   }
-
-  const query = String(intent.query || '').trim();
-  if (query.length < 2) {
+  if (!queryInfo.text) {
     return {
       candidates: emptyScores(candidates),
-      diagnostics: {
-        semantic_enabled: true,
+      diagnostics: buildDiagnostics({
         embedding_model: model,
         semantic_candidates_count: candidates.length,
-        semantic_nonzero_count: 0,
-        semantic_skip_reason: 'empty_query',
-      },
+        semantic_skip_reason: queryInfo.skip_reason || 'empty_query',
+        semantic_query_source: queryInfo.source,
+        semantic_query_token_count: queryInfo.token_count,
+      }),
+    };
+  }
+  if (!openai) {
+    return {
+      candidates: emptyScores(candidates),
+      diagnostics: buildDiagnostics({
+        embedding_model: model,
+        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
+        semantic_skip_reason: 'openai_unavailable',
+        semantic_query_source: queryInfo.source,
+        semantic_query_token_count: queryInfo.token_count,
+      }),
     };
   }
 
   try {
     await ensureProductEmbeddings(candidates, openai, model, batchSize);
-    const queryVector = await getQueryEmbedding(intent, openai, model);
+    const queryVector = await getQueryEmbedding(intent, openai, model, queryInfo.text);
     if (!queryVector.length) {
       return {
         candidates: emptyScores(candidates),
-        diagnostics: {
-          semantic_enabled: true,
+        diagnostics: buildDiagnostics({
           embedding_model: model,
           semantic_candidates_count: candidates.length,
-          semantic_nonzero_count: 0,
           semantic_skip_reason: 'query_embedding_empty',
-        },
+          semantic_query_source: queryInfo.source,
+          semantic_query_token_count: queryInfo.token_count,
+        }),
       };
     }
 
@@ -215,31 +262,35 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
     const poolSize = Math.max(Math.min(maxPool, scored.length), minCandidateCount);
     const pruned = scored.slice(0, poolSize);
     const nonzeroCount = pruned.filter((p) => Number(p._semantic_score || 0) > 0).length;
+    const ratio = pruned.length ? Number((nonzeroCount / pruned.length).toFixed(4)) : 0;
     const skipReason = nonzeroCount > 0 ? null : 'all_zero_scores';
+
     logger?.info?.(
-      `[Semantic] model=${model} candidates=${candidates.length} pool=${pruned.length} top_score=${pruned[0]?._semantic_score ?? 0}`
+      `[Semantic] model=${model} query_source=${queryInfo.source} query_tokens=${queryInfo.token_count} candidates=${candidates.length} pool=${pruned.length} nonzero=${nonzeroCount} top_score=${pruned[0]?._semantic_score ?? 0}`
     );
     return {
       candidates: pruned,
-      diagnostics: {
-        semantic_enabled: true,
+      diagnostics: buildDiagnostics({
         embedding_model: model,
         semantic_candidates_count: pruned.length,
         semantic_nonzero_count: nonzeroCount,
+        semantic_nonzero_ratio: ratio,
         semantic_skip_reason: skipReason,
-      },
+        semantic_query_source: queryInfo.source,
+        semantic_query_token_count: queryInfo.token_count,
+      }),
     };
   } catch (error) {
     logger?.warn?.(`[Semantic] skipped: ${error.message}`);
     return {
       candidates: emptyScores(candidates),
-      diagnostics: {
-        semantic_enabled: true,
+      diagnostics: buildDiagnostics({
         embedding_model: model,
         semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
-        semantic_nonzero_count: 0,
         semantic_skip_reason: 'semantic_error',
-      },
+        semantic_query_source: queryInfo.source,
+        semantic_query_token_count: queryInfo.token_count,
+      }),
     };
   }
 }

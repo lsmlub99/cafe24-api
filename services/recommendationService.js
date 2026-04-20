@@ -80,7 +80,15 @@ function createSemanticDiagnostics() {
 function shouldFlagSemanticNullInvalid(diag = {}) {
   if (!diag || !diag.semantic_enabled) return false;
   if (diag.semantic_skip_reason !== null) return false;
-  return Number(diag.semantic_nonzero_count || 0) <= 0;
+  const count = Number(diag.semantic_nonzero_count || 0);
+  const ratio = Number(diag.semantic_nonzero_ratio || 0);
+  return count <= 0 || ratio <= 0;
+}
+
+function isSemanticActivationSuccess(diag = {}) {
+  const count = Number(diag.semantic_nonzero_count || 0);
+  const ratio = Number(diag.semantic_nonzero_ratio || 0);
+  return count >= 3 || ratio >= 0.2;
 }
 
 function buildReasoningTags(parsedIntent) {
@@ -733,11 +741,12 @@ export const recommendationService = {
       if (shouldFlagSemanticNullInvalid(semanticDiagnostics)) {
         trackSemanticNullInvalid();
         logger.warn(
-          `[SemanticDiag] invalid_null_skip_reason model=${semanticDiagnostics.embedding_model || 'none'} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0}`
+          `[SemanticDiag] invalid_null_skip_reason model=${semanticDiagnostics.embedding_model || 'none'} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0} ratio=${semanticDiagnostics.semantic_nonzero_ratio || 0}`
         );
       }
+      const semanticSuccess = isSemanticActivationSuccess(semanticDiagnostics);
       logger.info(
-        `[SemanticDiag] enabled=${semanticDiagnostics.semantic_enabled ? 1 : 0} model=${semanticDiagnostics.embedding_model || 'none'} candidates=${semanticDiagnostics.semantic_candidates_count || 0} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0} skip_reason=${semanticDiagnostics.semantic_skip_reason ?? 'null'}`
+        `[SemanticDiag] enabled=${semanticDiagnostics.semantic_enabled ? 1 : 0} model=${semanticDiagnostics.embedding_model || 'none'} candidates=${semanticDiagnostics.semantic_candidates_count || 0} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0} nonzero_ratio=${semanticDiagnostics.semantic_nonzero_ratio || 0} query_source=${semanticDiagnostics.semantic_query_source || 'unknown'} query_tokens=${semanticDiagnostics.semantic_query_token_count || 0} skip_reason=${semanticDiagnostics.semantic_skip_reason ?? 'null'} success=${semanticSuccess ? 1 : 0}`
       );
       return Array.isArray(semanticResult?.candidates) ? semanticResult.candidates : candidatePool;
     };

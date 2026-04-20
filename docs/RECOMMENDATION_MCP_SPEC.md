@@ -1,50 +1,26 @@
 # Recommendation MCP Spec (App in GPT / Cafe24)
 
 ## 1. 목적
-이 문서는 Cafe24 API 기반 상품 추천 MCP의 추천 정책/실행 구조를 명세한다.  
-핵심 목표는 다음 두 가지다.
-
-- 고객이 요청한 카테고리를 main recommendation에서 절대 우선 보장(category lock)
-- App in GPT 위젯/툴 응답에서 main/secondary를 명확히 분리
+Cafe24 기반 추천 MCP의 정책, 실행 흐름, 응답 계약을 정의합니다.  
+핵심은 `정책 준수(category/form/promo)`와 `추천 품질(의미 기반 해석)`의 균형입니다.
 
 ## 2. 적용 범위
-- MCP tool: `search_cafe24_real_products`
+- MCP Tool: `search_cafe24_real_products`
 - 주요 모듈:
   - `routes/mcp.js`
   - `services/recommendationService.js`
-  - `services/recommendation/*` (intent parser / normalizer / ranker)
+  - `services/recommendation/*`
   - `config/recommendationPolicy.js`
 
-## 3. 설계 원칙
-- 카테고리 잠금 우선: requested_category가 있으면 primary 후보는 해당 카테고리로 제한
-- 제형 잠금 우선: requested_form이 있거나 카테고리 기본 제형 정책이 있으면 main은 해당 form으로 제한
-- 메인 순도 보장: 메인 추천에는 프로모션/미니/기획형 상품을 포함하지 않음
-- fallback도 카테고리 유지: 조건 완화는 허용, 카테고리 이탈은 금지
-- cross-sell 분리: secondary에서만 노출
-- fast path 우선: 구조화된 retrieval/ranking을 기본으로 사용
-- precise path 제한: LLM은 top-N rerank에 한정
-- backward compatibility: 기존 `recommendations`, `reference_recommendations`, `summary` 유지
+## 3. 정책 원칙
+- 요청 카테고리가 있으면 main 추천은 category lock 유지
+- form policy가 있으면 main 추천은 form lock 유지
+- 프로모션/미니/기획형 상품은 main 추천에서 제외
+- cross-sell은 secondary/promotion 영역에만 노출
+- fallback에서도 category lock을 쉽게 해제하지 않음
 
-## 4. 데이터/정책 구성
-정책/택소노미는 `config/recommendationPolicy.js`에서 관리한다.
-
-- `RECOMMENDATION_POLICY`
-  - limits: 기본 main/secondary 개수, stage1/stage2 후보 크기
-  - rerank: LLM weight, default model
-  - scoring: category gate, promo penalty, quality caps
-  - formPolicy:
-    - `strictOnExplicitForm`: 제형 명시 시 main form 강제
-    - `defaultMainFormsByCategory`: 카테고리별 기본 main 제형
-    - `relaxedMainFormsByCategory`: fallback 시 같은 카테고리 내 완화 제형 범위
-- `RECOMMENDATION_TAXONOMY`
-  - categories/forms/skinTypes/concerns/situations/preferences
-  - novelty/popularity keywords
-  - category별 cross-sell 정책
-
-## 5. 추천 파이프라인
-### 5.1 Intent Parsing
-함수: `parse_user_request(args)`  
-구조화 결과:
+## 4. Intent 구조
+`parse_user_request(args)` + `normalizeIntentWithLLM(...)` 결과는 아래 필드를 가집니다.
 - `requested_category`
 - `requested_category_ids`
 - `requested_form`
@@ -53,126 +29,114 @@
 - `concern[]`
 - `situation[]`
 - `preference[]`
+- `fit_issue[]`
+- `negative_scope`
+- `allow_category_switch`
+- `variety_intent`
 - `novelty_request`
 - `popularity_intent`
 - `price_intent`
-- `sensitivity_signal`
 - `sort_intent`
 - `query`
 
-### 5.2 Product Normalization
-함수: `normalizeCafe24Product(raw)`  
-정규화 스키마:
-- 기본: id, name, category_ids, price, image
-- 추천용: base_name, form, text, summary_description
-- 품질 신호: review_count, rating, sales_count, created_at_ms
-- 부가: attributes(concern_tags/line_tags/texture_tags), derived_attributes, feature_vector, is_promo
+## 5. 상품 정규화
+`normalizeCafe24Product(raw, taxonomy)`는 추천용 스키마로 변환합니다.
+- 식별/가격/이미지: `id`, `name`, `price`, `image`
+- 분류/제형: `category_ids`, `form`, `category_key`
+- 설명 텍스트: `summary_description`, `search_preview`, `text`
+- 구조화 속성: `attributes`, `derived_attributes`, `feature_vector`
+- 품질 신호: `review_count`, `rating`, `sales_count`, `created_at_ms`
+- 정책 필드: `is_promo`, `base_name`
 
-### 5.3 Primary Candidate Retrieval
-함수: `get_primary_candidates(products, parsedIntent)`  
-규칙:
-- `requested_category` 또는 `requested_category_ids`가 있으면 `category_locked=true`
-- form policy 적용 시 `form_locked=true` 및 `allowed_main_forms` 계산
-- primary 후보는 category filter를 통과한 상품만 허용
-- form lock이 걸린 경우 primary 후보는 `allowed_main_forms`를 통과한 상품만 허용
+## 6. Candidate Retrieval
+Primary 후보 검색은 두 단계 개념입니다.
+1. 넓은 후보 검색(relaxed form 가능)
+2. 최종 main 구성 직전 정책 게이트(category/form/promo)
 
-### 5.4 Ranking
-함수: `rank_primary_recommendations(candidates, parsedIntent, limit, categoryLocked)`
-- 1차 Fast Rank:
-  - category gate
-  - condition score (구조화 피처 + 텍스트 신호 혼합)
-  - request-intent score(popular/new_arrival/condition_based)
-  - quality score
-  - price_intent score
-  - reactive penalty (민감/따가움/안맞음)
-  - promo penalty
-- 2차 Precise Rank (선택):
-  - top-N에 대해 LLM rerank
-  - 실패 시 fast rank 결과 사용
+즉, “탐색은 유연하게, 최종 노출은 엄격하게”를 적용합니다.
 
-### 5.4.1 Session Context 반영
-- 세션 키 단위 메모리(`reactive_signals`, `negative_preferences`)를 사용한다.
-- 같은 세션에서 `안 맞음/따가움/자극`이 누적되면 다음 추천에서 자동 페널티/보정이 적용된다.
-- 세션 컨텍스트는 24시간 TTL로 만료된다.
+## 7. Ranking
+### 7.1 Fast Path
+`calculateMainScoreBreakdown(...)` 기준:
+- category gate
+- condition score
+- intent score
+- quality score
+- novelty score
+- semantic boost(임베딩)
+- price intent score
+- query match score
+- reactive/repeat/negative scope penalty
+- promo/form mismatch penalty
 
-### 5.5 Secondary Recommendation
-함수: `get_secondary_recommendations(products, parsedIntent, mainItems, limit)`
-- main에 포함된 base_name 제외
-- taxonomy cross-sell category 정책을 통과한 후보만
-- 품질+조건 점수 기반 정렬
+### 7.2 Precise Path
+- LLM top-N rerank (옵션)
+- 실패 시 fast path 결과 사용
 
-### 5.6 Response Build
-함수: `build_recommendation_response(parsedIntent, mainRecs, secondaryRecs, categoryLocked)`  
-반환 스키마:
-- 신규:
-  - `requested_category`
-  - `main_recommendations`
-  - `secondary_recommendations`
-  - `reasoning_tags`
-  - `applied_policy`
-- 하위 호환:
-  - `recommendations` (= main_recommendations)
-  - `reference_recommendations` (= secondary_recommendations)
-  - `summary`
+### 7.3 Semantic Retrieval
+- 임베딩 모델: 기본 `text-embedding-3-small`
+- 동작: primary candidates에 `_semantic_score` 추가 후 랭킹 반영
+- 정책 락(category/form/promo)은 semantic 단계에서도 최종적으로 유지
 
-## 6. Fallback 정책
-1. 카테고리 잠금 상태에서 조건 완화 fallback
-2. 동일 카테고리 내 form 완화 fallback
-3. 동일 카테고리 인기 fallback
-4. 그래도 결과 없을 때만 `secondary_only` 예외 반환
+ENV:
+- `SEMANTIC_RETRIEVAL_ENABLED=true|false`
+- `EMBEDDING_MODEL=text-embedding-3-small`
 
-중요: fallback 과정에서 category lock을 일반적으로 해제하지 않는다.
-중요: fallback에서도 프로모션/미니 상품을 메인으로 승격하지 않는다.
+## 8. 세션 컨텍스트
+세션 메모리를 통해 이전 실패 신호를 다음 추천에 반영합니다.
+- `reactive_signals`
+- `negative_preferences`
+- `recent_main_base_names`
+- `recent_main_forms`
+- `recent_main_category`
 
-## 7. MCP 응답 계약
-`routes/mcp.js`는 `executeTool()`에서 추천 결과를 받아 다음을 보장한다.
+예:
+- “안 맞아요” 이후 동일 base/form 반복 추천에 penalty 적용
+- “따가워요” 이후 soothing 우선 가중치 적용
 
-- `structuredContent`에 신규 스키마 + 하위 호환 필드 동시 포함
-- `_meta.widgetData`에도 동일 계약 반영
-- empty 결과 시에도 스키마 키는 유지하여 위젯 파싱 안정성 확보
+## 9. Response Schema
+신규 계약:
+- `requested_category`
+- `main_recommendations`
+- `secondary_recommendations`
+- `reasoning_tags`
+- `applied_policy`
 
-추가 운영 계약:
-- 위젯은 `main_recommendations`, `secondary_recommendations`를 1순위로 사용한다.
-- 레거시 파서는 `recommendations`, `reference_recommendations`를 fallback으로만 사용한다.
+하위 호환:
+- `recommendations` (= main)
+- `reference_recommendations` (= secondary)
+- `promotions`
+- `summary`
 
-## 8. 성능 가이드
-- Fast path가 기본이며 대부분 요청은 rule/structured ranking으로 처리
-- LLM rerank는 top-N 후보에서만 수행하여 latency/cost 제한
-- Semantic retrieval(embedding)은 primary candidate에 의미 점수를 부여하는 보조 레이어로 동작
-  - ENV: `SEMANTIC_RETRIEVAL_ENABLED=true|false`
-  - ENV: `EMBEDDING_MODEL=text-embedding-3-small` (기본)
-  - category/form/promo policy lock은 semantic 단계에서도 유지
-- 권장 목표:
-  - Fast path P95 < 800ms
-  - Precise path P95 < 2500ms
+위젯은 신규 계약 필드를 우선 사용하고, 레거시 필드는 fallback 용도입니다.
 
-## 9. 운영 지표
+## 10. Fallback 정책
+1. 같은 카테고리 내 조건 완화
+2. 같은 카테고리 내 form 완화
+3. 같은 카테고리 인기 fallback
+4. 그래도 없으면 secondary-only 안내
+
+주의:
+- fallback을 이유로 무분별한 카테고리 이탈 금지
+- main 슬롯에 프로모션 승격 금지
+
+## 11. 운영 지표
 - `category_lock_violation_count`
-- `form_lock_violation_count` (로그 기반 운영 지표, 현재는 warning 로그로 추적)
-- `no_result_rate`
+- `form_lock_violation_count`
 - `fallback_rate`
+- `no_result_rate`
 - `top1_click_rate`
 - `secondary_click_rate`
 - `recommendation_to_purchase_rate`
 
-디버그 엔드포인트:
+Debug endpoint:
 - `GET /debug/recommendation-metrics`
-  - 반환: `total_requests`, `category_lock_violation_count`, `fallback_count`, `no_result_count`, `fallback_rate`, `no_result_rate`
 
-랭킹 디버그 로그:
-- `[Rank Debug]` 단위로 top 결과에 대해 아래 필드를 출력한다.
-  - `product`
-  - `form`
-  - `base_score`
-  - `condition_score`
-  - `quality_score`
-  - `intent_score`
-  - `novelty_score`
-  - `price_intent_score`
-  - `query_match_score`
-  - `final_rank_reason`
+## 12. 성능 목표
+- Fast path P95 < 800ms
+- Precise path(LLM/semantic 포함) P95 < 2500ms
 
-## 10. 점진 개선 계획
-- Phase 1: taxonomy config 분리 + category lock 계측
-- Phase 2: attribute extraction 강화 + session context 반영
-- Phase 3: semantic retrieval/learned rank 확장 + offline eval 자동화
+## 13. 현재 우선순위
+1. 제출용 테스트 케이스 2회전 완료
+2. 정책 위반 0 유지
+3. 반복 추천률/전환률 기반 가중치 튜닝 자동화

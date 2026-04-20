@@ -1,21 +1,16 @@
 # Logging Guide
 
-## Overview
-이 프로젝트는 `utils/logger.js`를 통해 로그를 통합 관리합니다.
+## 목적
+운영 로그와 디버그 로그를 분리해, 장애 분석은 빠르게 하고 평시 로그 노이즈는 줄이는 것이 목적입니다.
 
-목표:
-- 운영 시 필요한 핵심 로그는 유지
-- 디버그성 노이즈 로그는 플래그로 분리
-- 장애 분석 시 필요한 맥락은 남기되 과도한 출력은 방지
-
-## Log Levels
+## 로그 레벨
 - `debug`: 상세 진단 로그
-- `info`: 정상 운영의 핵심 이벤트
-- `warn`: 복구 가능한 이상 상황
+- `info`: 운영 이벤트 로그
+- `warn`: 복구 가능한 경고
 - `error`: 실패/예외
-- `silent`: 로그 비활성화
+- `silent`: 로그 비활성
 
-## Environment Variables
+## 환경 변수
 ```env
 LOG_LEVEL=info
 LOG_MCP_VERBOSE=false
@@ -23,18 +18,34 @@ LOG_CACHE_FILTER=false
 LOG_TOKEN_EVENTS=false
 ```
 
-### Meaning
+### 옵션 설명
 - `LOG_LEVEL`
-  - 전체 기본 로그 레벨
+  - 전체 로그 출력 기준
 - `LOG_MCP_VERBOSE`
-  - MCP initialize/tools-list/resources-list 같은 고빈도 이벤트 출력
+  - initialize/resources/list/tools/list 같은 고빈도 MCP 로그 출력
 - `LOG_CACHE_FILTER`
-  - `getProductsFromCache` 내부 필터 매칭 로그 출력
+  - cache category/keyword 필터 상세 로그 출력
 - `LOG_TOKEN_EVENTS`
-  - 토큰 저장/동기화 로그 출력
+  - 토큰 갱신/저장 관련 로그 출력
 
-## Recommended Profiles
-### Production
+## 추천 로그 핵심 라인
+- `[Sync] Product sync start...`
+- `[Sync SUCCESS] Cached products: ...`
+- `[Intent] source=... category=... form=...`
+- `[Semantic] model=... candidates=... pool=... top_score=...`
+- `[Rank Pool] candidates=... stage1=...`
+- `[Rank Debug] rank=... product=... base_score=...`
+- `[MCP Tool] search_cafe24_real_products ok ... elapsed_ms=...`
+
+## 정책 위반 감시 로그
+- Category lock 위반:
+  - `[Policy] category lock violation detected ...`
+- Form lock 위반:
+  - `[Policy] form lock violation detected ...`
+
+위반 로그가 1건이라도 발생하면 추천 정책 회귀 가능성이 있으므로 즉시 재검증합니다.
+
+## 운영 기본 프로필
 ```env
 LOG_LEVEL=info
 LOG_MCP_VERBOSE=false
@@ -42,25 +53,10 @@ LOG_CACHE_FILTER=false
 LOG_TOKEN_EVENTS=false
 ```
 
-### Incident Debugging
+## 장애 분석 프로필
 ```env
 LOG_LEVEL=debug
 LOG_MCP_VERBOSE=true
 LOG_CACHE_FILTER=true
 LOG_TOKEN_EVENTS=true
 ```
-
-## Key Logs to Watch
-- `[Sync] Product sync start...`
-- `[Sync SUCCESS] Cached products: ...`
-- `[MCP Inbound] method=tools/call id=...`
-- `[MCP Protocol] resources/read requested: ...`
-- `[MCP Tool] search_cafe24_real_products ok id=... recs=... elapsed_ms=...`
-- `[MCP Error] ...`
-
-## Notes
-- ChatGPT 위젯 이슈 진단 시에는 `LOG_MCP_VERBOSE=true`를 먼저 켜고,
-  `resources/list -> resources/read -> tools/call` 순서를 확인하세요.
-- 디버그가 끝나면 반드시 verbose 플래그를 `false`로 되돌리는 것을 권장합니다.
-- 기본(프로덕션)에서는 `Connected/Disconnected` 같은 SSE 연결 로그를 숨깁니다.
-  이 로그는 `LOG_MCP_VERBOSE=true`일 때만 출력됩니다.

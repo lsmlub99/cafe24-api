@@ -432,7 +432,7 @@ async function handleMcpMessage(req, res) {
       logger.info(
         `[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}` +
           (metric
-            ? ` no_result_rate=${metric.no_result_rate} fallback_rate=${metric.fallback_rate} category_lock_violation_count=${metric.category_lock_violation_count} form_lock_violation_count=${metric.form_lock_violation_count || 0}`
+            ? ` no_result_rate=${metric.no_result_rate} fallback_rate=${metric.fallback_rate} fallback_rate_rolling_100=${metric.fallback_rate_rolling_100 || 0} mismatch_rate_rolling_100=${metric.mismatch_rate_rolling_100 || 0} category_lock_violation_count=${metric.category_lock_violation_count} form_lock_violation_count=${metric.form_lock_violation_count || 0} explanation_mismatch_count=${metric.explanation_mismatch_count || 0}`
             : '')
       );
 

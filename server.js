@@ -239,9 +239,18 @@ app.get('/debug/recommendation-metrics', (req, res) => {
       category_lock_violation_count: 0,
       form_lock_violation_count: 0,
       fallback_count: 0,
+      reason_fallback_count: 0,
+      explanation_mismatch_count: 0,
+      repeat_penalty_hit_count: 0,
+      repeat_penalty_total: 0,
+      semantic_null_invalid_count: 0,
       no_result_count: 0,
       fallback_rate: 0,
+      fallback_rate_total: 0,
+      fallback_rate_rolling_100: 0,
       no_result_rate: 0,
+      mismatch_rate_rolling_100: 0,
+      fallback_samples_top: [],
     },
   });
 });

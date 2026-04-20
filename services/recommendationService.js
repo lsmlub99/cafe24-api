@@ -15,10 +15,16 @@ import { findFirstAliasKey, includesAny, parseJsonObject } from './recommendatio
 import {
   getRecommendationMetrics,
   trackCategoryLockViolation,
+  trackExplanationMismatch,
   trackFallback,
   trackFormLockViolation,
   trackNoResult,
+  trackNoExplanationMismatchForRequest,
+  trackNoFallbackForRequest,
+  trackReasonFallback,
+  trackRepeatPenalty,
   trackRequest,
+  trackSemanticNullInvalid,
 } from './recommendation/metrics.js';
 import { getSessionContext, updateSessionContext } from './recommendation/sessionContext.js';
 import { applySemanticSignals } from './recommendation/semanticRetriever.js';
@@ -49,6 +55,32 @@ async function getOpenAIClient() {
 
 function inferProductCategory(product) {
   return findFirstAliasKey(`${product?.name || ''} ${product?.text || ''}`, RECOMMENDATION_TAXONOMY.categories);
+}
+
+function hashQuery(input = '') {
+  let hash = 2166136261;
+  const str = String(input || '');
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return `q_${(hash >>> 0).toString(16)}`;
+}
+
+function createSemanticDiagnostics() {
+  return {
+    semantic_enabled: false,
+    embedding_model: null,
+    semantic_candidates_count: 0,
+    semantic_nonzero_count: 0,
+    semantic_skip_reason: 'not_evaluated',
+  };
+}
+
+function shouldFlagSemanticNullInvalid(diag = {}) {
+  if (!diag || !diag.semantic_enabled) return false;
+  if (diag.semantic_skip_reason !== null) return false;
+  return Number(diag.semantic_nonzero_count || 0) <= 0;
 }
 
 function buildReasoningTags(parsedIntent) {
@@ -133,8 +165,50 @@ function buildDetail(product, parsedIntent) {
   };
 }
 
+function buildDetailFromReason(product, parsedIntent) {
+  const breakdown = product?._score_breakdown || {};
+  const reasonCode = breakdown.reason_code || null;
+  const semanticBoost = Number(breakdown.semantic_boost || 0);
+
+  let whyPick = '';
+  if (reasonCode === 'SEMANTIC_MATCH' && semanticBoost > 0) {
+    whyPick = '요청 문맥과 제품 특성의 의미 매칭 점수가 높아 우선 추천드렸어요.';
+  } else if (reasonCode === 'CONDITION_MATCH') {
+    if (parsedIntent.skin_type === 'sensitive') whyPick = '민감 피부 기준에서 자극 부담을 낮춘 사용감 신호가 상대적으로 좋아요.';
+    else if (parsedIntent.skin_type === 'oily' || parsedIntent.skin_type === 'combination') {
+      whyPick = '유분·번들거림 부담을 줄인 사용감 신호가 상대적으로 잘 맞아요.';
+    } else if (parsedIntent.skin_type === 'dry') {
+      whyPick = '건조함 부담을 줄이는 보습/수분 신호가 상대적으로 잘 맞아요.';
+    } else {
+      whyPick = '요청하신 조건과의 적합도 신호가 상대적으로 높아 상위로 선별됐어요.';
+    }
+  } else if (reasonCode === 'POPULAR_BASELINE') {
+    whyPick = '요청 카테고리 내에서 최근 인기/품질 신호가 안정적인 제품이라 우선 추천드렸어요.';
+  } else {
+    trackReasonFallback();
+    whyPick = '요청 카테고리 기준으로 무난하게 시작하기 좋은 기본 후보예요.';
+  }
+
+  const tips = [];
+  if ((parsedIntent.situation || []).includes('makeup_before')) {
+    tips.push('메이크업 전에는 한 번에 많이 바르기보다 2~3회 얇게 레이어링하면 밀림이 줄어요.');
+  }
+  if ((parsedIntent.situation || []).includes('outdoor')) {
+    tips.push('야외 활동 시 2~3시간 간격으로 재도포해 차단력을 유지해주세요.');
+  }
+  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아져요.');
+
+  return {
+    reason_code: reasonCode || 'FALLBACK_SAFE_BASELINE',
+    reason_facts: breakdown.reason_facts || {},
+    why_pick: whyPick,
+    usage_tip: tips[0],
+    caution: '야외 활동이 길면 2~3시간 간격 재도포를 권장합니다.',
+  };
+}
+
 function toRecommendationItem(product, idx, parsedIntent) {
-  const details = buildDetail(product, parsedIntent);
+  const details = buildDetailFromReason(product, parsedIntent);
   return {
     rank: idx + 1,
     rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
@@ -145,8 +219,10 @@ function toRecommendationItem(product, idx, parsedIntent) {
     category_ids: Array.isArray(product.category_ids) ? product.category_ids : [],
     price: product.price,
     key_point: details.why_pick,
-    why_pick: details.why_pick || '요청 조건과의 일치도가 높은 후보입니다.',
-    usage_tip: details.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아집니다.',
+    reason_code: details.reason_code,
+    reason_facts: details.reason_facts,
+    why_pick: details.why_pick || '요청 카테고리 기준으로 무난하게 시작하기 좋은 기본 후보예요.',
+    usage_tip: details.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아져요.',
     caution: details.caution,
     is_promo: !!product.is_promo,
     buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,
@@ -365,6 +441,22 @@ function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked)
   return mainRecommendations.some((item) => item?.form && !allowedMainForms.includes(item.form));
 }
 
+function hasExplanationMismatch(mainRecommendations = []) {
+  const conditionTerms = ['지성', '건성', '민감', '수부지', '고민', '조건'];
+  return mainRecommendations.some((item) => {
+    const why = String(item?.why_pick || '');
+    const code = String(item?.reason_code || '');
+    const facts = item?.reason_facts || {};
+    const semanticBoost = Number(facts.semantic_boost || 0);
+    if (!code) return true;
+    if (code === 'POPULAR_BASELINE') {
+      return conditionTerms.some((t) => why.includes(t));
+    }
+    if (code.startsWith('SEMANTIC') && !(semanticBoost > 0)) return true;
+    return false;
+  });
+}
+
 function categoryMatches(item, parsedIntent) {
   const requestedIds = (parsedIntent.requested_category_ids || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
   if (requestedIds.length > 0) {
@@ -403,17 +495,52 @@ function enforceMainPolicyOnRanked(
   allowedMainForms = [],
   limit = RECOMMENDATION_POLICY.limits.defaultMain
 ) {
-  const filtered = (ranked || []).filter((item) => {
-    if (!item || item.is_promo) return false;
-    if (categoryLocked && !isCategoryMatchedByIntent(item, parsedIntent)) return false;
-    if (formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0) {
-      if (!item.form || !allowedMainForms.includes(item.form)) return false;
-    }
-    return true;
-  });
+  const drop = {
+    DROP_CATEGORY_MISMATCH: 0,
+    DROP_FORM_MISMATCH: 0,
+    DROP_PROMO_MAIN: 0,
+    DROP_DUP_BASE: 0,
+  };
 
-  const deduped = dedupeByBase(filtered);
-  return deduped.slice(0, Math.max(1, limit));
+  const passed = [];
+  for (const item of ranked || []) {
+    if (!item) continue;
+    if (item.is_promo) {
+      drop.DROP_PROMO_MAIN += 1;
+      continue;
+    }
+    if (categoryLocked && !isCategoryMatchedByIntent(item, parsedIntent)) {
+      drop.DROP_CATEGORY_MISMATCH += 1;
+      continue;
+    }
+    if (formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0) {
+      if (!item.form || !allowedMainForms.includes(item.form)) {
+        drop.DROP_FORM_MISMATCH += 1;
+        continue;
+      }
+    }
+    passed.push(item);
+  }
+
+  const seen = new Set();
+  const deduped = [];
+  for (const item of passed) {
+    const key = String(item.base_name || '').trim();
+    if (!key) continue;
+    if (seen.has(key)) {
+      drop.DROP_DUP_BASE += 1;
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  return {
+    selected: deduped.slice(0, Math.max(1, limit)),
+    drop_stats: drop,
+    pre_policy_count: (ranked || []).length,
+    pass_count: passed.length,
+  };
 }
 
 export const recommendationService = {
@@ -466,8 +593,14 @@ export const recommendationService = {
 
     finalSelected.forEach((item, idx) => {
       const breakdown = item._score_breakdown || {};
+      if (Number(breakdown.repeat_penalty || 0) > 0) {
+        trackRepeatPenalty(Number(breakdown.repeat_penalty || 0));
+        logger.info(
+          `[RepeatPenalty] product="${item.name}" penalty=${breakdown.repeat_penalty} axis=${breakdown.repeat_penalty_axis || 'unknown'} session_ref=${breakdown.repeat_penalty_session_ref || 'none'}`
+        );
+      }
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} reason_code=${breakdown.reason_code || 'none'} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 
@@ -525,6 +658,8 @@ export const recommendationService = {
 
     if (!Array.isArray(cachedProducts) || !cachedProducts.length) {
       trackNoResult();
+      trackNoFallbackForRequest();
+      trackNoExplanationMismatchForRequest();
       return {
         requested_category: null,
         main_recommendations: [],
@@ -579,19 +714,38 @@ export const recommendationService = {
     }
 
     let usedFallback = false;
-    let semanticCandidates = await applySemanticSignals(candidates, parsed, {
-      openai,
-      enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
-      model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
-      minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
-      maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
-      batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
-      semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
-      logger,
-    });
+    const fallbackSteps = [];
+    const queryHash = hashQuery(parsed.query || args.query || args.q || '');
+    let semanticDiagnostics = createSemanticDiagnostics();
+
+    const runSemantic = async (candidatePool, intent) => {
+      const semanticResult = await applySemanticSignals(candidatePool, intent, {
+        openai,
+        enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
+        model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
+        minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
+        maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
+        batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
+        semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
+        logger,
+      });
+      semanticDiagnostics = semanticResult?.diagnostics || createSemanticDiagnostics();
+      if (shouldFlagSemanticNullInvalid(semanticDiagnostics)) {
+        trackSemanticNullInvalid();
+        logger.warn(
+          `[SemanticDiag] invalid_null_skip_reason model=${semanticDiagnostics.embedding_model || 'none'} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0}`
+        );
+      }
+      logger.info(
+        `[SemanticDiag] enabled=${semanticDiagnostics.semantic_enabled ? 1 : 0} model=${semanticDiagnostics.embedding_model || 'none'} candidates=${semanticDiagnostics.semantic_candidates_count || 0} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0} skip_reason=${semanticDiagnostics.semantic_skip_reason ?? 'null'}`
+      );
+      return Array.isArray(semanticResult?.candidates) ? semanticResult.candidates : candidatePool;
+    };
+
+    let semanticCandidates = await runSemantic(candidates, parsed);
 
     let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
-    let policyMain = enforceMainPolicyOnRanked(
+    let policyGate = enforceMainPolicyOnRanked(
       ranked,
       parsed,
       category_locked,
@@ -599,22 +753,20 @@ export const recommendationService = {
       allowed_main_forms,
       limit
     );
+    let policyMain = policyGate.selected;
+    logger.info(
+      `[Main Policy Gate] pre=${policyGate.pre_policy_count} pass=${policyGate.pass_count} final=${policyMain.length} drops=${JSON.stringify(
+        policyGate.drop_stats
+      )}`
+    );
 
     if (!policyMain.length && category_locked) {
       usedFallback = true;
+      fallbackSteps.push('popular_same_category');
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
-      semanticCandidates = await applySemanticSignals(candidates, relaxed, {
-        openai,
-        enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
-        model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
-        minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
-        maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
-        batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
-        semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
-        logger,
-      });
+      semanticCandidates = await runSemantic(candidates, relaxed);
       ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
-      policyMain = enforceMainPolicyOnRanked(
+      policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
         category_locked,
@@ -622,33 +774,37 @@ export const recommendationService = {
         allowed_main_forms,
         limit
       );
+      policyMain = policyGate.selected;
+      logger.info(
+        `[Main Policy Gate] pre=${policyGate.pre_policy_count} pass=${policyGate.pass_count} final=${policyMain.length} drops=${JSON.stringify(
+          policyGate.drop_stats
+        )}`
+      );
     }
 
     if (!policyMain.length && category_locked) {
       usedFallback = true;
+      fallbackSteps.push('relax_form');
       const fallbackPrimary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
       candidates = fallbackPrimary.candidates;
       category_locked = strictPrimary.category_locked;
       form_locked = strictPrimary.form_locked;
       allowed_main_forms = strictPrimary.allowed_main_forms || [];
-      semanticCandidates = await applySemanticSignals(candidates, parsed, {
-        openai,
-        enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
-        model: config.EMBEDDING_MODEL || RECOMMENDATION_POLICY.semantic?.model || 'text-embedding-3-small',
-        minCandidateCount: RECOMMENDATION_POLICY.semantic?.minCandidateCount || 3,
-        maxPool: RECOMMENDATION_POLICY.semantic?.maxPool || RECOMMENDATION_POLICY.limits.stage1TopK,
-        batchSize: RECOMMENDATION_POLICY.semantic?.batchSize || 32,
-        semanticWeight: RECOMMENDATION_POLICY.scoring?.semanticWeight || 1.1,
-        logger,
-      });
+      semanticCandidates = await runSemantic(candidates, parsed);
       ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
-      policyMain = enforceMainPolicyOnRanked(
+      policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
         category_locked,
         form_locked,
         allowed_main_forms,
         limit
+      );
+      policyMain = policyGate.selected;
+      logger.info(
+        `[Main Policy Gate] pre=${policyGate.pre_policy_count} pass=${policyGate.pass_count} final=${policyMain.length} drops=${JSON.stringify(
+          policyGate.drop_stats
+        )}`
       );
     }
 
@@ -658,7 +814,17 @@ export const recommendationService = {
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
       trackNoResult();
-      trackFallback();
+      fallbackSteps.push('secondary_only');
+      trackFallback({
+        timestamp: new Date().toISOString(),
+        requested_category: parsed.requested_category || null,
+        requested_form: parsed.requested_form || null,
+        fit_issue: parsed.fit_issue || [],
+        negative_scope: parsed.negative_scope || null,
+        fallback_step: fallbackSteps[fallbackSteps.length - 1] || 'secondary_only',
+        reason_code: 'FALLBACK_SAFE_BASELINE',
+        query_hash: queryHash,
+      });
 
       const secondaryOnly = this.get_secondary_recommendations(
         normalized,
@@ -666,6 +832,7 @@ export const recommendationService = {
         [],
         RECOMMENDATION_POLICY.limits.defaultSecondary
       );
+      trackNoExplanationMismatchForRequest();
       return {
         requested_category: parsed.requested_category,
         main_recommendations: [],
@@ -689,7 +856,20 @@ export const recommendationService = {
       };
     }
 
-    if (usedFallback) trackFallback();
+    if (usedFallback) {
+      trackFallback({
+        timestamp: new Date().toISOString(),
+        requested_category: parsed.requested_category || null,
+        requested_form: parsed.requested_form || null,
+        fit_issue: parsed.fit_issue || [],
+        negative_scope: parsed.negative_scope || null,
+        fallback_step: fallbackSteps[fallbackSteps.length - 1] || 'relax_condition',
+        reason_code: mainRecommendations[0]?.reason_code || 'FALLBACK_SAFE_BASELINE',
+        query_hash: queryHash,
+      });
+    } else {
+      trackNoFallbackForRequest();
+    }
     if (!mainRecommendations.length) trackNoResult();
 
     if (hasCategoryLockViolation(mainRecommendations, parsed, category_locked)) {
@@ -707,6 +887,13 @@ export const recommendationService = {
           allowed_main_forms || []
         ).join(',')} main=${mainRecommendations.map((x) => `${x.name}:${x.form || 'unknown'}`).join(', ')}`
       );
+    }
+
+    if (hasExplanationMismatch(mainRecommendations)) {
+      trackExplanationMismatch();
+      logger.warn('[Explain] explanation mismatch detected between reason_code and rendered why_pick');
+    } else {
+      trackNoExplanationMismatchForRequest();
     }
 
     const secondary = this.get_secondary_recommendations(

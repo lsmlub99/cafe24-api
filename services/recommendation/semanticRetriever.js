@@ -134,20 +134,73 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
     logger = null,
   } = options;
 
-  if (!enabled || !openai || !Array.isArray(candidates) || candidates.length < minCandidateCount) {
-    return candidates.map((p) => ({ ...p, _semantic_score: 0, _semantic_weight: 0 }));
+  const emptyScores = (list = []) => list.map((p) => ({ ...p, _semantic_score: 0, _semantic_weight: 0 }));
+
+  if (!enabled) {
+    return {
+      candidates: emptyScores(candidates),
+      diagnostics: {
+        semantic_enabled: false,
+        embedding_model: model,
+        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
+        semantic_nonzero_count: 0,
+        semantic_skip_reason: 'semantic_disabled',
+      },
+    };
+  }
+  if (!openai) {
+    return {
+      candidates: emptyScores(candidates),
+      diagnostics: {
+        semantic_enabled: true,
+        embedding_model: model,
+        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
+        semantic_nonzero_count: 0,
+        semantic_skip_reason: 'openai_unavailable',
+      },
+    };
+  }
+  if (!Array.isArray(candidates) || candidates.length < minCandidateCount) {
+    return {
+      candidates: emptyScores(candidates),
+      diagnostics: {
+        semantic_enabled: true,
+        embedding_model: model,
+        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
+        semantic_nonzero_count: 0,
+        semantic_skip_reason: 'too_few_candidates',
+      },
+    };
   }
 
   const query = String(intent.query || '').trim();
   if (query.length < 2) {
-    return candidates.map((p) => ({ ...p, _semantic_score: 0, _semantic_weight: 0 }));
+    return {
+      candidates: emptyScores(candidates),
+      diagnostics: {
+        semantic_enabled: true,
+        embedding_model: model,
+        semantic_candidates_count: candidates.length,
+        semantic_nonzero_count: 0,
+        semantic_skip_reason: 'empty_query',
+      },
+    };
   }
 
   try {
     await ensureProductEmbeddings(candidates, openai, model, batchSize);
     const queryVector = await getQueryEmbedding(intent, openai, model);
     if (!queryVector.length) {
-      return candidates.map((p) => ({ ...p, _semantic_score: 0, _semantic_weight: 0 }));
+      return {
+        candidates: emptyScores(candidates),
+        diagnostics: {
+          semantic_enabled: true,
+          embedding_model: model,
+          semantic_candidates_count: candidates.length,
+          semantic_nonzero_count: 0,
+          semantic_skip_reason: 'query_embedding_empty',
+        },
+      };
     }
 
     const scored = candidates
@@ -161,12 +214,32 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
 
     const poolSize = Math.max(Math.min(maxPool, scored.length), minCandidateCount);
     const pruned = scored.slice(0, poolSize);
+    const nonzeroCount = pruned.filter((p) => Number(p._semantic_score || 0) > 0).length;
+    const skipReason = nonzeroCount > 0 ? null : 'all_zero_scores';
     logger?.info?.(
       `[Semantic] model=${model} candidates=${candidates.length} pool=${pruned.length} top_score=${pruned[0]?._semantic_score ?? 0}`
     );
-    return pruned;
+    return {
+      candidates: pruned,
+      diagnostics: {
+        semantic_enabled: true,
+        embedding_model: model,
+        semantic_candidates_count: pruned.length,
+        semantic_nonzero_count: nonzeroCount,
+        semantic_skip_reason: skipReason,
+      },
+    };
   } catch (error) {
     logger?.warn?.(`[Semantic] skipped: ${error.message}`);
-    return candidates.map((p) => ({ ...p, _semantic_score: 0, _semantic_weight: 0 }));
+    return {
+      candidates: emptyScores(candidates),
+      diagnostics: {
+        semantic_enabled: true,
+        embedding_model: model,
+        semantic_candidates_count: Array.isArray(candidates) ? candidates.length : 0,
+        semantic_nonzero_count: 0,
+        semantic_skip_reason: 'semantic_error',
+      },
+    };
   }
 }

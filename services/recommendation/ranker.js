@@ -242,12 +242,20 @@ function getDiversitySoftPenalty(product, context, policy) {
 function getRepeatPenalty(product, intent, policy) {
   const seen = intent.session_context?.recent_main_base_names || [];
   const base = String(product.base_name || '').trim();
-  if (!base || !Array.isArray(seen) || !seen.length) return 0;
-  if (!seen.includes(base)) return 0;
+  if (!base || !Array.isArray(seen) || !seen.length) {
+    return { value: 0, axis: null, session_ref: null };
+  }
+  if (!seen.includes(base)) {
+    return { value: 0, axis: null, session_ref: null };
+  }
 
   const needsVariety = Boolean(intent.variety_intent || (intent.concern || []).includes('not_fit'));
   const weight = needsVariety ? 1.8 : 1;
-  return policy.scoring.repeatRecommendationPenalty * weight;
+  return {
+    value: policy.scoring.repeatRecommendationPenalty * weight,
+    axis: 'base',
+    session_ref: base,
+  };
 }
 
 function getNegativeScopePenalty(product, intent) {
@@ -288,7 +296,8 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const formMismatchPenalty = getFormMismatchPenalty(product, intent.allowed_main_forms || [], policy);
   const reactivePenalty = getReactivePenalty(product, intent, policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
-  const repeatPenalty = getRepeatPenalty(product, intent, policy);
+  const repeatPenaltyInfo = getRepeatPenalty(product, intent, policy);
+  const repeatPenalty = Number(repeatPenaltyInfo?.value || 0);
   const negativeScopePenalty = getNegativeScopePenalty(product, intent);
   const queryMatch = getQueryMatchScore(product, intent);
   const semanticScore = Number(product._semantic_score || 0);
@@ -316,6 +325,23 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     ? `condition_priority(${condition.toFixed(1)}) over quality(${quality.toFixed(1)})`
     : `popular_quality(${quality.toFixed(1)})`;
 
+  let reasonCode = 'FALLBACK_SAFE_BASELINE';
+  if (semanticBoost > 0) reasonCode = 'SEMANTIC_MATCH';
+  else if (hasConditionSignal && condition > 0) reasonCode = 'CONDITION_MATCH';
+  else if (quality > 0 || intentFit > 0) reasonCode = 'POPULAR_BASELINE';
+
+  const reasonFacts = {
+    has_condition_signal: hasConditionSignal,
+    condition_score: Number(condition.toFixed(3)),
+    quality_score: Number(quality.toFixed(3)),
+    intent_score: Number(intentFit.toFixed(3)),
+    semantic_boost: Number(semanticBoost.toFixed(3)),
+    novelty_score: Number(novelty.toFixed(3)),
+    sort_intent: intent.sort_intent || 'popular',
+    requested_category: intent.requested_category || null,
+    requested_form: intent.requested_form || null,
+  };
+
   return {
     base_score: Number(baseScore.toFixed(3)),
     condition_score: Number(condition.toFixed(3)),
@@ -335,6 +361,10 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     negative_scope_penalty: negativeScopePenalty,
     diversity_penalty: Number(diversityPenalty.toFixed(3)),
     final_rank_reason: finalRankReason,
+    reason_code: reasonCode,
+    reason_facts: reasonFacts,
+    repeat_penalty_axis: repeatPenaltyInfo?.axis || null,
+    repeat_penalty_session_ref: repeatPenaltyInfo?.session_ref || null,
   };
 }
 

@@ -185,6 +185,26 @@ function computeEnrichMaxFetch(args = {}) {
   return shouldEnrich ? config.ENRICH_MAX_FETCH_INGREDIENT : config.ENRICH_MAX_FETCH_BASE;
 }
 
+function buildCompactConsultText(args = {}, recommendations = []) {
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+    return '조건에 맞는 본품 후보를 찾지 못했어요. 원하시면 피부 타입이나 사용감을 알려주시면 다시 좁혀드릴게요.';
+  }
+
+  const skinType = String(args.skin_type || '').trim();
+  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
+  const context = [skinType ? `${skinType} 피부` : '', concerns.length ? `고민: ${concerns.join(', ')}` : '']
+    .filter(Boolean)
+    .join(' / ');
+
+  const names = recommendations.slice(0, 3).map((x) => x.name);
+  const lines = [];
+  if (context) lines.push(`선택 요약: ${context} 기준으로 카드 1~3번을 비교해보세요.`);
+  else lines.push('선택 요약: 카드 1~3번을 사용감 기준으로 비교해보세요.');
+  lines.push(`지금 후보는 ${names.join(' / ')} 순서예요.`);
+  lines.push('다음으로는 번들거림 적은 타입만 다시 보거나, 민감성 기준으로 다시 좁혀드릴 수 있어요.');
+  return lines.join('\n');
+}
+
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -275,12 +295,7 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = await recommendationService.generate_consult_narrative(
-    recommendations,
-    promotions || [],
-    referenceRecommendations || secondaryRecommendations || [],
-    args
-  );
+  const consultText = buildCompactConsultText(args, recommendations);
 
   return {
     content: [{ type: 'text', text: consultText }],

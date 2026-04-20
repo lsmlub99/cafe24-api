@@ -67,11 +67,13 @@ function normalizeWidgetData(raw) {
     : Array.isArray(structured.items)
     ? structured.items
     : [];
+
   const secondaryRaw = Array.isArray(structured.secondary_recommendations)
     ? structured.secondary_recommendations
     : Array.isArray(structured.reference_recommendations)
     ? structured.reference_recommendations
     : [];
+
   const promotionsRaw = Array.isArray(structured.promotions) ? structured.promotions : [];
   const summary = isObject(structured.summary) ? structured.summary : {};
 
@@ -101,11 +103,7 @@ function CardText({ label, text }) {
 
 const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '알고리즘', '추천 로직', '모델', '요청 상황과 잘 맞는 추천'];
 
-const FOLLOW_UP_CTAS = [
-  '\uBC88\uB4E4\uAC70\uB9BC \uC801\uC740 \uC81C\uD488\uB9CC \uB2E4\uC2DC \uBCF4\uAE30',
-  '\uBBFC\uAC10\uC131 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uC881\uD788\uAE30',
-  '\uD1A4\uC5C5 \uC5C6\uB294 \uC81C\uD488\uB9CC \uBCF4\uAE30',
-];
+const FOLLOW_UP_CTAS = ['번들거림 적은 제품만 다시 보기', '민감성 기준으로 다시 좁히기', '톤업 없는 제품만 보기'];
 
 function removeForbiddenCopy(text = '') {
   let out = String(text || '').trim();
@@ -121,7 +119,7 @@ function trimReasonText(text = '', max = 26) {
   return source.length > max ? `${source.slice(0, max - 1)}…` : source;
 }
 
-function toneFromReasonCode(item = {}) {
+function toneFromReasonCode(item = {}, rank = 1) {
   const reasonCode = String(item.reason_code || '');
   const rawWhy = String(item.why_pick || item.key_point || '');
   const why = removeForbiddenCopy(rawWhy);
@@ -134,28 +132,45 @@ function toneFromReasonCode(item = {}) {
   const isSerum = form.includes('serum') || lowerName.includes('세럼');
 
   if (reasonCode === 'SEMANTIC_MATCH') {
-    if (hasTone) return { core: '톤 보정이 필요한 날에 적합', support: '피부 표현을 정리해주는 타입으로 보기 좋아요.' };
-    if (isSpray) return { core: '가볍게 덧바르기 편한 타입', support: '외출 중에도 부담 적게 다시 바르기 좋아요.' };
-    if (isStick) return { core: '손대지 않고 바르기 쉬운 타입', support: '번들거림이 올라올 때 빠르게 수정하기 편해요.' };
-    if (isSerum) return { core: '얇고 가벼운 밀착감 중심', support: '무거운 크림이 부담될 때 고르기 좋아요.' };
-    return { core: '가볍고 번들거림 부담 적음', support: '데일리로 쓰기 편한 사용감 쪽에 가까워요.' };
+    if (hasTone) {
+      return rank === 1
+        ? { core: '톤 보정까지 챙기기 좋은 타입', support: '피부 표현을 정리하고 싶을 때 보기 좋아요.' }
+        : { core: '톤업 필요할 때 고르기 좋음', support: '데일리 톤 보정용으로 비교해보기 좋아요.' };
+    }
+    if (isSpray) return { core: '가볍게 덧바르기 편한 타입', support: '외출 중 빠르게 보충하기 좋은 제형이에요.' };
+    if (isStick) return { core: '보송하게 수정하기 쉬운 타입', support: '번들거림이 올라올 때 빠르게 쓰기 좋아요.' };
+    if (isSerum) return { core: '얇고 가벼운 밀착감 중심', support: '무거운 크림이 부담될 때 선택하기 좋아요.' };
+    return rank === 1
+      ? { core: '데일리로 쓰기 편한 사용감', support: '처음 고를 때 부담이 적은 기본형에 가까워요.' }
+      : { core: '가볍고 번들거림 부담 적음', support: '답답함을 줄여서 쓰고 싶을 때 비교하기 좋아요.' };
   }
 
   if (reasonCode === 'CONDITION_MATCH') {
+    if (rank === 1) {
+      return {
+        core: trimReasonText(why, 26) || '피부 고민에 맞춰 고른 1순위',
+        support: '현재 조건에서 가장 무난한 데일리 후보로 보기 좋아요.',
+      };
+    }
+    if (rank === 2) {
+      return {
+        core: '사용감 기준으로 비교할 대안',
+        support: '1순위와 결은 비슷하지만 체감 사용감이 더 가벼운 편이에요.',
+      };
+    }
     return {
-      core: trimReasonText(why, 26) || '피부 고민에 맞춰 고른 추천',
-      support: '현재 피부 조건에서 부담을 줄인 방향으로 고른 후보예요.',
+      core: '보조 목적까지 함께 볼 후보',
+      support: '톤 보정이나 덧바름 목적이 있으면 비교해볼 만해요.',
     };
   }
 
-  return {
-    core: '무난한 데일리 기본형',
-    support: '처음 시작하기에 부담이 적은 쪽으로 고른 추천이에요.',
-  };
+  if (rank === 1) return { core: '무난한 데일리 기본형', support: '처음 시작할 때 실패 부담이 적은 쪽이에요.' };
+  if (rank === 2) return { core: '산뜻한 사용감 중심 대안', support: '가벼운 발림감을 원할 때 비교해보기 좋아요.' };
+  return { core: '특정 목적용으로 비교할 후보', support: '상황에 따라 보조 선택지로 보기 좋아요.' };
 }
 
-function buildCardCopy(item = {}) {
-  const mapped = toneFromReasonCode(item);
+function buildCardCopy(item = {}, rank = 1) {
+  const mapped = toneFromReasonCode(item, rank);
   const tip = removeForbiddenCopy(item.usage_tip || '');
 
   return {
@@ -167,19 +182,42 @@ function buildCardCopy(item = {}) {
 
 function buildSelectionGuide(recommendations = []) {
   const [a, b, c] = recommendations;
-  const getGuideLine = (item, rank) => {
+  const used = new Set();
+  const uniqueLine = (preferred, fallback) => {
+    if (!used.has(preferred)) {
+      used.add(preferred);
+      return preferred;
+    }
+    used.add(fallback);
+    return fallback;
+  };
+
+  const toLine = (item, rank) => {
     if (!item) return `${rank}번: 비슷한 조건에서 대안으로 비교할 때`;
     const name = String(item.name || '').toLowerCase();
     const form = String(item.form || '').toLowerCase();
 
-    if (name.includes('토닝') || name.includes('톤') || name.includes('bb')) return `${rank}번: 톤 보정이 필요한 날에 선택`;
-    if (form.includes('spray') || name.includes('스프레이')) return `${rank}번: 외출 중 덧바름 편의가 중요할 때`;
-    if (form.includes('stick') || name.includes('스틱')) return `${rank}번: 보송하게 빠른 수정이 필요할 때`;
-    if (form.includes('serum') || name.includes('세럼')) return `${rank}번: 가볍고 얇은 사용감을 원할 때`;
-    return `${rank}번: 무난한 데일리 사용이 우선일 때`;
+    if (rank === 1) return uniqueLine('1번: 매일 무난하게 쓸 제품이 필요할 때', '1번: 먼저 실패 부담이 적은 쪽부터 볼 때');
+    if (rank === 2) {
+      if (form.includes('spray') || name.includes('스프레이')) {
+        return uniqueLine('2번: 외출 중 덧바름 편의가 중요할 때', '2번: 사용감 차이를 비교해보고 싶을 때');
+      }
+      if (form.includes('serum') || name.includes('세럼')) {
+        return uniqueLine('2번: 더 얇고 가벼운 발림감을 원할 때', '2번: 1번이 무겁게 느껴질 때 대안으로');
+      }
+      if (form.includes('stick') || name.includes('스틱')) {
+        return uniqueLine('2번: 보송하게 빠른 수정이 필요할 때', '2번: 번들거림 관리용 대안이 필요할 때');
+      }
+      return uniqueLine('2번: 1번보다 산뜻한 사용감을 원할 때', '2번: 체감 사용감 기준으로 대안이 필요할 때');
+    }
+
+    if (name.includes('토닝') || name.includes('톤') || name.includes('bb')) {
+      return uniqueLine('3번: 톤 보정이 필요한 날에 선택', '3번: 보정 목적까지 함께 고려할 때');
+    }
+    return uniqueLine('3번: 덧바름/보조 목적까지 같이 볼 때', '3번: 상황별 보조 선택지가 필요할 때');
   };
 
-  return [getGuideLine(a, 1), getGuideLine(b, 2), getGuideLine(c, 3)];
+  return [toLine(a, 1), toLine(b, 2), toLine(c, 3)];
 }
 
 function buildGuideContextLine(widgetData = {}) {
@@ -194,13 +232,11 @@ function buildGuideContextLine(widgetData = {}) {
   if (hasSensitive || hasSoothing) return '민감 피부 기준에서는 자극 부담이 적은 타입부터 비교해보세요.';
   if (hasOily || hasSebum) return '지성/수부지 기준에서는 번들거림 부담이 적은 타입부터 비교해보세요.';
   if (hasDry || hasHydration) return '건성 기준에서는 당김 부담이 적은 촉촉한 타입부터 비교해보세요.';
-  return '평소 사용하는 메이크업/외출 패턴에 맞춰 1번부터 순서대로 비교해보세요.';
+  return '평소 메이크업/외출 패턴에 맞춰 1번부터 순서대로 비교해보세요.';
 }
 
 function App() {
-  const [messages, setMessages] = useState([
-    { id: 1, type: 'bot', text: '안녕하세요! 셀퓨전씨 AI 뷰티 가이드입니다. 무엇을 도와드릴까요?' },
-  ]);
+  const [messages, setMessages] = useState([{ id: 1, type: 'bot', text: '안녕하세요. 셀퓨전씨 AI 뷰티 가이드입니다. 무엇을 추천해드릴까요?' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [widgetData, setWidgetData] = useState(null);
@@ -233,9 +269,7 @@ function App() {
       if (!nextData) return;
 
       const nextHasRecs = nextData.recommendations.length > 0;
-      const currentHasRecs =
-        Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
-
+      const currentHasRecs = Array.isArray(widgetDataRef.current?.recommendations) && widgetDataRef.current.recommendations.length > 0;
       if (!nextHasRecs && currentHasRecs) return;
 
       const signature = JSON.stringify({
@@ -333,65 +367,47 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div
-          style={{
-            display: 'flex',
-            gap: '16px',
-            overflowX: 'auto',
-            paddingBottom: '12px',
-            WebkitOverflowScrolling: 'touch',
-          }}
-        >
-          {widgetData.recommendations.map((product, idx) => (
-            <div
-              key={`${product.buy_url || product.name}-${idx}`}
-              style={{
-                minWidth: '260px',
-                maxWidth: '300px',
-                border: '1px solid #eee',
-                borderRadius: '12px',
-                padding: '14px',
-                background: '#fff',
-              }}
-            >
-              <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>
-                {idx === 0 ? '🏅 BEST' : `${idx + 1}위`}
-              </div>
-              <img
-                src={product.image}
-                alt={product.name}
-                style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }}
-              />
-              <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
-              <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
-
-              <div style={{ minHeight: '132px' }}>
-                <CardText label="핵심 포인트" text={buildCardCopy(product).coreReason} />
-                <CardText label="추천 이유" text={buildCardCopy(product).supportReason} />
-                <CardText label="사용 팁" text={buildCardCopy(product).usageTip} />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => openBuyLink(product.buy_url)}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'center',
-                  background: '#B31312',
-                  color: '#fff',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  fontSize: '0.9rem',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                }}
+        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
+          {widgetData.recommendations.map((product, idx) => {
+            const cardCopy = buildCardCopy(product, idx + 1);
+            return (
+              <div
+                key={`${product.buy_url || product.name}-${idx}`}
+                style={{ minWidth: '260px', maxWidth: '300px', border: '1px solid #eee', borderRadius: '12px', padding: '14px', background: '#fff' }}
               >
-                지금 구매하기
-              </button>
-            </div>
-          ))}
+                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{idx === 0 ? '🏅 BEST' : `${idx + 1}위`}</div>
+                <img src={product.image} alt={product.name} style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }} />
+                <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
+                <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
+
+                <div style={{ minHeight: '132px' }}>
+                  <CardText label="핵심 포인트" text={cardCopy.coreReason} />
+                  <CardText label="추천 이유" text={cardCopy.supportReason} />
+                  <CardText label="사용 팁" text={cardCopy.usageTip} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openBuyLink(product.buy_url)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'center',
+                    background: '#B31312',
+                    color: '#fff',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  지금 구매하기
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         {widgetData.promotions.length > 0 && (
@@ -402,15 +418,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}
-                  style={{
-                    color: '#444',
-                    textDecoration: 'underline',
-                    border: 'none',
-                    background: 'transparent',
-                    padding: 0,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
+                  style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
                 >
                   {product.name}
                 </button>
@@ -428,15 +436,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => openBuyLink(product.buy_url)}
-                  style={{
-                    color: '#444',
-                    textDecoration: 'underline',
-                    border: 'none',
-                    background: 'transparent',
-                    padding: 0,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
+                  style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
                 >
                   {product.name}
                 </button>
@@ -454,9 +454,7 @@ function App() {
                 {line}
               </div>
             ))}
-            <div style={{ fontSize: '0.85rem', color: '#555', marginTop: '8px', lineHeight: 1.5 }}>
-              {buildGuideContextLine(widgetData)}
-            </div>
+            <div style={{ fontSize: '0.85rem', color: '#555', marginTop: '8px', lineHeight: 1.5 }}>{buildGuideContextLine(widgetData)}</div>
           </div>
         )}
 
@@ -492,16 +490,7 @@ function App() {
         </div>
 
         {widgetData.conclusion && (
-          <div
-            style={{
-              marginTop: '16px',
-              fontSize: '0.86rem',
-              color: '#444',
-              fontStyle: 'italic',
-              borderTop: '1px solid #eee',
-              paddingTop: '12px',
-            }}
-          >
+          <div style={{ marginTop: '16px', fontSize: '0.86rem', color: '#444', fontStyle: 'italic', borderTop: '1px solid #eee', paddingTop: '12px' }}>
             {widgetData.conclusion}
           </div>
         )}
@@ -565,7 +554,7 @@ function App() {
         <input
           type="text"
           className="chat-input"
-          placeholder="피부 타입이나 원하는 제품을 말씀해 주세요."
+          placeholder="원하는 타입이나 피부 고민을 알려주세요"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}

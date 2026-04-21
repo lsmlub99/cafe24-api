@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Send, Sparkles } from 'lucide-react';
 
 function tryParseJson(value) {
@@ -92,6 +92,10 @@ function normalizeWidgetData(raw) {
   };
 }
 
+function normalizeText(text = '') {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
 function CardText({ label, text }) {
   if (!text) return null;
   return (
@@ -102,7 +106,20 @@ function CardText({ label, text }) {
 }
 
 const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '추천 알고리즘', '모델', '로직 기반', '추천 로직'];
-const FOLLOW_UP_CTAS = ['번들거림 적은 제품만 다시 보기', '민감성 기준으로 다시 좁히기', '톤업 없는 제품만 보기'];
+const FOLLOWUP_ERROR_HINT = '요청을 다시 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
+
+const FOLLOW_UP_CTA_ITEMS = {
+  A: [
+    { label: '번들거림 적은 제품 다시 보기', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
+    { label: '민감성 기준으로 다시 좁히기', query: '민감성 피부 기준으로 다시 추천해줘', context: 'sensitive' },
+    { label: '톤업 없는 제품만 다시 보기', query: '톤업 없는 제품으로 다시 추천해줘', context: 'no_tone_up' },
+  ],
+  B: [
+    { label: '덜 번들거리는 걸로 다시 볼까요?', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
+    { label: '민감 피부 기준으로 다시 볼까요?', query: '민감성 피부 기준으로 다시 추천해줘', context: 'sensitive' },
+    { label: '톤업 없는 것만 다시 골라드릴까요?', query: '톤업 없는 제품으로 다시 추천해줘', context: 'no_tone_up' },
+  ],
+};
 
 const FORM_PRIMARY_BENEFIT = {
   cream: '무난한 데일리 사용감',
@@ -119,10 +136,6 @@ const ROLE_BY_RANK = {
   2: ['비교해보기 좋은 대안형', '조금 더 가볍게 보는 대안형'],
   3: ['취향 따라 고르는 보조형', '상황별로 고르는 보조형'],
 };
-
-function normalizeText(text = '') {
-  return String(text || '').replace(/\s+/g, ' ').trim();
-}
 
 function removeForbiddenCopy(text = '') {
   let out = normalizeText(text);
@@ -201,7 +214,7 @@ function buildCardSlots(item = {}, rank = 1) {
   const rankRole = ROLE_BY_RANK[rank]?.[0] || '무난한 기본형';
   const signals = collectSignals(item);
   const baseBenefit = FORM_PRIMARY_BENEFIT[formKey] || FORM_PRIMARY_BENEFIT.other;
-  const primaryBenefit = refinePrimaryBenefitOnce(baseBenefit, signals); // 보정은 최대 1회
+  const primaryBenefit = refinePrimaryBenefitOnce(baseBenefit, signals);
   const secondaryBenefit = pickSecondaryBenefit(signals);
   const usageContext = pickUsageContext(formKey, signals);
 
@@ -287,19 +300,121 @@ function buildGuideContextLine(widgetData = {}) {
   return '메인 용도와 덧바름 용도를 나눠서 1~3번을 비교해 보세요.';
 }
 
+function buildDecisionNudge(recommendations = []) {
+  if (!recommendations.length) return '';
+  const first = recommendations[0];
+  const signals = collectSignals(first);
+  if (signals.includes('톤업') || signals.includes('톤 보정')) return '차이가 헷갈리면 1번부터 비교해 보시는 게 가장 안전해요.';
+  return '고민된다면 1번부터 시작해 보는 쪽이 가장 무난해요.';
+}
+
+function getProductIdFromUrl(url = '') {
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.get('product_no') || '';
+  } catch {
+    return '';
+  }
+}
+
+function hashString(input = '') {
+  let hash = 2166136261;
+  const s = String(input || '');
+  for (let i = 0; i < s.length; i += 1) {
+    hash ^= s.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function getOrCreateSessionId() {
+  try {
+    const key = 'widget_session_id';
+    const existing = window.sessionStorage?.getItem(key);
+    if (existing) return existing;
+    const id = `ws_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+    window.sessionStorage?.setItem(key, id);
+    return id;
+  } catch {
+    return `ws_fallback_${Date.now()}`;
+  }
+}
+
+function pickVariant(experimentKey, sessionId) {
+  const h = parseInt(hashString(`${sessionId}:${experimentKey}`), 16);
+  return Number.isFinite(h) && h % 2 === 0 ? 'A' : 'B';
+}
+
+function getUxVariants(sessionId) {
+  return {
+    banner: pickVariant('banner', sessionId),
+    cta: pickVariant('cta', sessionId),
+    buyButton: pickVariant('buyButton', sessionId),
+  };
+}
+
+function buildRecommendationSignature(widgetData, variants) {
+  if (!widgetData?.recommendations?.length) return '';
+  const mainIds = widgetData.recommendations.map((p) => getProductIdFromUrl(p.buy_url) || p.name || '').join('|');
+  return `${mainIds}::${variants.banner}|${variants.cta}|${variants.buyButton}`;
+}
+
+function trackWidgetEvent(name, payload = {}) {
+  const event = {
+    ts: new Date().toISOString(),
+    name,
+    ...payload,
+  };
+  // Future server hook point
+  console.info('[Widget Event]', event);
+}
+
 function App() {
   const [messages, setMessages] = useState([{ id: 1, type: 'bot', text: '안녕하세요. 셀퓨전씨 AI 뷰티 가이드입니다. 무엇을 추천해드릴까요?' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [widgetData, setWidgetData] = useState(null);
+  const [isFollowupLoading, setIsFollowupLoading] = useState(false);
+  const [followupHint, setFollowupHint] = useState('');
 
   const messagesEndRef = useRef(null);
   const lastWidgetSignatureRef = useRef('');
   const fallbackPollRef = useRef(null);
   const widgetDataRef = useRef(null);
+  const sessionIdRef = useRef(getOrCreateSessionId());
+  const impressionDedupeRef = useRef(new Set());
+  const followupRequestIdRef = useRef(0);
+  const followupAbortRef = useRef(null);
+  const followupHintTimerRef = useRef(null);
 
-  const openBuyLink = async (href) => {
+  const variants = useMemo(() => getUxVariants(sessionIdRef.current), []);
+  const activeCtas = FOLLOW_UP_CTA_ITEMS[variants.cta] || FOLLOW_UP_CTA_ITEMS.A;
+
+  const clearFollowupHint = () => {
+    if (followupHintTimerRef.current) {
+      window.clearTimeout(followupHintTimerRef.current);
+      followupHintTimerRef.current = null;
+    }
+    setFollowupHint('');
+  };
+
+  const showFollowupHint = (text) => {
+    clearFollowupHint();
+    setFollowupHint(text);
+    followupHintTimerRef.current = window.setTimeout(() => {
+      setFollowupHint('');
+      followupHintTimerRef.current = null;
+    }, 4000);
+  };
+
+  const openBuyLink = async (href, rank = null, product = null) => {
     if (!href) return;
+    trackWidgetEvent('click_buy_button', {
+      rank,
+      product_id: getProductIdFromUrl(href),
+      product_name: product?.name || null,
+      variants,
+    });
     try {
       if (window.openai?.openExternal) {
         await window.openai.openExternal({ href });
@@ -309,6 +424,80 @@ function App() {
       // fallback
     }
     window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
+  const runFollowupQuery = async (query, context = 'unknown') => {
+    if (!query || isFollowupLoading) return;
+    clearFollowupHint();
+
+    const nextRequestId = followupRequestIdRef.current + 1;
+    followupRequestIdRef.current = nextRequestId;
+
+    if (followupAbortRef.current) {
+      try {
+        followupAbortRef.current.abort();
+      } catch {
+        // no-op
+      }
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    followupAbortRef.current = controller;
+    setIsFollowupLoading(true);
+
+    trackWidgetEvent('click_followup_cta', {
+      cta_label: activeCtas.find((x) => x.query === query)?.label || null,
+      followup_query: query,
+      rank_context: context,
+      variants,
+    });
+
+    try {
+      const response = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal: controller?.signal,
+      });
+
+      if (nextRequestId !== followupRequestIdRef.current) return;
+      if (!response.ok) {
+        throw new Error(`http_${response.status}`);
+      }
+
+      const payload = await response.json();
+      const nextData = normalizeWidgetData(payload);
+      if (!nextData) {
+        throw new Error('invalid_payload');
+      }
+
+      setWidgetData(nextData);
+      widgetDataRef.current = nextData;
+      clearFollowupHint();
+    } catch (error) {
+      if (nextRequestId !== followupRequestIdRef.current) return;
+      const isAbort = error?.name === 'AbortError';
+      if (isAbort) {
+        trackWidgetEvent('followup_request_aborted', {
+          followup_query: query,
+          context,
+          variants,
+        });
+      } else {
+        trackWidgetEvent('followup_request_failed', {
+          followup_query: query,
+          context,
+          error_type: String(error?.message || 'unknown'),
+          variants,
+        });
+        // 보수 UX: 기존 추천 유지 + 짧은 힌트만 노출
+        showFollowupHint(FOLLOWUP_ERROR_HINT);
+      }
+    } finally {
+      if (nextRequestId === followupRequestIdRef.current) {
+        setIsFollowupLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
@@ -375,6 +564,14 @@ function App() {
         window.clearInterval(fallbackPollRef.current);
         fallbackPollRef.current = null;
       }
+      if (followupAbortRef.current) {
+        try {
+          followupAbortRef.current.abort();
+        } catch {
+          // no-op
+        }
+      }
+      clearFollowupHint();
     };
   }, []);
 
@@ -412,6 +609,18 @@ function App() {
   const isWidgetMode = Boolean(window.__WIDGET_MODE__ || window.__MCP_WIDGET__ || widgetData);
   const cardCopies = widgetData?.recommendations?.length ? buildCardCopies(widgetData.recommendations) : [];
   const selectionGuideLines = widgetData?.recommendations?.length ? buildSelectionGuide(widgetData.recommendations) : [];
+  const decisionNudge = widgetData?.recommendations?.length ? buildDecisionNudge(widgetData.recommendations) : '';
+
+  useEffect(() => {
+    if (!widgetData?.recommendations?.length) return;
+    const signature = buildRecommendationSignature(widgetData, variants);
+    if (!signature || impressionDedupeRef.current.has(signature)) return;
+    impressionDedupeRef.current.add(signature);
+    trackWidgetEvent('widget_impression', {
+      recommendation_count: widgetData.recommendations.length,
+      variants,
+    });
+  }, [widgetData, variants]);
 
   if (isWidgetMode && widgetData?.recommendations?.length) {
     return (
@@ -423,13 +632,27 @@ function App() {
 
         <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
           {widgetData.recommendations.map((product, idx) => {
+            const rank = idx + 1;
             const cardCopy = cardCopies[idx];
+            const isTop = rank === 1;
+            const trustLine = isTop
+              ? '무난하게 시작하기 좋은 선택이에요.'
+              : rank === 2
+              ? '1위와 비교해보기 좋은 대안이에요.'
+              : '취향이나 상황에 맞춰 고르기 좋아요.';
+            const buyButtonLabel = variants.buyButton === 'B' ? '이걸로 시작하기' : '지금 구매하기';
+
             return (
               <div
                 key={`${product.buy_url || product.name}-${idx}`}
                 style={{ minWidth: '260px', maxWidth: '300px', border: '1px solid #eee', borderRadius: '12px', padding: '14px', background: '#fff' }}
               >
-                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{isTop ? '🥇 BEST' : `${rank}위`}</div>
+                {isTop && variants.banner === 'B' && (
+                  <div style={{ fontSize: '0.76rem', color: '#555', marginBottom: '8px', background: '#f7f7f7', borderRadius: '999px', display: 'inline-block', padding: '4px 8px' }}>
+                    지금 조건 기준 추천 1순위
+                  </div>
+                )}
                 <img src={product.image} alt={product.name} style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }} />
                 <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
                 <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
@@ -440,9 +663,11 @@ function App() {
                   <CardText label="사용 팁" text={cardCopy?.usageTip} />
                 </div>
 
+                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px' }}>{trustLine}</div>
+
                 <button
                   type="button"
-                  onClick={() => openBuyLink(product.buy_url)}
+                  onClick={() => openBuyLink(product.buy_url, rank, product)}
                   style={{
                     display: 'block',
                     width: '100%',
@@ -457,7 +682,7 @@ function App() {
                     fontWeight: 'bold',
                   }}
                 >
-                  지금 구매하기
+                  {buyButtonLabel}
                 </button>
               </div>
             );
@@ -471,7 +696,7 @@ function App() {
               <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.84rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
-                  onClick={() => openBuyLink(product.buy_url)}
+                  onClick={() => openBuyLink(product.buy_url, null, product)}
                   style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
                 >
                   {product.name}
@@ -489,7 +714,7 @@ function App() {
               <div key={`${product.buy_url || product.name}-ref-${idx}`} style={{ fontSize: '0.84rem', marginBottom: '6px', color: '#444' }}>
                 <button
                   type="button"
-                  onClick={() => openBuyLink(product.buy_url)}
+                  onClick={() => openBuyLink(product.buy_url, null, product)}
                   style={{ color: '#444', textDecoration: 'underline', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', font: 'inherit' }}
                 >
                   {product.name}
@@ -509,38 +734,36 @@ function App() {
               </div>
             ))}
             <div style={{ fontSize: '0.85rem', color: '#555', marginTop: '8px', lineHeight: 1.5 }}>{buildGuideContextLine(widgetData)}</div>
+            {decisionNudge && <div style={{ fontSize: '0.85rem', color: '#444', marginTop: '8px', fontWeight: 600 }}>{decisionNudge}</div>}
           </div>
         )}
 
         <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
           <div style={{ fontWeight: 700, color: '#333', marginBottom: '8px', fontSize: '0.92rem' }}>다음으로 이렇게 좁혀보세요</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {FOLLOW_UP_CTAS.map((label) => (
+            {activeCtas.map((cta) => (
               <button
-                key={label}
+                key={cta.label}
                 type="button"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(label);
-                  } catch {
-                    // no-op
-                  }
-                }}
+                disabled={isFollowupLoading}
+                onClick={() => runFollowupQuery(cta.query, cta.context)}
                 style={{
                   border: '1px solid #ddd',
-                  background: '#fff',
-                  color: '#444',
+                  background: isFollowupLoading ? '#f5f5f5' : '#fff',
+                  color: isFollowupLoading ? '#999' : '#444',
                   fontSize: '0.82rem',
                   borderRadius: '999px',
                   padding: '6px 10px',
-                  cursor: 'pointer',
+                  cursor: isFollowupLoading ? 'not-allowed' : 'pointer',
                 }}
-                title="클릭하면 문구가 복사됩니다."
+                title={isFollowupLoading ? '추천을 다시 불러오는 중입니다.' : '클릭하면 바로 다시 추천해드립니다.'}
               >
-                {label}
+                {cta.label}
               </button>
             ))}
           </div>
+          {isFollowupLoading && <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '8px' }}>추천을 다시 불러오는 중입니다...</div>}
+          {followupHint && <div style={{ fontSize: '0.8rem', color: '#B31312', marginTop: '8px' }}>{followupHint}</div>}
         </div>
 
         {widgetData.conclusion && (
@@ -585,7 +808,7 @@ function App() {
             {Array.isArray(msg.products) && msg.products.length > 0 && (
               <div className="carousel-container">
                 {msg.products.map((product, idx) => (
-                  <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url)}>
+                  <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url, idx + 1, product)}>
                     <div className="rank-badge">{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
                     <img src={product.image} alt={product.name} className="product-img" />
                     <div className="product-name">{product.name}</div>

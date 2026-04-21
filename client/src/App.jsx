@@ -101,123 +101,175 @@ function CardText({ label, text }) {
   );
 }
 
-const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '알고리즘', '추천 로직', '모델', '요청 상황과 잘 맞는 추천'];
-
+const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '추천 알고리즘', '모델', '로직 기반', '추천 로직'];
 const FOLLOW_UP_CTAS = ['번들거림 적은 제품만 다시 보기', '민감성 기준으로 다시 좁히기', '톤업 없는 제품만 보기'];
 
+const FORM_PRIMARY_BENEFIT = {
+  cream: '무난한 데일리 사용감',
+  lotion: '가볍게 쓰는 데일리형',
+  serum: '얇고 가벼운 발림감',
+  stick: '수정용으로 편한 타입',
+  spray: '빠른 재도포에 편한 타입',
+  cushion: '톤 정돈에 편한 타입',
+  other: '부담 없이 쓰기 쉬운 타입',
+};
+
+const ROLE_BY_RANK = {
+  1: ['안정형 데일리 추천', '무난한 데일리형'],
+  2: ['비교해보기 좋은 대안형', '조금 더 가볍게 보는 대안형'],
+  3: ['취향 따라 고르는 보조형', '상황별로 고르는 보조형'],
+};
+
+function normalizeText(text = '') {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
 function removeForbiddenCopy(text = '') {
-  let out = String(text || '').trim();
+  let out = normalizeText(text);
   FORBIDDEN_COPY_TERMS.forEach((term) => {
     out = out.replaceAll(term, '');
   });
-  return out.replace(/\s{2,}/g, ' ').trim();
+  return normalizeText(out);
 }
 
-function trimReasonText(text = '', max = 26) {
-  const source = removeForbiddenCopy(text);
-  if (!source) return '';
-  return source.length > max ? `${source.slice(0, max - 1)}…` : source;
+function clampText(text = '', max = 26) {
+  const src = removeForbiddenCopy(text);
+  if (!src) return '';
+  return src.length > max ? `${src.slice(0, Math.max(0, max - 1))}…` : src;
 }
 
-function toneFromReasonCode(item = {}, rank = 1) {
-  const reasonCode = String(item.reason_code || '');
-  const rawWhy = String(item.why_pick || item.key_point || '');
-  const why = removeForbiddenCopy(rawWhy);
-  const lowerName = String(item.name || '').toLowerCase();
+function detectForm(item = {}) {
   const form = String(item.form || '').toLowerCase();
-
-  const hasTone = lowerName.includes('토닝') || lowerName.includes('톤') || lowerName.includes('bb');
-  const isSpray = form.includes('spray') || lowerName.includes('스프레이');
-  const isStick = form.includes('stick') || lowerName.includes('스틱');
-  const isSerum = form.includes('serum') || lowerName.includes('세럼');
-
-  if (reasonCode === 'SEMANTIC_MATCH') {
-    if (hasTone) {
-      return rank === 1
-        ? { core: '톤 보정까지 챙기기 좋은 타입', support: '피부 표현을 정리하고 싶을 때 보기 좋아요.' }
-        : { core: '톤업 필요할 때 고르기 좋음', support: '데일리 톤 보정용으로 비교해보기 좋아요.' };
-    }
-    if (isSpray) return { core: '가볍게 덧바르기 편한 타입', support: '외출 중 빠르게 보충하기 좋은 제형이에요.' };
-    if (isStick) return { core: '보송하게 수정하기 쉬운 타입', support: '번들거림이 올라올 때 빠르게 쓰기 좋아요.' };
-    if (isSerum) return { core: '얇고 가벼운 밀착감 중심', support: '무거운 크림이 부담될 때 선택하기 좋아요.' };
-    return rank === 1
-      ? { core: '데일리로 쓰기 편한 사용감', support: '처음 고를 때 부담이 적은 기본형에 가까워요.' }
-      : { core: '가볍고 번들거림 부담 적음', support: '답답함을 줄여서 쓰고 싶을 때 비교하기 좋아요.' };
-  }
-
-  if (reasonCode === 'CONDITION_MATCH') {
-    if (rank === 1) {
-      return {
-        core: trimReasonText(why, 26) || '피부 고민에 맞춰 고른 1순위',
-        support: '현재 조건에서 가장 무난한 데일리 후보로 보기 좋아요.',
-      };
-    }
-    if (rank === 2) {
-      return {
-        core: '사용감 기준으로 비교할 대안',
-        support: '1순위와 결은 비슷하지만 체감 사용감이 더 가벼운 편이에요.',
-      };
-    }
-    return {
-      core: '보조 목적까지 함께 볼 후보',
-      support: '톤 보정이나 덧바름 목적이 있으면 비교해볼 만해요.',
-    };
-  }
-
-  if (rank === 1) return { core: '무난한 데일리 기본형', support: '처음 시작할 때 실패 부담이 적은 쪽이에요.' };
-  if (rank === 2) return { core: '산뜻한 사용감 중심 대안', support: '가벼운 발림감을 원할 때 비교해보기 좋아요.' };
-  return { core: '특정 목적용으로 비교할 후보', support: '상황에 따라 보조 선택지로 보기 좋아요.' };
+  const name = String(item.name || '').toLowerCase();
+  if (form.includes('spray') || name.includes('스프레이')) return 'spray';
+  if (form.includes('stick') || name.includes('스틱')) return 'stick';
+  if (form.includes('serum') || name.includes('세럼') || name.includes('앰플')) return 'serum';
+  if (form.includes('lotion') || name.includes('로션')) return 'lotion';
+  if (form.includes('cushion') || name.includes('쿠션')) return 'cushion';
+  if (form.includes('cream') || name.includes('크림') || name.includes('선크림')) return 'cream';
+  return 'other';
 }
 
-function buildCardCopy(item = {}, rank = 1) {
-  const mapped = toneFromReasonCode(item, rank);
-  const tip = removeForbiddenCopy(item.usage_tip || '');
+function collectSignals(item = {}) {
+  const reasonFacts = isObject(item.reason_facts) ? JSON.stringify(item.reason_facts) : '';
+  return normalizeText(
+    [
+      item.name || '',
+      item.key_point || '',
+      item.why_pick || '',
+      item.usage_tip || '',
+      reasonFacts,
+      item.reason_code || '',
+    ].join(' ')
+  ).toLowerCase();
+}
+
+function refinePrimaryBenefitOnce(baseBenefit, signals) {
+  const rules = [
+    { keywords: ['톤업', '톤 보정', '잡티', '화사'], value: '톤 보정이 쉬운 사용감' },
+    { keywords: ['보송', '산뜻', '유분', '번들'], value: '번들 부담 적은 사용감' },
+    { keywords: ['보습', '수분', '촉촉', '진정'], value: '촉촉한 데일리 사용감' },
+    { keywords: ['밀림', '레이어', '메이크업', '밀착'], value: '밀림 부담 적은 밀착감' },
+    { keywords: ['수정', '재도포', '휴대', '외출'], value: '수정용으로 편한 사용감' },
+  ];
+
+  for (const rule of rules) {
+    if (rule.keywords.some((keyword) => signals.includes(keyword))) {
+      return rule.value;
+    }
+  }
+  return baseBenefit;
+}
+
+function pickSecondaryBenefit(signals) {
+  if (signals.includes('번들') || signals.includes('유분')) return '번들거림 부담이 적은 편';
+  if (signals.includes('밀림') || signals.includes('레이어') || signals.includes('밀착')) return '덧발라도 밀림 부담이 적은 편';
+  if (signals.includes('톤업') || signals.includes('톤 보정') || signals.includes('잡티')) return '피부 표현이 자연스러운 편';
+  return '부담 없이 쓰기 쉬운 편';
+}
+
+function pickUsageContext(formKey, signals) {
+  if (signals.includes('톤업') || signals.includes('톤 보정')) return '톤 보정이 필요한 날';
+  if (signals.includes('메이크업') || signals.includes('밀림')) return '메이크업 전 단계에서';
+  if (formKey === 'spray' || formKey === 'stick' || signals.includes('수정') || signals.includes('외출')) return '외출 중 수정용으로';
+  if (signals.includes('가벼') || signals.includes('산뜻')) return '가볍게 쓰고 싶을 때';
+  return '매일 데일리로 사용할 때';
+}
+
+function buildCardSlots(item = {}, rank = 1) {
+  const formKey = detectForm(item);
+  const rankRole = ROLE_BY_RANK[rank]?.[0] || '무난한 기본형';
+  const signals = collectSignals(item);
+  const baseBenefit = FORM_PRIMARY_BENEFIT[formKey] || FORM_PRIMARY_BENEFIT.other;
+  const primaryBenefit = refinePrimaryBenefitOnce(baseBenefit, signals); // 보정은 최대 1회
+  const secondaryBenefit = pickSecondaryBenefit(signals);
+  const usageContext = pickUsageContext(formKey, signals);
+
+  return { rankRole, formKey, primaryBenefit, secondaryBenefit, usageContext };
+}
+
+function buildCardCopyFromSlots(slots = {}, item = {}) {
+  const rawCore = `${slots.rankRole} · ${slots.primaryBenefit}`;
+  const supportReason = `${slots.usageContext} ${slots.secondaryBenefit}이에요.`;
+  const usageTip = clampText(item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아져요.', 52);
 
   return {
-    coreReason: trimReasonText(mapped.core, 26) || '무난한 데일리 기본형',
-    supportReason: removeForbiddenCopy(mapped.support) || '데일리로 사용하기 좋은 타입이에요.',
-    usageTip: trimReasonText(tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르세요.', 52),
+    coreReason: clampText(rawCore, 26) || '무난하게 쓰기 좋은 데일리형',
+    supportReason: clampText(supportReason, 70) || '부담 없이 매일 쓰기 좋은 사용감이에요.',
+    usageTip,
   };
+}
+
+function isNearlySameSlots(a = {}, b = {}) {
+  return a.primaryBenefit === b.primaryBenefit && a.secondaryBenefit === b.secondaryBenefit && a.usageContext === b.usageContext;
+}
+
+function applySecondRankAlternative(slots = {}) {
+  return {
+    ...slots,
+    rankRole: ROLE_BY_RANK[2]?.[1] || '조금 더 가볍게 보는 대안형',
+    usageContext: slots.formKey === 'stick' || slots.formKey === 'spray' ? '외출 중 수정이 필요할 때' : '첫 후보가 무겁게 느껴질 때',
+  };
+}
+
+function buildCardCopies(recommendations = []) {
+  const slotsList = recommendations.map((item, idx) => buildCardSlots(item, idx + 1));
+
+  if (slotsList.length >= 2 && isNearlySameSlots(slotsList[0], slotsList[1])) {
+    slotsList[1] = applySecondRankAlternative(slotsList[1]);
+  }
+
+  return recommendations.map((item, idx) => buildCardCopyFromSlots(slotsList[idx], item));
 }
 
 function buildSelectionGuide(recommendations = []) {
-  const [a, b, c] = recommendations;
-  const used = new Set();
-  const uniqueLine = (preferred, fallback) => {
-    if (!used.has(preferred)) {
-      used.add(preferred);
-      return preferred;
+  const lines = recommendations.slice(0, 3).map((item, idx) => {
+    const rank = idx + 1;
+    const formKey = detectForm(item);
+    const signals = collectSignals(item);
+
+    let line = '';
+    if (rank === 1) {
+      line = '1번: 매일 무난하게 쓸 기본형이 필요할 때';
+    } else if (rank === 2) {
+      if (formKey === 'serum') line = '2번: 더 가볍고 얇은 발림을 원할 때';
+      else if (formKey === 'stick') line = '2번: 보송한 수정용을 함께 챙길 때';
+      else if (formKey === 'spray') line = '2번: 빠른 재도포 편의가 중요할 때';
+      else if (signals.includes('톤업') || signals.includes('톤 보정')) line = '2번: 톤 보정까지 같이 보고 싶을 때';
+      else line = '2번: 1번보다 가벼운 대안을 보고 싶을 때';
+    } else {
+      if (signals.includes('톤업') || signals.includes('톤 보정')) line = '3번: 피부 보정 목적을 추가로 챙길 때';
+      else if (formKey === 'stick' || formKey === 'spray') line = '3번: 외출 중 덧바름 용도를 같이 볼 때';
+      else line = '3번: 상황별 보조 옵션까지 비교할 때';
     }
-    used.add(fallback);
-    return fallback;
-  };
+    return clampText(line, 34);
+  });
 
-  const toLine = (item, rank) => {
-    if (!item) return `${rank}번: 비슷한 조건에서 대안으로 비교할 때`;
-    const name = String(item.name || '').toLowerCase();
-    const form = String(item.form || '').toLowerCase();
+  while (lines.length < 3) {
+    lines.push(`${lines.length + 1}번: 비슷한 조건의 대안을 더 볼 때`);
+  }
 
-    if (rank === 1) return uniqueLine('1번: 매일 무난하게 쓸 제품이 필요할 때', '1번: 먼저 실패 부담이 적은 쪽부터 볼 때');
-    if (rank === 2) {
-      if (form.includes('spray') || name.includes('스프레이')) {
-        return uniqueLine('2번: 외출 중 덧바름 편의가 중요할 때', '2번: 사용감 차이를 비교해보고 싶을 때');
-      }
-      if (form.includes('serum') || name.includes('세럼')) {
-        return uniqueLine('2번: 더 얇고 가벼운 발림감을 원할 때', '2번: 1번이 무겁게 느껴질 때 대안으로');
-      }
-      if (form.includes('stick') || name.includes('스틱')) {
-        return uniqueLine('2번: 보송하게 빠른 수정이 필요할 때', '2번: 번들거림 관리용 대안이 필요할 때');
-      }
-      return uniqueLine('2번: 1번보다 산뜻한 사용감을 원할 때', '2번: 체감 사용감 기준으로 대안이 필요할 때');
-    }
-
-    if (name.includes('토닝') || name.includes('톤') || name.includes('bb')) {
-      return uniqueLine('3번: 톤 보정이 필요한 날에 선택', '3번: 보정 목적까지 함께 고려할 때');
-    }
-    return uniqueLine('3번: 덧바름/보조 목적까지 같이 볼 때', '3번: 상황별 보조 선택지가 필요할 때');
-  };
-
-  return [toLine(a, 1), toLine(b, 2), toLine(c, 3)];
+  return lines;
 }
 
 function buildGuideContextLine(widgetData = {}) {
@@ -229,10 +281,10 @@ function buildGuideContextLine(widgetData = {}) {
   const hasHydration = tags.includes('concern:hydration');
   const hasSoothing = tags.includes('concern:soothing');
 
-  if (hasSensitive || hasSoothing) return '민감 피부 기준에서는 자극 부담이 적은 타입부터 비교해보세요.';
-  if (hasOily || hasSebum) return '지성/수부지 기준에서는 번들거림 부담이 적은 타입부터 비교해보세요.';
-  if (hasDry || hasHydration) return '건성 기준에서는 당김 부담이 적은 촉촉한 타입부터 비교해보세요.';
-  return '평소 메이크업/외출 패턴에 맞춰 1번부터 순서대로 비교해보세요.';
+  if (hasSensitive || hasSoothing) return '민감 신호가 있으면 자극 부담이 적은 후보부터 선택해 보세요.';
+  if (hasOily || hasSebum) return '지성/수부지라면 번들거림이 적은 후보를 먼저 비교해 보세요.';
+  if (hasDry || hasHydration) return '건성이라면 보습감이 편한 후보를 먼저 보는 편이 좋아요.';
+  return '메인 용도와 덧바름 용도를 나눠서 1~3번을 비교해 보세요.';
 }
 
 function App() {
@@ -358,6 +410,8 @@ function App() {
   };
 
   const isWidgetMode = Boolean(window.__WIDGET_MODE__ || window.__MCP_WIDGET__ || widgetData);
+  const cardCopies = widgetData?.recommendations?.length ? buildCardCopies(widgetData.recommendations) : [];
+  const selectionGuideLines = widgetData?.recommendations?.length ? buildSelectionGuide(widgetData.recommendations) : [];
 
   if (isWidgetMode && widgetData?.recommendations?.length) {
     return (
@@ -369,21 +423,21 @@ function App() {
 
         <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
           {widgetData.recommendations.map((product, idx) => {
-            const cardCopy = buildCardCopy(product, idx + 1);
+            const cardCopy = cardCopies[idx];
             return (
               <div
                 key={`${product.buy_url || product.name}-${idx}`}
                 style={{ minWidth: '260px', maxWidth: '300px', border: '1px solid #eee', borderRadius: '12px', padding: '14px', background: '#fff' }}
               >
-                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{idx === 0 ? '🏅 BEST' : `${idx + 1}위`}</div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
                 <img src={product.image} alt={product.name} style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }} />
                 <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
                 <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
 
                 <div style={{ minHeight: '132px' }}>
-                  <CardText label="핵심 포인트" text={cardCopy.coreReason} />
-                  <CardText label="추천 이유" text={cardCopy.supportReason} />
-                  <CardText label="사용 팁" text={cardCopy.usageTip} />
+                  <CardText label="핵심 포인트" text={cardCopy?.coreReason} />
+                  <CardText label="추천 이유" text={cardCopy?.supportReason} />
+                  <CardText label="사용 팁" text={cardCopy?.usageTip} />
                 </div>
 
                 <button
@@ -449,7 +503,7 @@ function App() {
         {widgetData.recommendations.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
             <div style={{ fontWeight: 700, color: '#333', marginBottom: '8px', fontSize: '0.92rem' }}>선택 가이드</div>
-            {buildSelectionGuide(widgetData.recommendations).map((line, idx) => (
+            {selectionGuideLines.map((line, idx) => (
               <div key={`guide-${idx}`} style={{ fontSize: '0.86rem', color: '#444', marginBottom: '6px', lineHeight: 1.5 }}>
                 {line}
               </div>
@@ -459,7 +513,7 @@ function App() {
         )}
 
         <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-          <div style={{ fontWeight: 700, color: '#333', marginBottom: '8px', fontSize: '0.92rem' }}>다음으로 이렇게 좁혀볼 수 있어요</div>
+          <div style={{ fontWeight: 700, color: '#333', marginBottom: '8px', fontSize: '0.92rem' }}>다음으로 이렇게 좁혀보세요</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {FOLLOW_UP_CTAS.map((label) => (
               <button
@@ -481,7 +535,7 @@ function App() {
                   padding: '6px 10px',
                   cursor: 'pointer',
                 }}
-                title="클릭하면 문구가 복사됩니다"
+                title="클릭하면 문구가 복사됩니다."
               >
                 {label}
               </button>
@@ -532,7 +586,7 @@ function App() {
               <div className="carousel-container">
                 {msg.products.map((product, idx) => (
                   <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url)}>
-                    <div className="rank-badge">{idx === 0 ? '🏅 BEST' : `${idx + 1}위`}</div>
+                    <div className="rank-badge">{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
                     <img src={product.image} alt={product.name} className="product-img" />
                     <div className="product-name">{product.name}</div>
                     <div className="product-price">{product.price ? `${product.price}원` : ''}</div>
@@ -554,7 +608,7 @@ function App() {
         <input
           type="text"
           className="chat-input"
-          placeholder="원하는 타입이나 피부 고민을 알려주세요"
+          placeholder="원하시는 타입이나 고민을 알려주세요."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}

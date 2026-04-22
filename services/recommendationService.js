@@ -503,6 +503,12 @@ function enforceMainPolicyOnRanked(
   allowedMainForms = [],
   limit = RECOMMENDATION_POLICY.limits.defaultMain
 ) {
+  const scoreOf = (item) => Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
+  const formPolicy = RECOMMENDATION_POLICY.formPolicy || {};
+  const sameScoreBand = Number(formPolicy.sameScoreBand || 3);
+  const configuredMinMatch = Number(formPolicy.minFormMatchInMain || 2);
+  const configuredMaxNonMatch = Number(formPolicy.maxNonMatchInMain || 1);
+
   const drop = {
     DROP_CATEGORY_MISMATCH: 0,
     DROP_FORM_MISMATCH: 0,
@@ -521,12 +527,6 @@ function enforceMainPolicyOnRanked(
       drop.DROP_CATEGORY_MISMATCH += 1;
       continue;
     }
-    if (formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0) {
-      if (!item.form || !allowedMainForms.includes(item.form)) {
-        drop.DROP_FORM_MISMATCH += 1;
-        continue;
-      }
-    }
     passed.push(item);
   }
 
@@ -543,8 +543,101 @@ function enforceMainPolicyOnRanked(
     deduped.push(item);
   }
 
+  const finalLimit = Math.max(1, limit);
+  if (!(formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0)) {
+    return {
+      selected: deduped.slice(0, finalLimit),
+      drop_stats: drop,
+      pre_policy_count: (ranked || []).length,
+      pass_count: passed.length,
+    };
+  }
+
+  const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
+  const matchedCount = deduped.filter(isMatch).length;
+  const minFormMatch = Math.min(finalLimit, Math.max(0, configuredMinMatch), matchedCount);
+  const strictMaxNonMatch = Math.min(
+    Math.max(0, configuredMaxNonMatch),
+    Math.max(0, finalLimit - minFormMatch)
+  );
+
+  const selected = [];
+  const selectedSet = new Set();
+  let selectedMatch = 0;
+  let selectedNonMatch = 0;
+  const deferredNonMatch = [];
+
+  const includeItem = (item) => {
+    const key = `${item?.id || ''}:${item?.base_name || ''}:${item?.form || ''}`;
+    if (!item || selectedSet.has(key) || selected.length >= finalLimit) return false;
+    selected.push(item);
+    selectedSet.add(key);
+    if (isMatch(item)) selectedMatch += 1;
+    else selectedNonMatch += 1;
+    return true;
+  };
+
+  for (let i = 0; i < deduped.length; i += 1) {
+    const item = deduped[i];
+    if (selected.length >= finalLimit) break;
+    if (isMatch(item)) {
+      includeItem(item);
+      continue;
+    }
+
+    if (selectedNonMatch >= strictMaxNonMatch) {
+      drop.DROP_FORM_MISMATCH += 1;
+      continue;
+    }
+
+    const remainingSlots = finalLimit - selected.length;
+    const requiredMatchRemaining = Math.max(0, minFormMatch - selectedMatch);
+    if (remainingSlots <= requiredMatchRemaining) {
+      deferredNonMatch.push(item);
+      continue;
+    }
+
+    let nextMatchScore = null;
+    for (let j = i + 1; j < deduped.length; j += 1) {
+      if (isMatch(deduped[j])) {
+        nextMatchScore = scoreOf(deduped[j]);
+        break;
+      }
+    }
+
+    const currentNonMatchScore = scoreOf(item);
+    const shouldPreferUpcomingMatch =
+      selectedMatch < minFormMatch &&
+      Number.isFinite(nextMatchScore) &&
+      nextMatchScore >= currentNonMatchScore - sameScoreBand;
+
+    if (shouldPreferUpcomingMatch) {
+      deferredNonMatch.push(item);
+      continue;
+    }
+
+    includeItem(item);
+  }
+
+  for (const item of deferredNonMatch) {
+    if (selected.length >= finalLimit) break;
+    const remainingSlots = finalLimit - selected.length;
+    const requiredMatchRemaining = Math.max(0, minFormMatch - selectedMatch);
+    if (remainingSlots <= requiredMatchRemaining) continue;
+    if (selectedNonMatch >= strictMaxNonMatch) break;
+    includeItem(item);
+  }
+
+  // fallback: if not enough main cards, allow additional non-match forms to keep recommendation breadth.
+  if (selected.length < finalLimit) {
+    for (const item of deduped) {
+      if (selected.length >= finalLimit) break;
+      includeItem(item);
+    }
+  }
+
   return {
-    selected: deduped.slice(0, Math.max(1, limit)),
+    selected,
     drop_stats: drop,
     pre_policy_count: (ranked || []).length,
     pass_count: passed.length,
@@ -608,7 +701,7 @@ export const recommendationService = {
         );
       }
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} reason_code=${breakdown.reason_code || 'none'} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} form_match_bonus=${breakdown.form_match_bonus ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} reason_code=${breakdown.reason_code || 'none'} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 

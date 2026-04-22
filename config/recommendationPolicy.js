@@ -25,7 +25,7 @@ export const RECOMMENDATION_POLICY = {
     noveltyWeight: 0.7,
     conditionPriorityBonus: 24,
     conditionStrongMatchThreshold: 22,
-    formMismatchPenalty: -120,
+    formMismatchPenalty: -14,
     sameLinePenalty: 8,
     sameFormPenalty: 5,
     reactiveToneUpPenalty: -22,
@@ -47,7 +47,11 @@ export const RECOMMENDATION_POLICY = {
     fallbackPenaltyPerDuplicateForm: 6,
   },
   formPolicy: {
-    strictOnExplicitForm: true,
+    strictOnExplicitForm: false,
+    formMatchBonus: 18,
+    sameScoreBand: 3,
+    minFormMatchInMain: 2,
+    maxNonMatchInMain: 1,
     defaultMainFormsByCategory: {
       sunscreen: ['cream', 'lotion'],
       toner: ['toner'],

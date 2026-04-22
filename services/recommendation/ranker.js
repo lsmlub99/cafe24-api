@@ -213,6 +213,14 @@ function getFormMismatchPenalty(product, allowedMainForms, policy) {
   return allowedMainForms.includes(product.form) ? 0 : policy.scoring.formMismatchPenalty;
 }
 
+function getFormMatchBonus(product, allowedMainForms, policy) {
+  if (!Array.isArray(allowedMainForms) || !allowedMainForms.length) return 0;
+  if (!product?.form) return 0;
+  const bonus = Number(policy.formPolicy?.formMatchBonus || 0);
+  if (bonus <= 0) return 0;
+  return allowedMainForms.includes(product.form) ? bonus : 0;
+}
+
 function getReactivePenalty(product, intent, policy) {
   const fitIssues = intent.fit_issue || [];
   const reactiveIntent =
@@ -294,6 +302,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     hasConditionSignal && condition >= policy.scoring.conditionStrongMatchThreshold ? policy.scoring.conditionPriorityBonus : 0;
 
   const formMismatchPenalty = getFormMismatchPenalty(product, intent.allowed_main_forms || [], policy);
+  const formMatchBonus = getFormMatchBonus(product, intent.allowed_main_forms || [], policy);
   const reactivePenalty = getReactivePenalty(product, intent, policy);
   const diversityPenalty = context ? getDiversitySoftPenalty(product, context, policy) : 0;
   const repeatPenaltyInfo = getRepeatPenalty(product, intent, policy);
@@ -315,6 +324,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     queryMatch +
     promoPenalty +
     conditionPriorityBonus +
+    formMatchBonus +
     formMismatchPenalty -
     reactivePenalty -
     repeatPenalty -
@@ -356,6 +366,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     category_gate: categoryGate,
     condition_priority_bonus: conditionPriorityBonus,
     form_mismatch_penalty: formMismatchPenalty,
+    form_match_bonus: formMatchBonus,
     reactive_penalty: reactivePenalty,
     repeat_penalty: repeatPenalty,
     negative_scope_penalty: negativeScopePenalty,

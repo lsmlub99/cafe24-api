@@ -185,8 +185,8 @@ function computeEnrichMaxFetch(args = {}) {
   return shouldEnrich ? config.ENRICH_MAX_FETCH_INGREDIENT : config.ENRICH_MAX_FETCH_BASE;
 }
 
-function buildCompactConsultText(args = {}, recommendations = []) {
-  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+function buildCompactConsultText(args = {}, mainRecommendations = []) {
+  if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 본품 후보를 찾지 못했어요. 원하시면 피부 타입이나 사용감을 알려주시면 다시 좁혀드릴게요.';
   }
 
@@ -196,7 +196,7 @@ function buildCompactConsultText(args = {}, recommendations = []) {
     .filter(Boolean)
     .join(' / ');
 
-  const names = recommendations.slice(0, 3).map((x) => x.name);
+  const names = mainRecommendations.slice(0, 3).map((x) => x.name);
   const lines = [];
   if (context) lines.push(`선택 요약: ${context} 기준으로 카드 1~3번을 비교해보세요.`);
   else lines.push('선택 요약: 카드 1~3번을 사용감 기준으로 비교해보세요.');
@@ -255,23 +255,36 @@ async function executeTool(args = {}) {
     reference_recommendations: referenceRecommendations = [],
   } = result;
 
+  const canonicalMain =
+    Array.isArray(mainRecommendations) && mainRecommendations.length > 0
+      ? mainRecommendations
+      : Array.isArray(recommendations)
+      ? recommendations
+      : [];
+  const canonicalSecondary =
+    Array.isArray(secondaryRecommendations) && secondaryRecommendations.length > 0
+      ? secondaryRecommendations
+      : Array.isArray(referenceRecommendations)
+      ? referenceRecommendations
+      : [];
+
   const safeSummary =
     summary && typeof summary === 'object'
       ? summary
       : { message: '조건에 맞는 결과가 없습니다.', strategy: '', conclusion: '' };
 
-  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+  if (!Array.isArray(canonicalMain) || canonicalMain.length === 0) {
     return {
       content: [{ type: 'text', text: safeSummary.message || '조건에 맞는 결과가 없습니다.' }],
       structuredContent: {
         requested_category: requestedCategory,
         main_recommendations: [],
-        secondary_recommendations: [],
+        secondary_recommendations: canonicalSecondary,
         reasoning_tags: reasoningTags,
         applied_policy: appliedPolicy,
         recommendations: [],
         promotions: promotions || [],
-        reference_recommendations: referenceRecommendations || [],
+        reference_recommendations: canonicalSecondary || [],
         summary: safeSummary,
         strategy: safeSummary.strategy || '',
         conclusion: safeSummary.conclusion || '',
@@ -283,31 +296,31 @@ async function executeTool(args = {}) {
         widgetData: {
           requested_category: requestedCategory,
           main_recommendations: [],
-          secondary_recommendations: [],
+          secondary_recommendations: canonicalSecondary,
           reasoning_tags: reasoningTags,
           applied_policy: appliedPolicy,
           recommendations: [],
           promotions: promotions || [],
-          reference_recommendations: referenceRecommendations || [],
+          reference_recommendations: canonicalSecondary || [],
           summary: safeSummary,
         },
       },
     };
   }
 
-  const consultText = buildCompactConsultText(args, recommendations);
+  const consultText = buildCompactConsultText(args, canonicalMain);
 
   return {
     content: [{ type: 'text', text: consultText }],
     structuredContent: {
       requested_category: requestedCategory,
-      main_recommendations: mainRecommendations,
-      secondary_recommendations: secondaryRecommendations,
+      main_recommendations: canonicalMain,
+      secondary_recommendations: canonicalSecondary,
       reasoning_tags: reasoningTags,
       applied_policy: appliedPolicy,
-      recommendations,
+      recommendations: canonicalMain,
       promotions: promotions || [],
-      reference_recommendations: referenceRecommendations || [],
+      reference_recommendations: canonicalSecondary || [],
       summary: safeSummary,
       strategy: safeSummary.strategy || '',
       conclusion: safeSummary.conclusion || '',
@@ -318,13 +331,13 @@ async function executeTool(args = {}) {
       'openai/widgetAccessible': true,
       widgetData: {
         requested_category: requestedCategory,
-        main_recommendations: mainRecommendations,
-        secondary_recommendations: secondaryRecommendations,
+        main_recommendations: canonicalMain,
+        secondary_recommendations: canonicalSecondary,
         reasoning_tags: reasoningTags,
         applied_policy: appliedPolicy,
-        recommendations,
+        recommendations: canonicalMain,
         promotions: promotions || [],
-        reference_recommendations: referenceRecommendations || [],
+        reference_recommendations: canonicalSecondary || [],
         summary: safeSummary,
       },
     },

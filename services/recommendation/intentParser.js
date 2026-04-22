@@ -31,6 +31,17 @@ const FIT_ISSUE_NORMALIZATION = [
   { key: 'oily_residue', words: ['번들', '유분', '기름짐'] },
 ];
 
+function detectExplicitSunForm(text = '') {
+  const src = lower(text);
+  if (!src) return null;
+  if (includesAny(src, ['선세럼', '썬세럼', 'sunserum', 'sun serum'])) return 'serum';
+  if (includesAny(src, ['선스틱', '썬스틱', 'sunstick', 'sun stick'])) return 'stick';
+  if (includesAny(src, ['선스프레이', '썬스프레이', 'sunspray', 'sun spray'])) return 'spray';
+  if (includesAny(src, ['선쿠션', '썬쿠션', 'sun cushion'])) return 'cushion';
+  if (includesAny(src, ['선크림', '썬크림', '선스크린', '썬스크린', 'suncream', 'sun cream', 'sunscreen'])) return 'cream';
+  return null;
+}
+
 function parsePriceIntent(text = '') {
   const src = String(text || '');
   let matched = null;
@@ -102,7 +113,8 @@ export function parseUserIntent(args = {}, taxonomy) {
   const fullSignalText = `${q} ${concernsText} ${args.category || ''}`.trim();
 
   const requestedCategory = findFirstAliasKey(categoryText, taxonomy.categories);
-  const requestedForm = findFirstAliasKey(formText, taxonomy.forms);
+  const explicitSunForm = detectExplicitSunForm(fullSignalText);
+  const requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
   const skinTypeFromField = findFirstAliasKey(args.skin_type || '', taxonomy.skinTypes);
   const skinTypeFromQuery = findFirstAliasKey(q, taxonomy.skinTypes);
   const skinType = skinTypeFromField || skinTypeFromQuery || null;

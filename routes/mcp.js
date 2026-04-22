@@ -399,7 +399,10 @@ async function handleMcpMessage(req, res) {
       }
 
       let html = fs.readFileSync(indexPath, 'utf8');
-      html = html.replace('<head>', '<head><script>window.__WIDGET_MODE__=true;window.__MCP_WIDGET__=true;</script>');
+      html = html.replace(
+        '<head>',
+        `<head><script>window.__WIDGET_MODE__=true;window.__MCP_WIDGET__=true;window.__API_BASE_URL__='${BASE_URL}';</script>`
+      );
       html = html.replace(/src="\//g, `src="${BASE_URL}/`);
       html = html.replace(/href="\//g, `href="${BASE_URL}/`);
 

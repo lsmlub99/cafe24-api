@@ -96,6 +96,18 @@ function normalizeText(text = '') {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
+function getApiBaseUrl() {
+  const injected = String(window.__API_BASE_URL__ || '').trim();
+  if (injected) return injected.replace(/\/+$/, '');
+  return '';
+}
+
+function buildApiUrl(path) {
+  const normalizedPath = String(path || '').startsWith('/') ? path : `/${String(path || '')}`;
+  const base = getApiBaseUrl();
+  return base ? `${base}${normalizedPath}` : normalizedPath;
+}
+
 function CardText({ label, text }) {
   if (!text) return null;
   return (
@@ -478,7 +490,7 @@ function App() {
     });
 
     try {
-      const response = await fetch('/api/recommend', {
+      const response = await fetch(buildApiUrl('/api/recommend'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
@@ -614,7 +626,7 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/recommend', {
+      const response = await fetch(buildApiUrl('/api/recommend'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),

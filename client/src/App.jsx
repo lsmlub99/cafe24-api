@@ -106,13 +106,13 @@ function CardText({ label, text }) {
 }
 
 const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '추천 알고리즘', '모델', '로직 기반', '추천 로직'];
-const FOLLOWUP_ERROR_HINT = '요청을 다시 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
+const FOLLOWUP_ERROR_HINT = '잠시 네트워크가 불안정해요. 다시 시도해볼까요?';
 
 const FOLLOW_UP_CTA_ITEMS = {
   A: [
-    { label: '번들거림 적은 제품 다시 보기', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
-    { label: '민감성 기준으로 다시 좁히기', query: '민감성 피부 기준으로 다시 추천해줘', context: 'sensitive' },
-    { label: '톤업 없는 제품만 다시 보기', query: '톤업 없는 제품으로 다시 추천해줘', context: 'no_tone_up' },
+    { label: '번들거림 덜한 쪽으로 다시 볼까요?', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
+    { label: '민감 피부 기준으로 다시 좁혀볼까요?', query: '민감성 피부 기준으로 다시 추천해줘', context: 'sensitive' },
+    { label: '톤업 없는 제품만 다시 골라볼까요?', query: '톤업 없는 제품으로 다시 추천해줘', context: 'no_tone_up' },
   ],
   B: [
     { label: '덜 번들거리는 걸로 다시 볼까요?', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
@@ -369,6 +369,17 @@ function trackWidgetEvent(name, payload = {}) {
   console.info('[Widget Event]', event);
 }
 
+function classifyFollowupError(error, responseStatus = null) {
+  if (error?.name === 'AbortError') return 'aborted';
+  if (typeof responseStatus === 'number') return 'http';
+  const message = String(error?.message || '').toLowerCase();
+  if (message.startsWith('http_')) return 'http';
+  if (message.includes('timeout')) return 'timeout';
+  if (message.includes('network') || message.includes('failed to fetch')) return 'network';
+  if (message.includes('invalid_payload')) return 'invalid_payload';
+  return 'network';
+}
+
 function App() {
   const [messages, setMessages] = useState([{ id: 1, type: 'bot', text: '안녕하세요. 셀퓨전씨 AI 뷰티 가이드입니다. 무엇을 추천해드릴까요?' }]);
   const [input, setInput] = useState('');
@@ -376,6 +387,7 @@ function App() {
   const [widgetData, setWidgetData] = useState(null);
   const [isFollowupLoading, setIsFollowupLoading] = useState(false);
   const [followupHint, setFollowupHint] = useState('');
+  const [followupErrorKind, setFollowupErrorKind] = useState('none');
 
   const messagesEndRef = useRef(null);
   const lastWidgetSignatureRef = useRef('');
@@ -386,6 +398,7 @@ function App() {
   const followupRequestIdRef = useRef(0);
   const followupAbortRef = useRef(null);
   const followupHintTimerRef = useRef(null);
+  const lastFollowupRef = useRef({ query: '', context: 'unknown', label: '' });
 
   const variants = useMemo(() => getUxVariants(sessionIdRef.current), []);
   const activeCtas = FOLLOW_UP_CTA_ITEMS[variants.cta] || FOLLOW_UP_CTA_ITEMS.A;
@@ -396,6 +409,7 @@ function App() {
       followupHintTimerRef.current = null;
     }
     setFollowupHint('');
+    setFollowupErrorKind('none');
   };
 
   const showFollowupHint = (text) => {
@@ -426,8 +440,9 @@ function App() {
     window.open(href, '_blank', 'noopener,noreferrer');
   };
 
-  const runFollowupQuery = async (query, context = 'unknown') => {
+  const runFollowupQuery = async (query, context = 'unknown', options = {}) => {
     if (!query || isFollowupLoading) return;
+    const isRetry = Boolean(options?.isRetry);
     clearFollowupHint();
 
     const nextRequestId = followupRequestIdRef.current + 1;
@@ -445,10 +460,20 @@ function App() {
     followupAbortRef.current = controller;
     setIsFollowupLoading(true);
 
+    const ctaLabel = activeCtas.find((x) => x.query === query)?.label || null;
+    if (!isRetry) {
+      lastFollowupRef.current = {
+        query,
+        context,
+        label: ctaLabel || '',
+      };
+    }
+
     trackWidgetEvent('click_followup_cta', {
-      cta_label: activeCtas.find((x) => x.query === query)?.label || null,
+      cta_label: ctaLabel,
       followup_query: query,
       rank_context: context,
+      is_retry: isRetry,
       variants,
     });
 
@@ -476,18 +501,23 @@ function App() {
       clearFollowupHint();
     } catch (error) {
       if (nextRequestId !== followupRequestIdRef.current) return;
-      const isAbort = error?.name === 'AbortError';
-      if (isAbort) {
+      const errorKind = classifyFollowupError(error);
+      if (errorKind === 'aborted') {
+        setFollowupErrorKind('aborted');
         trackWidgetEvent('followup_request_aborted', {
           followup_query: query,
           context,
+          is_retry: isRetry,
           variants,
         });
       } else {
+        setFollowupErrorKind(errorKind);
         trackWidgetEvent('followup_request_failed', {
           followup_query: query,
           context,
           error_type: String(error?.message || 'unknown'),
+          error_kind: errorKind,
+          is_retry: isRetry,
           variants,
         });
         // 보수 UX: 기존 추천 유지 + 짧은 힌트만 노출
@@ -610,6 +640,11 @@ function App() {
   const cardCopies = widgetData?.recommendations?.length ? buildCardCopies(widgetData.recommendations) : [];
   const selectionGuideLines = widgetData?.recommendations?.length ? buildSelectionGuide(widgetData.recommendations) : [];
   const decisionNudge = widgetData?.recommendations?.length ? buildDecisionNudge(widgetData.recommendations) : '';
+  const shouldShowRetry =
+    followupErrorKind === 'network' ||
+    followupErrorKind === 'timeout' ||
+    followupErrorKind === 'http' ||
+    followupErrorKind === 'invalid_payload';
 
   useEffect(() => {
     if (!widgetData?.recommendations?.length) return;
@@ -762,8 +797,27 @@ function App() {
               </button>
             ))}
           </div>
-          {isFollowupLoading && <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '8px' }}>추천을 다시 불러오는 중입니다...</div>}
+          {isFollowupLoading && <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '8px' }}>다시 찾는 중…</div>}
           {followupHint && <div style={{ fontSize: '0.8rem', color: '#B31312', marginTop: '8px' }}>{followupHint}</div>}
+          {shouldShowRetry && lastFollowupRef.current.query && (
+            <button
+              type="button"
+              disabled={isFollowupLoading}
+              onClick={() => runFollowupQuery(lastFollowupRef.current.query, lastFollowupRef.current.context, { isRetry: true })}
+              style={{
+                marginTop: '8px',
+                border: '1px solid #d0d0d0',
+                background: isFollowupLoading ? '#f5f5f5' : '#fff',
+                color: isFollowupLoading ? '#999' : '#444',
+                fontSize: '0.82rem',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                cursor: isFollowupLoading ? 'not-allowed' : 'pointer',
+              }}
+            >
+              다시 시도
+            </button>
+          )}
         </div>
 
         {widgetData.conclusion && (

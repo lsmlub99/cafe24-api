@@ -507,7 +507,6 @@ function enforceMainPolicyOnRanked(
   const formPolicy = RECOMMENDATION_POLICY.formPolicy || {};
   const sameScoreBand = Number(formPolicy.sameScoreBand || 3);
   const configuredMinMatch = Number(formPolicy.minFormMatchInMain || 2);
-  const configuredMaxNonMatch = Number(formPolicy.maxNonMatchInMain || 1);
 
   const drop = {
     DROP_CATEGORY_MISMATCH: 0,
@@ -556,85 +555,39 @@ function enforceMainPolicyOnRanked(
   const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
   const matchedCount = deduped.filter(isMatch).length;
   const minFormMatch = Math.min(finalLimit, Math.max(0, configuredMinMatch), matchedCount);
-  const strictMaxNonMatch = Math.min(
-    Math.max(0, configuredMaxNonMatch),
-    Math.max(0, finalLimit - minFormMatch)
-  );
 
-  const selected = [];
-  const selectedSet = new Set();
-  let selectedMatch = 0;
-  let selectedNonMatch = 0;
-  const deferredNonMatch = [];
+  // Soft policy: start with pure score ranking, then minimally swap to satisfy min form-match.
+  const selected = deduped.slice(0, finalLimit);
+  const selectedIds = new Set(selected.map((item) => String(item?.id || '')));
+  const selectedMatchCount = () => selected.filter(isMatch).length;
 
-  const includeItem = (item) => {
-    const key = `${item?.id || ''}:${item?.base_name || ''}:${item?.form || ''}`;
-    if (!item || selectedSet.has(key) || selected.length >= finalLimit) return false;
-    selected.push(item);
-    selectedSet.add(key);
-    if (isMatch(item)) selectedMatch += 1;
-    else selectedNonMatch += 1;
-    return true;
-  };
+  while (selectedMatchCount() < minFormMatch) {
+    const missing = minFormMatch - selectedMatchCount();
+    if (missing <= 0) break;
 
-  for (let i = 0; i < deduped.length; i += 1) {
-    const item = deduped[i];
-    if (selected.length >= finalLimit) break;
-    if (isMatch(item)) {
-      includeItem(item);
-      continue;
-    }
+    const remainingMatched = deduped
+      .filter((item) => isMatch(item) && !selectedIds.has(String(item?.id || '')))
+      .sort((a, b) => scoreOf(b) - scoreOf(a));
+    if (!remainingMatched.length) break;
 
-    if (selectedNonMatch >= strictMaxNonMatch) {
-      drop.DROP_FORM_MISMATCH += 1;
-      continue;
-    }
+    const selectedNonMatched = selected
+      .filter((item) => !isMatch(item))
+      .sort((a, b) => scoreOf(a) - scoreOf(b));
+    if (!selectedNonMatched.length) break;
 
-    const remainingSlots = finalLimit - selected.length;
-    const requiredMatchRemaining = Math.max(0, minFormMatch - selectedMatch);
-    if (remainingSlots <= requiredMatchRemaining) {
-      deferredNonMatch.push(item);
-      continue;
-    }
+    const candidateIn = remainingMatched[0];
+    const candidateOut = selectedNonMatched[0];
+    const shouldSwap = scoreOf(candidateIn) >= scoreOf(candidateOut) - sameScoreBand;
+    if (!shouldSwap) break;
 
-    let nextMatchScore = null;
-    for (let j = i + 1; j < deduped.length; j += 1) {
-      if (isMatch(deduped[j])) {
-        nextMatchScore = scoreOf(deduped[j]);
-        break;
-      }
-    }
-
-    const currentNonMatchScore = scoreOf(item);
-    const shouldPreferUpcomingMatch =
-      selectedMatch < minFormMatch &&
-      Number.isFinite(nextMatchScore) &&
-      nextMatchScore >= currentNonMatchScore - sameScoreBand;
-
-    if (shouldPreferUpcomingMatch) {
-      deferredNonMatch.push(item);
-      continue;
-    }
-
-    includeItem(item);
+    const outIdx = selected.findIndex((x) => String(x?.id || '') === String(candidateOut?.id || ''));
+    if (outIdx < 0) break;
+    selected[outIdx] = candidateIn;
+    selectedIds.delete(String(candidateOut?.id || ''));
+    selectedIds.add(String(candidateIn?.id || ''));
   }
 
-  for (const item of deferredNonMatch) {
-    if (selected.length >= finalLimit) break;
-    const remainingSlots = finalLimit - selected.length;
-    const requiredMatchRemaining = Math.max(0, minFormMatch - selectedMatch);
-    if (remainingSlots <= requiredMatchRemaining) continue;
-    if (selectedNonMatch >= strictMaxNonMatch) break;
-    includeItem(item);
-  }
-
-  // fallback: if not enough main cards, allow additional non-match forms to keep recommendation breadth.
-  if (selected.length < finalLimit) {
-    for (const item of deduped) {
-      if (selected.length >= finalLimit) break;
-      includeItem(item);
-    }
-  }
+  selected.sort((a, b) => scoreOf(b) - scoreOf(a));
 
   return {
     selected,
@@ -813,6 +766,7 @@ export const recommendationService = {
     if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
       candidates = strictPrimary.candidates;
     }
+    parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
 
     let usedFallback = false;
     const fallbackSteps = [];
@@ -892,6 +846,7 @@ export const recommendationService = {
       category_locked = strictPrimary.category_locked;
       form_locked = strictPrimary.form_locked;
       allowed_main_forms = strictPrimary.allowed_main_forms || [];
+      parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
       ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(

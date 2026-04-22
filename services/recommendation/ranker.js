@@ -392,6 +392,7 @@ export function dedupeByBase(products = []) {
 
 function resolveAllowedMainForms(intent = {}, policy = {}) {
   if (Array.isArray(intent.allowed_main_forms) && intent.allowed_main_forms.length > 0) return intent.allowed_main_forms;
+  if (intent?.explicit_form_request && intent?.requested_form) return [intent.requested_form];
   if (!intent?.requested_category) return [];
   const formPolicy = policy.formPolicy || {};
   if (formPolicy.strictOnExplicitForm && intent.explicit_form_request && intent.requested_form) return [intent.requested_form];

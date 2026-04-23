@@ -418,6 +418,15 @@ function App() {
   const [isFollowupLoading, setIsFollowupLoading] = useState(false);
   const [followupHint, setFollowupHint] = useState('');
   const [followupErrorKind, setFollowupErrorKind] = useState('none');
+  const [debugBadge, setDebugBadge] = useState({
+    last_event: '',
+    last_cta_label: '',
+    request_id: 0,
+    is_followup_loading: false,
+    api_base_url_injected: '',
+    resolved_request_url: '',
+    last_error_kind: '',
+  });
 
   const messagesEndRef = useRef(null);
   const lastWidgetSignatureRef = useRef('');
@@ -432,7 +441,26 @@ function App() {
   const prevFollowupLoadingRef = useRef(false);
 
   const variants = useMemo(() => getUxVariants(sessionIdRef.current), []);
+  const ctaDebugEnabled = useMemo(() => isCtaDebugEnabled(), []);
   const activeCtas = FOLLOW_UP_CTA_ITEMS[variants.cta] || FOLLOW_UP_CTA_ITEMS.A;
+
+  const emitCtaDebug = (event, payload = {}) => {
+    if (!ctaDebugEnabled) return;
+    debugCtaLog(event, payload);
+    setDebugBadge((prev) => ({
+      ...prev,
+      last_event: event,
+      last_cta_label: payload.label ?? payload.last_cta_label ?? prev.last_cta_label,
+      request_id: payload.request_id ?? prev.request_id,
+      is_followup_loading:
+        typeof payload.is_followup_loading === 'boolean'
+          ? payload.is_followup_loading
+          : prev.is_followup_loading,
+      api_base_url_injected: payload.api_base_url_injected ?? prev.api_base_url_injected,
+      resolved_request_url: payload.resolved_request_url ?? prev.resolved_request_url,
+      last_error_kind: payload.error_kind ?? (event === 'followup_request_aborted' ? 'aborted' : prev.last_error_kind),
+    }));
+  };
 
   const clearFollowupHint = () => {
     if (followupHintTimerRef.current) {
@@ -474,7 +502,7 @@ function App() {
   const runFollowupQuery = async (query, context = 'unknown', options = {}) => {
     const isRetry = Boolean(options?.isRetry);
     const nextRequestId = followupRequestIdRef.current + 1;
-    debugCtaLog('followup_enter', {
+    emitCtaDebug('followup_enter', {
       request_id: nextRequestId,
       query,
       context,
@@ -483,11 +511,22 @@ function App() {
     });
 
     if (!query) {
-      debugCtaLog('followup_skip_empty_query', { request_id: nextRequestId, context, is_retry: isRetry });
+      emitCtaDebug('followup_skip_empty_query', {
+        request_id: nextRequestId,
+        context,
+        is_retry: isRetry,
+        is_followup_loading: isFollowupLoading,
+      });
       return;
     }
     if (isFollowupLoading) {
-      debugCtaLog('followup_skip_loading_guard', { request_id: nextRequestId, query, context, is_retry: isRetry });
+      emitCtaDebug('followup_skip_loading_guard', {
+        request_id: nextRequestId,
+        query,
+        context,
+        is_retry: isRetry,
+        is_followup_loading: isFollowupLoading,
+      });
       return;
     }
     clearFollowupHint();
@@ -504,7 +543,7 @@ function App() {
 
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     followupAbortRef.current = controller;
-    debugCtaLog('followup_loading_on', { request_id: nextRequestId, query, context });
+    emitCtaDebug('followup_loading_on', { request_id: nextRequestId, query, context, is_followup_loading: true });
     setIsFollowupLoading(true);
 
     const ctaLabel = activeCtas.find((x) => x.query === query)?.label || null;
@@ -527,11 +566,12 @@ function App() {
     try {
       const resolvedUrl = buildApiUrl('/api/recommend');
       const requestPayload = { query };
-      debugCtaLog('followup_fetch_start', {
+      emitCtaDebug('followup_fetch_start', {
         request_id: nextRequestId,
         api_base_url_injected: String(window.__API_BASE_URL__ || ''),
         resolved_request_url: resolvedUrl,
         request_payload: requestPayload,
+        is_followup_loading: true,
       });
 
       const response = await fetch(resolvedUrl, {
@@ -540,10 +580,11 @@ function App() {
         body: JSON.stringify(requestPayload),
         signal: controller?.signal,
       });
-      debugCtaLog('followup_fetch_response', {
+      emitCtaDebug('followup_fetch_response', {
         request_id: nextRequestId,
         status: response.status,
         ok: response.ok,
+        is_followup_loading: true,
       });
 
       if (nextRequestId !== followupRequestIdRef.current) return;
@@ -554,7 +595,11 @@ function App() {
       const payload = await response.json();
       const nextData = normalizeWidgetData(payload);
       if (!nextData) {
-        debugCtaLog('followup_invalid_payload', { request_id: nextRequestId });
+        emitCtaDebug('followup_invalid_payload', {
+          request_id: nextRequestId,
+          error_kind: 'invalid_payload',
+          is_followup_loading: true,
+        });
         throw new Error('invalid_payload');
       }
 
@@ -564,13 +609,19 @@ function App() {
     } catch (error) {
       if (nextRequestId !== followupRequestIdRef.current) return;
       const errorKind = classifyFollowupError(error);
-      debugCtaLog('followup_fetch_error', {
+      emitCtaDebug('followup_fetch_error', {
         request_id: nextRequestId,
         error_kind: errorKind,
         error_message: String(error?.message || ''),
+        is_followup_loading: true,
       });
       if (errorKind === 'aborted') {
         setFollowupErrorKind('aborted');
+        emitCtaDebug('followup_request_aborted', {
+          request_id: nextRequestId,
+          error_kind: 'aborted',
+          is_followup_loading: true,
+        });
         trackWidgetEvent('followup_request_aborted', {
           followup_query: query,
           context,
@@ -579,6 +630,11 @@ function App() {
         });
       } else {
         setFollowupErrorKind(errorKind);
+        emitCtaDebug('followup_request_failed', {
+          request_id: nextRequestId,
+          error_kind: errorKind,
+          is_followup_loading: true,
+        });
         trackWidgetEvent('followup_request_failed', {
           followup_query: query,
           context,
@@ -592,7 +648,7 @@ function App() {
       }
     } finally {
       if (nextRequestId === followupRequestIdRef.current) {
-        debugCtaLog('followup_loading_off', { request_id: nextRequestId });
+        emitCtaDebug('followup_loading_off', { request_id: nextRequestId, is_followup_loading: false });
         setIsFollowupLoading(false);
       }
     }
@@ -715,18 +771,19 @@ function App() {
     followupErrorKind === 'invalid_payload';
 
   useEffect(() => {
-    if (!isCtaDebugEnabled()) {
+    if (!ctaDebugEnabled) {
       prevFollowupLoadingRef.current = isFollowupLoading;
       return;
     }
     if (prevFollowupLoadingRef.current !== isFollowupLoading) {
-      debugCtaLog('followup_loading_state_changed', {
+      emitCtaDebug('followup_loading_state_changed', {
         from: prevFollowupLoadingRef.current,
         to: isFollowupLoading,
+        is_followup_loading: isFollowupLoading,
       });
       prevFollowupLoadingRef.current = isFollowupLoading;
     }
-  }, [isFollowupLoading]);
+  }, [ctaDebugEnabled, isFollowupLoading]);
 
   useEffect(() => {
     if (!widgetData?.recommendations?.length) return;

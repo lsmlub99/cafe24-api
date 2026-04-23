@@ -108,6 +108,24 @@ function buildApiUrl(path) {
   return base ? `${base}${normalizedPath}` : normalizedPath;
 }
 
+function isCtaDebugEnabled() {
+  try {
+    const search = new URLSearchParams(window.location.search || '');
+    if (search.get('debugCta') === '1') {
+      window.sessionStorage?.setItem('debug_cta', '1');
+      return true;
+    }
+    return window.sessionStorage?.getItem('debug_cta') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function debugCtaLog(event, payload = {}) {
+  if (!isCtaDebugEnabled()) return;
+  console.info(`[CTA Debug] ${event}`, payload);
+}
+
 function CardText({ label, text }) {
   if (!text) return null;
   return (
@@ -411,6 +429,7 @@ function App() {
   const followupAbortRef = useRef(null);
   const followupHintTimerRef = useRef(null);
   const lastFollowupRef = useRef({ query: '', context: 'unknown', label: '' });
+  const prevFollowupLoadingRef = useRef(false);
 
   const variants = useMemo(() => getUxVariants(sessionIdRef.current), []);
   const activeCtas = FOLLOW_UP_CTA_ITEMS[variants.cta] || FOLLOW_UP_CTA_ITEMS.A;
@@ -453,11 +472,26 @@ function App() {
   };
 
   const runFollowupQuery = async (query, context = 'unknown', options = {}) => {
-    if (!query || isFollowupLoading) return;
     const isRetry = Boolean(options?.isRetry);
+    const nextRequestId = followupRequestIdRef.current + 1;
+    debugCtaLog('followup_enter', {
+      request_id: nextRequestId,
+      query,
+      context,
+      is_retry: isRetry,
+      is_followup_loading: isFollowupLoading,
+    });
+
+    if (!query) {
+      debugCtaLog('followup_skip_empty_query', { request_id: nextRequestId, context, is_retry: isRetry });
+      return;
+    }
+    if (isFollowupLoading) {
+      debugCtaLog('followup_skip_loading_guard', { request_id: nextRequestId, query, context, is_retry: isRetry });
+      return;
+    }
     clearFollowupHint();
 
-    const nextRequestId = followupRequestIdRef.current + 1;
     followupRequestIdRef.current = nextRequestId;
 
     if (followupAbortRef.current) {
@@ -470,6 +504,7 @@ function App() {
 
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     followupAbortRef.current = controller;
+    debugCtaLog('followup_loading_on', { request_id: nextRequestId, query, context });
     setIsFollowupLoading(true);
 
     const ctaLabel = activeCtas.find((x) => x.query === query)?.label || null;
@@ -490,11 +525,25 @@ function App() {
     });
 
     try {
-      const response = await fetch(buildApiUrl('/api/recommend'), {
+      const resolvedUrl = buildApiUrl('/api/recommend');
+      const requestPayload = { query };
+      debugCtaLog('followup_fetch_start', {
+        request_id: nextRequestId,
+        api_base_url_injected: String(window.__API_BASE_URL__ || ''),
+        resolved_request_url: resolvedUrl,
+        request_payload: requestPayload,
+      });
+
+      const response = await fetch(resolvedUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify(requestPayload),
         signal: controller?.signal,
+      });
+      debugCtaLog('followup_fetch_response', {
+        request_id: nextRequestId,
+        status: response.status,
+        ok: response.ok,
       });
 
       if (nextRequestId !== followupRequestIdRef.current) return;
@@ -505,6 +554,7 @@ function App() {
       const payload = await response.json();
       const nextData = normalizeWidgetData(payload);
       if (!nextData) {
+        debugCtaLog('followup_invalid_payload', { request_id: nextRequestId });
         throw new Error('invalid_payload');
       }
 
@@ -514,6 +564,11 @@ function App() {
     } catch (error) {
       if (nextRequestId !== followupRequestIdRef.current) return;
       const errorKind = classifyFollowupError(error);
+      debugCtaLog('followup_fetch_error', {
+        request_id: nextRequestId,
+        error_kind: errorKind,
+        error_message: String(error?.message || ''),
+      });
       if (errorKind === 'aborted') {
         setFollowupErrorKind('aborted');
         trackWidgetEvent('followup_request_aborted', {
@@ -537,6 +592,7 @@ function App() {
       }
     } finally {
       if (nextRequestId === followupRequestIdRef.current) {
+        debugCtaLog('followup_loading_off', { request_id: nextRequestId });
         setIsFollowupLoading(false);
       }
     }
@@ -657,6 +713,20 @@ function App() {
     followupErrorKind === 'timeout' ||
     followupErrorKind === 'http' ||
     followupErrorKind === 'invalid_payload';
+
+  useEffect(() => {
+    if (!isCtaDebugEnabled()) {
+      prevFollowupLoadingRef.current = isFollowupLoading;
+      return;
+    }
+    if (prevFollowupLoadingRef.current !== isFollowupLoading) {
+      debugCtaLog('followup_loading_state_changed', {
+        from: prevFollowupLoadingRef.current,
+        to: isFollowupLoading,
+      });
+      prevFollowupLoadingRef.current = isFollowupLoading;
+    }
+  }, [isFollowupLoading]);
 
   useEffect(() => {
     if (!widgetData?.recommendations?.length) return;
@@ -793,7 +863,24 @@ function App() {
                 key={cta.label}
                 type="button"
                 disabled={isFollowupLoading}
-                onClick={() => runFollowupQuery(cta.query, cta.context)}
+                onPointerDown={() =>
+                  debugCtaLog('cta_pointer_down', {
+                    label: cta.label,
+                    query: cta.query,
+                    context: cta.context,
+                    disabled: isFollowupLoading,
+                  })
+                }
+                onClick={() => {
+                  debugCtaLog('cta_clicked', {
+                    label: cta.label,
+                    query: cta.query,
+                    context: cta.context,
+                    disabled: isFollowupLoading,
+                    is_followup_loading: isFollowupLoading,
+                  });
+                  runFollowupQuery(cta.query, cta.context);
+                }}
                 style={{
                   border: '1px solid #ddd',
                   background: isFollowupLoading ? '#f5f5f5' : '#fff',

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Send, Sparkles } from 'lucide-react';
 
 function tryParseJson(value) {
@@ -135,36 +135,36 @@ function CardText({ label, text }) {
   );
 }
 
-const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '추천 알고리즘', '모델', '로직 기반', '추천 로직'];
-const FOLLOWUP_ERROR_HINT = '잠시 네트워크가 불안정해요. 다시 시도해볼까요?';
+const FORBIDDEN_COPY_TERMS = ['?먯닔', '?섎? 留ㅼ묶', '異붿쿇 ?뚭퀬由ъ쬁', '紐⑤뜽', '濡쒖쭅 湲곕컲', '異붿쿇 濡쒖쭅'];
+const FOLLOWUP_ERROR_HINT = '?좎떆 ?ㅽ듃?뚰겕媛 遺덉븞?뺥빐?? ?ㅼ떆 ?쒕룄?대낵源뚯슂?';
 
 const FOLLOW_UP_CTA_ITEMS = {
   A: [
-    { label: '번들거림 덜한 쪽으로 다시 볼까요?', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
-    { label: '민감 피부 기준으로 다시 좁혀볼까요?', query: '민감성 피부 기준으로 다시 추천해줘', context: 'sensitive' },
-    { label: '톤업 없는 제품만 다시 골라볼까요?', query: '톤업 없는 제품으로 다시 추천해줘', context: 'no_tone_up' },
+    { label: '踰덈뱾嫄곕┝ ?쒗븳 履쎌쑝濡??ㅼ떆 蹂쇨퉴??', query: '踰덈뱾嫄곕┝ ?곸? ?쒗뭹?쇰줈 ?ㅼ떆 異붿쿇?댁쨾', context: 'low_sebum' },
+    { label: '誘쇨컧 ?쇰? 湲곗??쇰줈 ?ㅼ떆 醫곹?蹂쇨퉴??', query: '誘쇨컧???쇰? 湲곗??쇰줈 ?ㅼ떆 異붿쿇?댁쨾', context: 'sensitive' },
+    { label: '?ㅼ뾽 ?녿뒗 ?쒗뭹留??ㅼ떆 怨⑤씪蹂쇨퉴??', query: '?ㅼ뾽 ?녿뒗 ?쒗뭹?쇰줈 ?ㅼ떆 異붿쿇?댁쨾', context: 'no_tone_up' },
   ],
   B: [
-    { label: '덜 번들거리는 걸로 다시 볼까요?', query: '번들거림 적은 제품으로 다시 추천해줘', context: 'low_sebum' },
-    { label: '민감 피부 기준으로 다시 볼까요?', query: '민감성 피부 기준으로 다시 추천해줘', context: 'sensitive' },
-    { label: '톤업 없는 것만 다시 골라드릴까요?', query: '톤업 없는 제품으로 다시 추천해줘', context: 'no_tone_up' },
+    { label: '??踰덈뱾嫄곕━??嫄몃줈 ?ㅼ떆 蹂쇨퉴??', query: '踰덈뱾嫄곕┝ ?곸? ?쒗뭹?쇰줈 ?ㅼ떆 異붿쿇?댁쨾', context: 'low_sebum' },
+    { label: '誘쇨컧 ?쇰? 湲곗??쇰줈 ?ㅼ떆 蹂쇨퉴??', query: '誘쇨컧???쇰? 湲곗??쇰줈 ?ㅼ떆 異붿쿇?댁쨾', context: 'sensitive' },
+    { label: '?ㅼ뾽 ?녿뒗 寃껊쭔 ?ㅼ떆 怨⑤씪?쒕┫源뚯슂?', query: '?ㅼ뾽 ?녿뒗 ?쒗뭹?쇰줈 ?ㅼ떆 異붿쿇?댁쨾', context: 'no_tone_up' },
   ],
 };
 
 const FORM_PRIMARY_BENEFIT = {
-  cream: '무난한 데일리 사용감',
-  lotion: '가볍게 쓰는 데일리형',
-  serum: '얇고 가벼운 발림감',
-  stick: '수정용으로 편한 타입',
-  spray: '빠른 재도포에 편한 타입',
-  cushion: '톤 정돈에 편한 타입',
-  other: '부담 없이 쓰기 쉬운 타입',
+  cream: '臾대궃???곗씪由??ъ슜媛?,
+  lotion: '媛蹂띻쾶 ?곕뒗 ?곗씪由ы삎',
+  serum: '?뉕퀬 媛踰쇱슫 諛쒕┝媛?,
+  stick: '?섏젙?⑹쑝濡??명븳 ???,
+  spray: '鍮좊Ⅸ ?щ룄?ъ뿉 ?명븳 ???,
+  cushion: '???뺣룉???명븳 ???,
+  other: '遺???놁씠 ?곌린 ?ъ슫 ???,
 };
 
 const ROLE_BY_RANK = {
-  1: ['안정형 데일리 추천', '무난한 데일리형'],
-  2: ['비교해보기 좋은 대안형', '조금 더 가볍게 보는 대안형'],
-  3: ['취향 따라 고르는 보조형', '상황별로 고르는 보조형'],
+  1: ['?덉젙???곗씪由?異붿쿇', '臾대궃???곗씪由ы삎'],
+  2: ['鍮꾧탳?대낫湲?醫뗭? ??덊삎', '議곌툑 ??媛蹂띻쾶 蹂대뒗 ??덊삎'],
+  3: ['痍⑦뼢 ?곕씪 怨좊Ⅴ??蹂댁“??, '?곹솴蹂꾨줈 怨좊Ⅴ??蹂댁“??],
 };
 
 function removeForbiddenCopy(text = '') {
@@ -178,18 +178,18 @@ function removeForbiddenCopy(text = '') {
 function clampText(text = '', max = 26) {
   const src = removeForbiddenCopy(text);
   if (!src) return '';
-  return src.length > max ? `${src.slice(0, Math.max(0, max - 1))}…` : src;
+  return src.length > max ? `${src.slice(0, Math.max(0, max - 1))}?? : src;
 }
 
 function detectForm(item = {}) {
   const form = String(item.form || '').toLowerCase();
   const name = String(item.name || '').toLowerCase();
-  if (form.includes('spray') || name.includes('스프레이')) return 'spray';
-  if (form.includes('stick') || name.includes('스틱')) return 'stick';
-  if (form.includes('serum') || name.includes('세럼') || name.includes('앰플')) return 'serum';
-  if (form.includes('lotion') || name.includes('로션')) return 'lotion';
-  if (form.includes('cushion') || name.includes('쿠션')) return 'cushion';
-  if (form.includes('cream') || name.includes('크림') || name.includes('선크림')) return 'cream';
+  if (form.includes('spray') || name.includes('?ㅽ봽?덉씠')) return 'spray';
+  if (form.includes('stick') || name.includes('?ㅽ떛')) return 'stick';
+  if (form.includes('serum') || name.includes('?몃읆') || name.includes('?고뵆')) return 'serum';
+  if (form.includes('lotion') || name.includes('濡쒖뀡')) return 'lotion';
+  if (form.includes('cushion') || name.includes('荑좎뀡')) return 'cushion';
+  if (form.includes('cream') || name.includes('?щ┝') || name.includes('?좏겕由?)) return 'cream';
   return 'other';
 }
 
@@ -209,11 +209,11 @@ function collectSignals(item = {}) {
 
 function refinePrimaryBenefitOnce(baseBenefit, signals) {
   const rules = [
-    { keywords: ['톤업', '톤 보정', '잡티', '화사'], value: '톤 보정이 쉬운 사용감' },
-    { keywords: ['보송', '산뜻', '유분', '번들'], value: '번들 부담 적은 사용감' },
-    { keywords: ['보습', '수분', '촉촉', '진정'], value: '촉촉한 데일리 사용감' },
-    { keywords: ['밀림', '레이어', '메이크업', '밀착'], value: '밀림 부담 적은 밀착감' },
-    { keywords: ['수정', '재도포', '휴대', '외출'], value: '수정용으로 편한 사용감' },
+    { keywords: ['?ㅼ뾽', '??蹂댁젙', '?≫떚', '?붿궗'], value: '??蹂댁젙???ъ슫 ?ъ슜媛? },
+    { keywords: ['蹂댁넚', '?곕쑜', '?좊텇', '踰덈뱾'], value: '踰덈뱾 遺???곸? ?ъ슜媛? },
+    { keywords: ['蹂댁뒿', '?섎텇', '珥됱큺', '吏꾩젙'], value: '珥됱큺???곗씪由??ъ슜媛? },
+    { keywords: ['諛由?, '?덉씠??, '硫붿씠?ъ뾽', '諛李?], value: '諛由?遺???곸? 諛李⑷컧' },
+    { keywords: ['?섏젙', '?щ룄??, '?대?', '?몄텧'], value: '?섏젙?⑹쑝濡??명븳 ?ъ슜媛? },
   ];
 
   for (const rule of rules) {
@@ -225,23 +225,23 @@ function refinePrimaryBenefitOnce(baseBenefit, signals) {
 }
 
 function pickSecondaryBenefit(signals) {
-  if (signals.includes('번들') || signals.includes('유분')) return '번들거림 부담이 적은 편';
-  if (signals.includes('밀림') || signals.includes('레이어') || signals.includes('밀착')) return '덧발라도 밀림 부담이 적은 편';
-  if (signals.includes('톤업') || signals.includes('톤 보정') || signals.includes('잡티')) return '피부 표현이 자연스러운 편';
-  return '부담 없이 쓰기 쉬운 편';
+  if (signals.includes('踰덈뱾') || signals.includes('?좊텇')) return '踰덈뱾嫄곕┝ 遺?댁씠 ?곸? ??;
+  if (signals.includes('諛由?) || signals.includes('?덉씠??) || signals.includes('諛李?)) return '?㏓컻?쇰룄 諛由?遺?댁씠 ?곸? ??;
+  if (signals.includes('?ㅼ뾽') || signals.includes('??蹂댁젙') || signals.includes('?≫떚')) return '?쇰? ?쒗쁽???먯뿰?ㅻ윭????;
+  return '遺???놁씠 ?곌린 ?ъ슫 ??;
 }
 
 function pickUsageContext(formKey, signals) {
-  if (signals.includes('톤업') || signals.includes('톤 보정')) return '톤 보정이 필요한 날';
-  if (signals.includes('메이크업') || signals.includes('밀림')) return '메이크업 전 단계에서';
-  if (formKey === 'spray' || formKey === 'stick' || signals.includes('수정') || signals.includes('외출')) return '외출 중 수정용으로';
-  if (signals.includes('가벼') || signals.includes('산뜻')) return '가볍게 쓰고 싶을 때';
-  return '매일 데일리로 사용할 때';
+  if (signals.includes('?ㅼ뾽') || signals.includes('??蹂댁젙')) return '??蹂댁젙???꾩슂????;
+  if (signals.includes('硫붿씠?ъ뾽') || signals.includes('諛由?)) return '硫붿씠?ъ뾽 ???④퀎?먯꽌';
+  if (formKey === 'spray' || formKey === 'stick' || signals.includes('?섏젙') || signals.includes('?몄텧')) return '?몄텧 以??섏젙?⑹쑝濡?;
+  if (signals.includes('媛踰?) || signals.includes('?곕쑜')) return '媛蹂띻쾶 ?곌퀬 ?띠쓣 ??;
+  return '留ㅼ씪 ?곗씪由щ줈 ?ъ슜????;
 }
 
 function buildCardSlots(item = {}, rank = 1) {
   const formKey = detectForm(item);
-  const rankRole = ROLE_BY_RANK[rank]?.[0] || '무난한 기본형';
+  const rankRole = ROLE_BY_RANK[rank]?.[0] || '臾대궃??湲곕낯??;
   const signals = collectSignals(item);
   const baseBenefit = FORM_PRIMARY_BENEFIT[formKey] || FORM_PRIMARY_BENEFIT.other;
   const primaryBenefit = refinePrimaryBenefitOnce(baseBenefit, signals);
@@ -252,13 +252,25 @@ function buildCardSlots(item = {}, rank = 1) {
 }
 
 function buildCardCopyFromSlots(slots = {}, item = {}) {
+  const signals = collectSignals(item);
   const rawCore = `${slots.rankRole} · ${slots.primaryBenefit}`;
-  const supportReason = `${slots.usageContext} ${slots.secondaryBenefit}이에요.`;
-  const usageTip = clampText(item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아져요.', 52);
+  const supportReason = `${slots.usageContext} ${slots.secondaryBenefit} 편이에요.`;
+  const usageTip = clampText(item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.', 52);
+
+  let safetyLine = '';
+  if (signals.includes('따가') || signals.includes('자극') || signals.includes('민감')) {
+    safetyLine = '자극 부담이 적은 쪽으로 보기 좋아요.';
+  } else if (signals.includes('번들') || signals.includes('유분') || signals.includes('피지')) {
+    safetyLine = '번들거림 부담이 비교적 적은 편이에요.';
+  } else if (signals.includes('밀림') || signals.includes('레이어')) {
+    safetyLine = '여러 번 발라도 밀림 부담이 적은 편이에요.';
+  } else {
+    safetyLine = '답답함 없이 바르기 편한 쪽이에요.';
+  }
 
   return {
     coreReason: clampText(rawCore, 26) || '무난하게 쓰기 좋은 데일리형',
-    supportReason: clampText(supportReason, 70) || '부담 없이 매일 쓰기 좋은 사용감이에요.',
+    supportReason: clampText(`${supportReason} ${safetyLine}`, 70) || '데일리로 쓰기 편한 사용감이에요.',
     usageTip,
   };
 }
@@ -270,8 +282,8 @@ function isNearlySameSlots(a = {}, b = {}) {
 function applySecondRankAlternative(slots = {}) {
   return {
     ...slots,
-    rankRole: ROLE_BY_RANK[2]?.[1] || '조금 더 가볍게 보는 대안형',
-    usageContext: slots.formKey === 'stick' || slots.formKey === 'spray' ? '외출 중 수정이 필요할 때' : '첫 후보가 무겁게 느껴질 때',
+    rankRole: ROLE_BY_RANK[2]?.[1] || '議곌툑 ??媛蹂띻쾶 蹂대뒗 ??덊삎',
+    usageContext: slots.formKey === 'stick' || slots.formKey === 'spray' ? '?몄텧 以??섏젙???꾩슂???? : '泥??꾨낫媛 臾닿쾪寃??먭뺨吏???,
   };
 }
 
@@ -293,23 +305,23 @@ function buildSelectionGuide(recommendations = []) {
 
     let line = '';
     if (rank === 1) {
-      line = '1번: 매일 무난하게 쓸 기본형이 필요할 때';
+      line = '1번: 매일 쓰기 편하면서 자극 부담을 줄이고 싶을 때';
     } else if (rank === 2) {
-      if (formKey === 'serum') line = '2번: 더 가볍고 얇은 발림을 원할 때';
-      else if (formKey === 'stick') line = '2번: 보송한 수정용을 함께 챙길 때';
-      else if (formKey === 'spray') line = '2번: 빠른 재도포 편의가 중요할 때';
-      else if (signals.includes('톤업') || signals.includes('톤 보정')) line = '2번: 톤 보정까지 같이 보고 싶을 때';
-      else line = '2번: 1번보다 가벼운 대안을 보고 싶을 때';
+      if (formKey === 'serum') line = '2번: 가볍고 얇은 발림을 우선해서 보고 싶을 때';
+      else if (formKey === 'stick') line = '2번: 번들거림 관리와 수정 사용을 함께 챙기고 싶을 때';
+      else if (formKey === 'spray') line = '2번: 빠른 재도포 편의성을 우선할 때';
+      else if (signals.includes('톤') || signals.includes('잡티')) line = '2번: 사용감에 더해 톤 보정까지 같이 원할 때';
+      else line = '2번: 1번보다 더 가벼운 대안을 비교하고 싶을 때';
     } else {
-      if (signals.includes('톤업') || signals.includes('톤 보정')) line = '3번: 피부 보정 목적을 추가로 챙길 때';
-      else if (formKey === 'stick' || formKey === 'spray') line = '3번: 외출 중 덧바름 용도를 같이 볼 때';
-      else line = '3번: 상황별 보조 옵션까지 비교할 때';
+      if (signals.includes('톤') || signals.includes('잡티')) line = '3번: 취향이나 상황에 맞춰 보정형 옵션까지 볼 때';
+      else if (formKey === 'stick' || formKey === 'spray') line = '3번: 외출 중 덧바름 용도까지 함께 고려할 때';
+      else line = '3번: 기본형 외에 보조 옵션까지 넓게 비교할 때';
     }
     return clampText(line, 34);
   });
 
   while (lines.length < 3) {
-    lines.push(`${lines.length + 1}번: 비슷한 조건의 대안을 더 볼 때`);
+    lines.push(`${lines.length + 1}번: 상황에 맞는 대안을 추가로 비교할 때`);
   }
 
   return lines;
@@ -324,18 +336,49 @@ function buildGuideContextLine(widgetData = {}) {
   const hasHydration = tags.includes('concern:hydration');
   const hasSoothing = tags.includes('concern:soothing');
 
-  if (hasSensitive || hasSoothing) return '민감 신호가 있으면 자극 부담이 적은 후보부터 선택해 보세요.';
-  if (hasOily || hasSebum) return '지성/수부지라면 번들거림이 적은 후보를 먼저 비교해 보세요.';
-  if (hasDry || hasHydration) return '건성이라면 보습감이 편한 후보를 먼저 보는 편이 좋아요.';
-  return '메인 용도와 덧바름 용도를 나눠서 1~3번을 비교해 보세요.';
+  if (hasSensitive || hasSoothing) return '따가움이 있다면 가벼움보다 자극 부담이 적은 쪽이 더 중요해요.';
+  if (hasOily || hasSebum) return '번들거림이 고민이면 흡수감이 빠른 타입부터 보는 게 좋아요.';
+  if (hasDry || hasHydration) return '건조함이 신경 쓰이면 보습감이 유지되는 타입을 먼저 보세요.';
+  return '지금 상황이라면 매일 쓰기 편한 기본형부터 고르는 게 좋아요.';
 }
 
 function buildDecisionNudge(recommendations = []) {
   if (!recommendations.length) return '';
   const first = recommendations[0];
   const signals = collectSignals(first);
-  if (signals.includes('톤업') || signals.includes('톤 보정')) return '차이가 헷갈리면 1번부터 비교해 보시는 게 가장 안전해요.';
-  return '고민된다면 1번부터 시작해 보는 쪽이 가장 무난해요.';
+  if (signals.includes('따가') || signals.includes('자극') || signals.includes('민감')) {
+    return '지금 상황이라면 자극 부담이 적은 쪽을 기준으로 고르는 게 좋아요.';
+  }
+  if (signals.includes('번들') || signals.includes('유분')) {
+    return '지금 상황이라면 번들거림 부담이 적은 타입부터 고르는 게 좋아요.';
+  }
+  return '지금 상황이라면 1번을 기준으로 비교를 시작하는 게 가장 무난해요.';
+}
+
+function buildConversationalPrompts(widgetData = {}) {
+  const tags = Array.isArray(widgetData.reasoning_tags) ? widgetData.reasoning_tags : [];
+  const hasSensitive = tags.includes('skin_type:sensitive') || tags.includes('concern:soothing');
+  const hasOily = tags.includes('skin_type:oily') || tags.includes('skin_type:combination') || tags.includes('concern:sebum_control');
+
+  if (hasSensitive) {
+    return [
+      '지금 기준에서는 자극이 적은 쪽으로 보는 게 더 중요해요.',
+      '조금 더 순한 타입으로 다시 좁혀볼까요, 아니면 가벼운 사용감 위주로 볼까요?',
+      '원하시면 기준을 알려주시면 그에 맞게 다시 추천드릴게요.',
+    ];
+  }
+  if (hasOily) {
+    return [
+      '지금 기준에서는 번들거림 부담을 줄이는 게 먼저예요.',
+      '보송한 마무리 위주로 볼까요, 아니면 답답함 적은 쪽으로 볼까요?',
+      '원하시면 기준을 알려주시면 그에 맞게 다시 추천드릴게요.',
+    ];
+  }
+  return [
+    '지금 기준에서는 매일 편하게 쓸 수 있는 타입이 먼저예요.',
+    '순한 쪽으로 좁혀볼까요, 아니면 사용감 가벼운 쪽으로 볼까요?',
+    '원하시면 기준을 알려주시면 그에 맞게 다시 추천드릴게요.',
+  ];
 }
 
 function getProductIdFromUrl(url = '') {
@@ -411,7 +454,7 @@ function classifyFollowupError(error, responseStatus = null) {
 }
 
 function App() {
-  const [messages, setMessages] = useState([{ id: 1, type: 'bot', text: '안녕하세요. 셀퓨전씨 AI 뷰티 가이드입니다. 무엇을 추천해드릴까요?' }]);
+  const [messages, setMessages] = useState([{ id: 1, type: 'bot', text: '?덈뀞?섏꽭?? ??⑥쟾??AI 酉고떚 媛?대뱶?낅땲?? 臾댁뾿??異붿쿇?대뱶由닿퉴??' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [widgetData, setWidgetData] = useState(null);
@@ -643,7 +686,7 @@ function App() {
           is_retry: isRetry,
           variants,
         });
-        // 보수 UX: 기존 추천 유지 + 짧은 힌트만 노출
+        // 蹂댁닔 UX: 湲곗〈 異붿쿇 ?좎? + 吏㏃? ?뚰듃留??몄텧
         showFollowupHint(FOLLOWUP_ERROR_HINT);
       }
     } finally {
@@ -749,12 +792,12 @@ function App() {
         {
           id: Date.now() + 1,
           type: 'bot',
-          text: data.summary?.message || '고객님을 위한 추천 결과입니다.',
+          text: data.summary?.message || '怨좉컼?섏쓣 ?꾪븳 異붿쿇 寃곌낵?낅땲??',
           products: data.recommendations || [],
         },
       ]);
     } catch {
-      setMessages((prev) => [...prev, { id: Date.now() + 1, type: 'bot', text: '서버 통신 중 오류가 발생했습니다.' }]);
+      setMessages((prev) => [...prev, { id: Date.now() + 1, type: 'bot', text: '?쒕쾭 ?듭떊 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -764,12 +807,6 @@ function App() {
   const cardCopies = widgetData?.recommendations?.length ? buildCardCopies(widgetData.recommendations) : [];
   const selectionGuideLines = widgetData?.recommendations?.length ? buildSelectionGuide(widgetData.recommendations) : [];
   const decisionNudge = widgetData?.recommendations?.length ? buildDecisionNudge(widgetData.recommendations) : '';
-  const shouldShowRetry =
-    followupErrorKind === 'network' ||
-    followupErrorKind === 'timeout' ||
-    followupErrorKind === 'http' ||
-    followupErrorKind === 'invalid_payload';
-
   useEffect(() => {
     if (!ctaDebugEnabled) {
       prevFollowupLoadingRef.current = isFollowupLoading;
@@ -801,7 +838,7 @@ function App() {
       <div className="widget-container" style={{ padding: '16px', background: '#fff', borderRadius: '12px' }}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#B31312', marginBottom: '16px' }}>
           <Sparkles size={18} fill="#B31312" />
-          셀퓨전씨 AI 맞춤 추천
+          ??⑥쟾??AI 留욎땄 異붿쿇
         </h3>
 
         <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
@@ -810,26 +847,26 @@ function App() {
             const cardCopy = cardCopies[idx];
             const isTop = rank === 1;
             const trustLine = isTop
-              ? '무난하게 시작하기 좋은 선택이에요.'
+              ? '臾대궃?섍쾶 ?쒖옉?섍린 醫뗭? ?좏깮?댁뿉??'
               : rank === 2
-              ? '1위와 비교해보기 좋은 대안이에요.'
-              : '취향이나 상황에 맞춰 고르기 좋아요.';
-            const buyButtonLabel = variants.buyButton === 'B' ? '이걸로 시작하기' : '지금 구매하기';
+              ? '1?꾩? 鍮꾧탳?대낫湲?醫뗭? ??덉씠?먯슂.'
+              : '痍⑦뼢?대굹 ?곹솴??留욎떠 怨좊Ⅴ湲?醫뗭븘??';
+            const buyButtonLabel = variants.buyButton === 'B' ? '?닿구濡??쒖옉?섍린' : '吏湲?援щℓ?섍린';
 
             return (
               <div
                 key={`${product.buy_url || product.name}-${idx}`}
                 style={{ minWidth: '260px', maxWidth: '300px', border: '1px solid #eee', borderRadius: '12px', padding: '14px', background: '#fff' }}
               >
-                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{isTop ? '🥇 BEST' : `${rank}위`}</div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{isTop ? '?쪍 BEST' : `${rank}??}</div>
                 {isTop && variants.banner === 'B' && (
                   <div style={{ fontSize: '0.76rem', color: '#555', marginBottom: '8px', background: '#f7f7f7', borderRadius: '999px', display: 'inline-block', padding: '4px 8px' }}>
-                    지금 조건 기준 추천 1순위
+                    吏湲?議곌굔 湲곗? 異붿쿇 1?쒖쐞
                   </div>
                 )}
                 <img src={product.image} alt={product.name} style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }} />
                 <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
-                <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
+                <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}?? : ''}</div>
 
                 <div style={{ minHeight: '132px' }}>
                   <CardText label="핵심 포인트" text={cardCopy?.coreReason} />
@@ -865,7 +902,7 @@ function App() {
 
         {widgetData.promotions.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>현재 행사도 함께 진행 중이에요</div>
+            <div style={{ fontWeight: 700, color: '#B31312', marginBottom: '8px', fontSize: '0.92rem' }}>?꾩옱 ?됱궗???④퍡 吏꾪뻾 以묒씠?먯슂</div>
             {widgetData.promotions.map((product, idx) => (
               <div key={`${product.buy_url || product.name}-${idx}`} style={{ fontSize: '0.84rem', marginBottom: '6px', color: '#444' }}>
                 <button
@@ -875,15 +912,14 @@ function App() {
                 >
                   {product.name}
                 </button>
-                {product.price ? ` · ${product.price}원` : ''}
+                {product.price ? ` 쨌 ${product.price}?? : ''}
               </div>
-            ))}
           </div>
         )}
 
         {widgetData.secondary_recommendations.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>참고용 추천 (다른 제형)</div>
+            <div style={{ fontWeight: 700, color: '#555', marginBottom: '8px', fontSize: '0.9rem' }}>李멸퀬??異붿쿇 (?ㅻⅨ ?쒗삎)</div>
             {widgetData.secondary_recommendations.map((product, idx) => (
               <div key={`${product.buy_url || product.name}-ref-${idx}`} style={{ fontSize: '0.84rem', marginBottom: '6px', color: '#444' }}>
                 <button
@@ -893,7 +929,7 @@ function App() {
                 >
                   {product.name}
                 </button>
-                {product.price ? ` · ${product.price}원` : ''}
+                {product.price ? ` 쨌 ${product.price}?? : ''}
               </div>
             ))}
           </div>
@@ -914,73 +950,27 @@ function App() {
 
         <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
           <div style={{ fontWeight: 700, color: '#333', marginBottom: '8px', fontSize: '0.92rem' }}>다음으로 이렇게 좁혀보세요</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {activeCtas.map((cta) => (
-              <button
-                key={cta.label}
-                type="button"
-                disabled={isFollowupLoading}
-                onPointerDown={() =>
-                  debugCtaLog('cta_pointer_down', {
-                    label: cta.label,
-                    query: cta.query,
-                    context: cta.context,
-                    disabled: isFollowupLoading,
-                  })
-                }
-                onClick={() => {
-                  debugCtaLog('cta_clicked', {
-                    label: cta.label,
-                    query: cta.query,
-                    context: cta.context,
-                    disabled: isFollowupLoading,
-                    is_followup_loading: isFollowupLoading,
-                  });
-                  runFollowupQuery(cta.query, cta.context);
-                }}
-                style={{
-                  border: '1px solid #ddd',
-                  background: isFollowupLoading ? '#f5f5f5' : '#fff',
-                  color: isFollowupLoading ? '#999' : '#444',
-                  fontSize: '0.82rem',
-                  borderRadius: '999px',
-                  padding: '6px 10px',
-                  cursor: isFollowupLoading ? 'not-allowed' : 'pointer',
-                }}
-                title={isFollowupLoading ? '추천을 다시 불러오는 중입니다.' : '클릭하면 바로 다시 추천해드립니다.'}
-              >
-                {cta.label}
-              </button>
-            ))}
-          </div>
-          {isFollowupLoading && <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '8px' }}>다시 찾는 중…</div>}
-          {followupHint && <div style={{ fontSize: '0.8rem', color: '#B31312', marginTop: '8px' }}>{followupHint}</div>}
-          {shouldShowRetry && lastFollowupRef.current.query && (
-            <button
-              type="button"
-              disabled={isFollowupLoading}
-              onClick={() => runFollowupQuery(lastFollowupRef.current.query, lastFollowupRef.current.context, { isRetry: true })}
-              style={{
-                marginTop: '8px',
-                border: '1px solid #d0d0d0',
-                background: isFollowupLoading ? '#f5f5f5' : '#fff',
-                color: isFollowupLoading ? '#999' : '#444',
-                fontSize: '0.82rem',
-                borderRadius: '8px',
-                padding: '6px 10px',
-                cursor: isFollowupLoading ? 'not-allowed' : 'pointer',
-              }}
+          {buildConversationalPrompts(widgetData).map((line, idx) => (
+            <div
+              key={`prompt-${idx}`}
+              style={{ fontSize: idx === 0 ? '0.86rem' : '0.84rem', color: idx === 0 ? '#444' : '#666', marginTop: idx === 0 ? 0 : '6px', lineHeight: 1.6 }}
             >
-              다시 시도
-            </button>
-          )}
+              {line}
+            </div>
+          ))}
         </div>
 
-        {widgetData.conclusion && (
-          <div style={{ marginTop: '16px', fontSize: '0.86rem', color: '#444', fontStyle: 'italic', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-            {widgetData.conclusion}
+        <div style={{ marginTop: '16px', fontSize: '0.86rem', color: '#444', borderTop: '1px solid #eee', paddingTop: '12px', lineHeight: 1.65 }}>
+          <div style={{ marginBottom: '4px' }}>
+            {buildGuideContextLine(widgetData)}
           </div>
-        )}
+          <div style={{ marginBottom: '4px' }}>
+            {decisionNudge}
+          </div>
+          <div>
+            순한 쪽으로 다시 볼지, 사용감 중심으로 다시 볼지 알려주시면 그 기준으로 다시 맞춰드릴게요.
+          </div>
+        </div>
       </div>
     );
   }
@@ -989,15 +979,15 @@ function App() {
     if (widgetData) {
       return (
         <div style={{ padding: '20px', color: '#555' }}>
-          <h4 style={{ color: '#B31312', marginBottom: '10px' }}>추천 결과</h4>
-          <div>{widgetData.summary?.message || '조건에 맞는 결과를 찾지 못했어요.'}</div>
+          <h4 style={{ color: '#B31312', marginBottom: '10px' }}>異붿쿇 寃곌낵</h4>
+          <div>{widgetData.summary?.message || '議곌굔??留욌뒗 寃곌낵瑜?李얠? 紐삵뻽?댁슂.'}</div>
         </div>
       );
     }
     return (
       <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
         <Sparkles size={24} style={{ marginBottom: '10px', opacity: 0.5 }} />
-        <div>맞춤 추천 정보를 불러오는 중입니다...</div>
+        <div>留욎땄 異붿쿇 ?뺣낫瑜?遺덈윭?ㅻ뒗 以묒엯?덈떎...</div>
       </div>
     );
   }
@@ -1019,12 +1009,12 @@ function App() {
               <div className="carousel-container">
                 {msg.products.map((product, idx) => (
                   <div key={`${product.buy_url || product.name}-${idx}`} className="product-card" onClick={() => openBuyLink(product.buy_url, idx + 1, product)}>
-                    <div className="rank-badge">{idx === 0 ? '🥇 BEST' : `${idx + 1}위`}</div>
+                    <div className="rank-badge">{idx === 0 ? '?쪍 BEST' : `${idx + 1}??}</div>
                     <img src={product.image} alt={product.name} className="product-img" />
                     <div className="product-name">{product.name}</div>
-                    <div className="product-price">{product.price ? `${product.price}원` : ''}</div>
+                    <div className="product-price">{product.price ? `${product.price}?? : ''}</div>
                     <button className="buy-button">
-                      지금 구매 <ChevronRight size={14} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                      吏湲?援щℓ <ChevronRight size={14} style={{ display: 'inline', verticalAlign: 'middle' }} />
                     </button>
                   </div>
                 ))}
@@ -1033,7 +1023,7 @@ function App() {
           </div>
         ))}
 
-        {isLoading && <div className="message-bubble message-bot">분석 중...</div>}
+        {isLoading && <div className="message-bubble message-bot">遺꾩꽍 以?..</div>}
         <div ref={messagesEndRef} />
       </main>
 
@@ -1041,7 +1031,7 @@ function App() {
         <input
           type="text"
           className="chat-input"
-          placeholder="원하시는 타입이나 고민을 알려주세요."
+          placeholder="?먰븯?쒕뒗 ??낆씠??怨좊????뚮젮二쇱꽭??"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}

@@ -1,69 +1,123 @@
 # Project Plan & Change History
 
 ## 문서 목적
-이 문서는 CellFusionC 추천 MCP의 실제 개발 변경 이력을 기준으로, 무엇이 왜 바뀌었고 운영 품질이 어떻게 개선됐는지 기록합니다.  
-초기 계획 문서가 아니라, 실무 운영 관점의 변경 추적 문서입니다.
+이 문서는 CellFusion C 추천 MCP의 실행 계획과 실제 변경 이력을 함께 관리하기 위한 운영 문서입니다.  
+초기 기획 문서라기보다, 실서비스에서 무엇을 언제 왜 바꿨는지 추적하는 데 목적이 있습니다.
 
 ---
 
 ## 프로젝트 목표
-- Cafe24 상품 데이터를 App in GPT 안에서 신뢰 가능한 추천 경험으로 제공
-- 카테고리 의도를 우선 보장하면서도, 사용자 표현 다양성에 대응
-- 추천 정책/응답 계약/로그 체계를 운영 가능한 수준으로 고도화
+
+- Cafe24 상품 데이터를 App in GPT 환경에서 안정적으로 추천
+- 카테고리/제형 정합성을 유지하면서 추천 다양성 개선
+- 위젯/본문/로깅/메트릭까지 일관된 운영 품질 확보
+- 제출 심사 기준(정책 위반 0, 위젯 안정성, 증빙 가능성) 충족
 
 ---
 
-## 변경 이력
+## 아키텍처 범위
+
+- Backend
+  - `routes/mcp.js`
+  - `services/recommendationService.js`
+  - `services/recommendation/*` (intent parser, ranker 등)
+  - `config/recommendationPolicy.js`
+- Frontend Widget
+  - `client/src/App.jsx`
+- 운영 문서
+  - `docs/RECOMMENDATION_MCP_SPEC.md`
+  - `docs/LOGGING.md`
+  - `docs/APP_SUBMISSION_TEST_LOG.md`
+
+---
+
+## 기존 변경 이력 (요약)
 
 ### 2026-04-01 ~ 2026-04-05
-Cafe24 API 연동, OAuth 토큰 관리, MCP 기본 통신 구조를 먼저 세팅했습니다.  
-이 단계의 목적은 정확도 이전에 E2E 동작 확인이었고, 결과적으로 `tools/call -> 추천 응답` 경로를 안정화했습니다.
+- Cafe24 연동, OAuth/토큰 처리, MCP 기본 통신 구조 정비
+- `tools/call -> 추천 응답` 기본 경로 안정화
 
 ### 2026-04-06 ~ 2026-04-08
-룰 기반 추천 정확도를 올리기 위해 태깅/점수 체계를 도입했습니다.  
-텍스트 포함 검색만 하던 구조에서 `속성 기반 스코어링`으로 이동했고, 기본 추천 품질과 설명 가능성이 올라갔습니다.
+- 룰 기반 점수 체계 고도화
+- 텍스트 includes 중심에서 속성/점수 결합 구조로 확장
 
 ### 2026-04-09 ~ 2026-04-10
-App in GPT 위젯 채택 불안정을 해결했습니다.  
-`resources/read`, `outputTemplate`, `resourceUri`, MIME 계약을 정리하고 `/mcp`, `/mcp/sse`, `/mcp/message` 호환 경로를 보강했습니다.
+- App in GPT 위젯 계약 정비
+- `/mcp`, `/mcp/sse`, `/mcp/message` 및 리소스 응답 안정화
 
 ### 2026-04-11 ~ 2026-04-13
-운영 안정화 중심으로 race condition, 빈 결과 처리, 로그 노이즈를 정리했습니다.  
-첫 요청에서 캐시가 비어도 on-demand sync로 복구하고, 빈 결과에서도 위젯이 무한 로딩 없이 정상 종료되도록 수정했습니다.
+- 캐시 초기화/동기화 race condition 보완
+- 빈 결과/초기 요청 처리 안정화
 
 ### 2026-04-14 ~ 2026-04-17
-추천 정책을 `Category Lock + Form Lock + Promo 분리` 기준으로 고정했습니다.  
-메인 카드에 프로모션/미니가 섞이는 문제를 줄이고, `main / secondary / promotions` 역할 분리를 일관되게 적용했습니다.
+- Category/Form/Promo 정책 강제 분리
+- `main_recommendations`, `secondary_recommendations`, `promotions` 역할 고정
 
 ### 2026-04-17 ~ 2026-04-20
-룰 과의존 문제를 완화하기 위해 하이브리드 구조를 강화했습니다.
-- LLM intent normalization
-- session context(안 맞음/자극 등) 반영
-- 임베딩 기반 semantic 점수 보강
-- 최종 정책 게이트(카테고리/폼/프로모션) 유지
-
-결과적으로 “정책은 강하게, 해석은 유연하게”라는 현재 구조를 확립했습니다.
+- intent normalization + reactive/session 신호 반영
+- semantic 보강 경로 도입, 정책 게이트와 설명 정합성 강화
 
 ---
 
-## 현재 상태 요약
-- 추천 엔진: 룰 단독이 아닌 하이브리드 구조로 운영
-- 정책 안정성: category/form/promo 위반을 지표로 추적
-- 위젯 계약: App in GPT용 `structuredContent` 중심으로 안정화
-- 운영 관측성: 메트릭 + 랭킹 디버그 로그 기반 분석 가능
+## 최근 업데이트 (기존 이력 뒤 추가)
+
+### 2026-04-21 ~ 2026-04-24
+
+#### 1) Phase 1 안정화 완료
+- 설명-로직 불일치 제거(`reason_code` 기준 설명)
+- policy 위반 계측 고정
+  - `category_lock_violation_count`
+  - `form_lock_violation_count`
+  - `explanation_mismatch_count`
+- fallback/metrics 진단 경로 정비
+
+#### 2) Phase 2 진행 (semantic 활성화 보강)
+- `empty_query` 진단 개선
+- composed query 기반 semantic 경로 활성화
+- cold-start와 조건 입력 케이스를 분리해 품질 점검
+
+#### 3) 위젯 UX 레이어 개선 (엔진 불변)
+- 카드/선택가이드/CTA 역할 분리
+- 슬롯 기반 카드 카피(핵심 포인트/보조 설명/사용 팁) 정리
+- follow-up 실패 UX 개선
+  - abort vs 일반 실패 분리
+  - 실패 시 기존 추천 유지 + 짧은 힌트 + 재시도 버튼
+
+#### 4) CTA follow-up 원인 확정 계측 추가
+- `App.jsx` 인터랙션 레이어 디버그 이벤트 체인 확장
+  - `cta_pointer_down`, `cta_clicked`, `followup_enter`, `followup_fetch_start` 등
+- URL/origin 분리 진단값 로그 포함
+  - `window.__API_BASE_URL__`
+  - resolved request URL
+- 디버그 배지/콘솔 병행 계측으로 임베드 환경 추적성 보강
+
+#### 5) 제출 준비 문서 정리
+- `APP_SUBMISSION_TEST_LOG.md`를 12케이스 x 2회 실행 템플릿으로 표준화
+- 증빙 스크린샷/로그 링크 규칙 정리
+
+---
+
+## 현재 상태 (2026-04-24 기준)
+
+- 추천 엔진: 운영 가능(정책 게이트/설명 정합성 확보)
+- 위젯 UX: 기능 안정화 + follow-up 디버그 계측 강화 중
+- 심사 준비: 테스트 로그 템플릿/증빙 체계 정비 완료
 
 ---
 
 ## 다음 실행 계획
-1. 앱 제출용 테스트 2회전 실행 및 증빙 정리
-2. 오프라인 평가셋(50~100개 질의) 구축
-3. 반복 추천률/클릭률 기반 weight 튜닝 자동화
-4. semantic retrieval latency 최적화(배치/캐시 전략 고도화)
+
+1. 12개 코어 케이스 2회씩 실행 및 표 채우기
+2. `/debug/recommendation-metrics` 최종 스냅샷 확정
+3. CTA follow-up 체인 실제 동작 원인 확정 후 최소 패치 반영
+4. 제출 패키지(스크린샷/로그/요약) 최종 묶음
 
 ---
 
-## 운영 판단 기준
+## 운영 기준
+
 - `category_lock_violation_count == 0`
 - `form_lock_violation_count == 0`
-- `fallback_rate` 및 `no_result_rate` 관리 가능 범위 유지
-- 위젯 렌더 실패율 최소화
+- `explanation_mismatch_count == 0`
+- 위젯 렌더 안정성 유지(빈 카드/무한 로딩 없음)
+- 본문/카드 추천 불일치 0건

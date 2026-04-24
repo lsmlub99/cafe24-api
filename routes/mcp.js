@@ -205,6 +205,30 @@ function buildCompactConsultText(args = {}, mainRecommendations = []) {
   return lines.join('\n');
 }
 
+function buildCanonicalConsultText(mainRecommendations = []) {
+  if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
+    return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
+  }
+
+  const ranked = mainRecommendations.slice(0, 3);
+  const lines = ['카드에 나온 추천을 같은 순서로 간단히 설명드릴게요.', ''];
+
+  ranked.forEach((item, idx) => {
+    const rank = idx + 1;
+    const name = String(item?.name || '').trim();
+    const why = String(item?.why_pick || item?.key_point || '').trim();
+    const tip = String(item?.usage_tip || '').trim();
+
+    lines.push(`${rank}순위: ${name}`);
+    if (why) lines.push(`- 추천 이유: ${why}`);
+    if (tip) lines.push(`- 사용 팁: ${tip}`);
+    if (idx < ranked.length - 1) lines.push('');
+  });
+
+  lines.push('', '피부 타입이나 원하는 사용감을 알려주시면 1개로 좁혀드릴게요.');
+  return lines.join('\n');
+}
+
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -308,7 +332,7 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = buildCompactConsultText(args, canonicalMain);
+  const consultText = buildCanonicalConsultText(canonicalMain);
 
   return {
     content: [{ type: 'text', text: consultText }],

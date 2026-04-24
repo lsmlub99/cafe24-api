@@ -42,6 +42,17 @@ function detectExplicitSunForm(text = '') {
   return null;
 }
 
+function detectExplicitCategoryOverride(text = '') {
+  const src = lower(text);
+  if (!src) return null;
+
+  // Explicit BB cream intent must win over generic "cream" match.
+  const bbCategoryTokens = ['비비크림', '비비 크림', 'bb크림', 'bb 크림', 'bbcream', 'bb cream'];
+  if (bbCategoryTokens.some((token) => src.includes(lower(token)))) return 'bb';
+
+  return null;
+}
+
 function parsePriceIntent(text = '') {
   const src = String(text || '');
   let matched = null;
@@ -112,7 +123,8 @@ export function parseUserIntent(args = {}, taxonomy) {
   const formText = `${args.form || ''} ${args.category || ''} ${q}`.trim();
   const fullSignalText = `${q} ${concernsText} ${args.category || ''}`.trim();
 
-  const requestedCategory = findFirstAliasKey(categoryText, taxonomy.categories);
+  const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
+  const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);
   const explicitSunForm = detectExplicitSunForm(fullSignalText);
   const requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
   const skinTypeFromField = findFirstAliasKey(args.skin_type || '', taxonomy.skinTypes);

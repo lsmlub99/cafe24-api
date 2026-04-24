@@ -13,10 +13,20 @@ export function includesAny(text, words = []) {
 
 export function findFirstAliasKey(text, aliasMap) {
   const source = lower(text);
+  let bestKey = null;
+  let bestAliasLength = -1;
   for (const [key, aliases] of Object.entries(aliasMap || {})) {
-    if ((aliases || []).some((a) => source.includes(lower(a)))) return key;
+    for (const alias of aliases || []) {
+      const normalizedAlias = lower(alias);
+      if (!normalizedAlias) continue;
+      if (!source.includes(normalizedAlias)) continue;
+      if (normalizedAlias.length > bestAliasLength) {
+        bestAliasLength = normalizedAlias.length;
+        bestKey = key;
+      }
+    }
   }
-  return null;
+  return bestKey;
 }
 
 export function findAllAliasKeys(text, aliasMap) {
@@ -123,4 +133,3 @@ export function isPromoName(name = '') {
   if (PROMO_PATTERN.test(t)) return true;
   return PROMO_TOKENS.some((token) => lowered.includes(lower(token)));
 }
-

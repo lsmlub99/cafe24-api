@@ -96,6 +96,18 @@ function normalizeText(text = '') {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
+function stripPurchaseLinks(text = '') {
+  const src = String(text || '');
+  if (!src) return '';
+  return src
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !/^구매\s*:/i.test(line) && !/^https?:\/\//i.test(line))
+    .join('\n')
+    .replace(/https?:\/\/\S+/gi, '')
+    .trim();
+}
+
 function getApiBaseUrl() {
   const injected = String(window.__API_BASE_URL__ || '').trim();
   if (injected) return injected.replace(/\/+$/, '');
@@ -792,7 +804,7 @@ function App() {
         {
           id: Date.now() + 1,
           type: 'bot',
-          text: data.summary?.message || '고객님을 위한 추천 결과입니다.',
+          text: stripPurchaseLinks(data.summary?.message || '고객님을 위한 추천 결과입니다.'),
           products: data.recommendations || [],
         },
       ]);
@@ -943,7 +955,7 @@ function App() {
                 {line}
               </div>
             ))}
-            <div style={{ fontSize: '0.85rem', color: '#444', marginTop: '10px', lineHeight: 1.5 }}>
+            <div style={{ fontSize: '0.85rem', color: '#444', marginTop: '6px', lineHeight: 1.5 }}>
               피부 타입이나 원하는 사용감을 알려주시면 1개로 좁혀드릴게요.
             </div>
           </div>

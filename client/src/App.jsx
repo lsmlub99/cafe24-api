@@ -806,7 +806,6 @@ function App() {
   const isWidgetMode = Boolean(window.__WIDGET_MODE__ || window.__MCP_WIDGET__ || widgetData);
   const cardCopies = widgetData?.recommendations?.length ? buildCardCopies(widgetData.recommendations) : [];
   const selectionGuideLines = widgetData?.recommendations?.length ? buildSelectionGuide(widgetData.recommendations) : [];
-  const decisionNudge = widgetData?.recommendations?.length ? buildDecisionNudge(widgetData.recommendations) : '';
   useEffect(() => {
     if (!ctaDebugEnabled) {
       prevFollowupLoadingRef.current = isFollowupLoading;
@@ -944,34 +943,11 @@ function App() {
                 {line}
               </div>
             ))}
-            <div style={{ fontSize: '0.85rem', color: '#555', marginTop: '8px', lineHeight: 1.5 }}>{buildGuideContextLine(widgetData)}</div>
-            {decisionNudge && <div style={{ fontSize: '0.85rem', color: '#444', marginTop: '8px', fontWeight: 600 }}>{decisionNudge}</div>}
+            <div style={{ fontSize: '0.85rem', color: '#444', marginTop: '10px', lineHeight: 1.5 }}>
+              피부 타입이나 원하는 사용감을 알려주시면 1개로 좁혀드릴게요.
+            </div>
           </div>
         )}
-
-        <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-          <div style={{ fontWeight: 700, color: '#333', marginBottom: '8px', fontSize: '0.92rem' }}>다음으로 이렇게 좁혀보세요</div>
-          {buildConversationalPrompts(widgetData).map((line, idx) => (
-            <div
-              key={`prompt-${idx}`}
-              style={{ fontSize: idx === 0 ? '0.86rem' : '0.84rem', color: idx === 0 ? '#444' : '#666', marginTop: idx === 0 ? 0 : '6px', lineHeight: 1.6 }}
-            >
-              {line}
-            </div>
-          ))}
-        </div>
-
-        <div style={{ marginTop: '16px', fontSize: '0.86rem', color: '#444', borderTop: '1px solid #eee', paddingTop: '12px', lineHeight: 1.65 }}>
-          <div style={{ marginBottom: '4px' }}>
-            {buildGuideContextLine(widgetData)}
-          </div>
-          <div style={{ marginBottom: '4px' }}>
-            {decisionNudge}
-          </div>
-          <div>
-            순한 쪽으로 다시 볼지, 사용감 중심으로 다시 볼지 알려주시면 그 기준으로 다시 맞춰드릴게요.
-          </div>
-        </div>
       </div>
     );
   }

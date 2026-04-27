@@ -46,9 +46,11 @@ export function extractProductAttributes(raw = {}, name = '') {
       raw.simple_description || '',
       raw.search_preview || '',
       raw.search_features || '',
+      (raw.attributes?.category_tags || []).join(' '),
       (raw.attributes?.concern_tags || []).join(' '),
       (raw.attributes?.texture_tags || []).join(' '),
       (raw.attributes?.line_tags || []).join(' '),
+      (raw.attributes?.role_tags || []).join(' '),
     ].join(' ')
   );
 
@@ -123,6 +125,8 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
   const concernTags = Array.isArray(raw.attributes?.concern_tags) ? raw.attributes.concern_tags : [];
   const lineTags = Array.isArray(raw.attributes?.line_tags) ? raw.attributes.line_tags : [];
   const textureTags = Array.isArray(raw.attributes?.texture_tags) ? raw.attributes.texture_tags : [];
+  const categoryTags = Array.isArray(raw.attributes?.category_tags) ? raw.attributes.category_tags : [];
+  const roleTags = Array.isArray(raw.attributes?.role_tags) ? raw.attributes.role_tags : [];
   const derivedAttrs = extractProductAttributes(raw, name);
 
   const normalized = {
@@ -134,7 +138,7 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
     summary_description: raw.summary_description || raw.simple_description || '',
     text,
     search_preview: raw.search_preview || '',
-    attributes: { concern_tags: concernTags, line_tags: lineTags, texture_tags: textureTags },
+    attributes: { category_tags: categoryTags, concern_tags: concernTags, line_tags: lineTags, texture_tags: textureTags, role_tags: roleTags },
     derived_attributes: derivedAttrs,
     line_key: derivedAttrs.line_key || '',
     is_promo: isPromoName(name),

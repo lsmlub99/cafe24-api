@@ -369,6 +369,7 @@ async function syncAllProductsCore(accessToken) {
           line_tags: tags.line_tags || [],
           concern_tags: tags.concern_tags || [],
           texture_tags: tags.texture_tags || [],
+          role_tags: tags.role_tags || [],
         },
       };
     });
@@ -408,7 +409,7 @@ function getDynamicCategoryNos(keywords = []) {
       lowerKeys.some(
         (k) =>
           mapName.toLowerCase().includes(k) ||
-          k.includes(mapName.toLowerCase()) ||
+          (k.includes(mapName.toLowerCase()) && !(k.includes('비비') && !mapName.toLowerCase().includes('비비'))) ||
           (k === '선크림' && mapName === '선케어')
       )
     ) {

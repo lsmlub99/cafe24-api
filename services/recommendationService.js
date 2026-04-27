@@ -535,6 +535,29 @@ function isBbLikeCandidate(item = {}, parsedIntent = {}) {
   return true;
 }
 
+function isBbLikeCandidateStrict(item = {}, parsedIntent = {}) {
+  const requestedIds = (parsedIntent.requested_category_ids || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  const categoryIds = Array.isArray(item.category_ids) ? item.category_ids.map((n) => Number(n)).filter((n) => Number.isFinite(n)) : [];
+  if (requestedIds.length > 0 && categoryIds.some((id) => requestedIds.includes(id))) return true;
+  if (item?.category_key === 'bb') return true;
+
+  const roleTags = Array.isArray(item?.attributes?.role_tags) ? item.attributes.role_tags.map((x) => String(x || '').toLowerCase()) : [];
+  const hasRoleTags = roleTags.length > 0;
+
+  const hasRoleBbSignal =
+    roleTags.includes('bb') ||
+    roleTags.includes('base_makeup') ||
+    roleTags.includes('cover') ||
+    (roleTags.includes('tone_up') && (roleTags.includes('bb') || roleTags.includes('base_makeup') || roleTags.includes('cover')));
+  if (hasRoleTags) return hasRoleBbSignal;
+
+  const name = String(item?.name || '').toLowerCase();
+  const fallbackNameSignal = /(\ube44\ube44|bb|blemish\s*balm|블레미쉬\s*밤)/i.test(name);
+  return fallbackNameSignal;
+}
+
 function enforceBbMainMix(selected = [], deduped = [], parsedIntent = {}, sameScoreBand = 3) {
   const _sameScoreBand = sameScoreBand;
   if (parsedIntent.requested_category !== 'bb') {
@@ -549,7 +572,9 @@ function enforceBbMainMix(selected = [], deduped = [], parsedIntent = {}, sameSc
 
   const scoreOf = (item) => Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
   const finalLimit = Math.max(1, selected.length);
-  const bbLikePool = (deduped || []).filter((item) => isBbLikeCandidate(item, parsedIntent)).sort((a, b) => scoreOf(b) - scoreOf(a));
+  const bbLikePool = (deduped || [])
+    .filter((item) => isBbLikeCandidateStrict(item, parsedIntent))
+    .sort((a, b) => scoreOf(b) - scoreOf(a));
   const selectedBbOnly = bbLikePool.slice(0, finalLimit);
   const selectedIds = new Set(selectedBbOnly.map((item) => String(item?.id || '')));
   const nonBbDropped = (selected || []).filter((item) => !selectedIds.has(String(item?.id || ''))).length;
@@ -908,7 +933,7 @@ export const recommendationService = {
         name: item?.name || '',
         category_key: item?.category_key || null,
         form: item?.form || null,
-        bb_like: isBbLikeCandidate(item, parsed),
+        bb_like: isBbLikeCandidateStrict(item, parsed),
       }));
       logger.info(
         `[BB Policy] requested_category=bb bb_like_candidate_count=${policyGate.bb_policy?.bb_like_candidate_count || 0} main_bb_like_count=${policyGate.bb_policy?.main_bb_like_count || 0} non_bb_dropped_from_main=${policyGate.bb_policy?.non_bb_dropped_from_main || 0} main_items=${JSON.stringify(
@@ -1061,7 +1086,7 @@ export const recommendationService = {
       RECOMMENDATION_POLICY.limits.defaultSecondary
     );
     if (parsed.requested_category === 'bb') {
-      const secondaryBbLikeCount = (secondary || []).filter((item) => isBbLikeCandidate(item, parsed)).length;
+      const secondaryBbLikeCount = (secondary || []).filter((item) => isBbLikeCandidateStrict(item, parsed)).length;
       logger.info(`[BB Policy] secondary_bb_like_count=${secondaryBbLikeCount}`);
     }
 

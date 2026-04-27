@@ -492,34 +492,48 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
 
   const skin = String(args.skin_type || '').trim();
   const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
-  const query = String(args.query || args.q || '').trim();
-
-  const contextParts = [];
-  if (skin) contextParts.push(`${skin}\uAE30\uC900`);
-  if (concerns.length) contextParts.push(`\uACE0\uBBFC:${concerns.join(', ')}`);
-  if (query) contextParts.push(`\uC694\uCCAD:${query}`);
-
   const lines = [];
-  if (contextParts.length) {
-    lines.push(`\uC694\uCCAD \uAE30\uC900(${contextParts.join(' / ')})\uC73C\uB85C \uCE74\uB4DC \uCD94\uCC9C\uC744 \uC9E7\uAC8C \uC815\uB9AC\uD574\uB4DC\uB9B4\uAC8C\uC694.`);
-  } else {
-    lines.push('\uD53C\uBD80 \uC815\uBCF4\uAC00 \uC5C6\uC5B4\uC11C \uCE74\uB4DC \uCD94\uCC9C\uC744 \uC778\uAE30/\uC0AC\uC6A9\uC131 \uAE30\uC900\uC73C\uB85C \uBA3C\uC800 \uC815\uB9AC\uD588\uC5B4\uC694.');
-  }
+  const empathyPrefix = skin
+    ? `${skin}\uC774\uBA74 \uC0AC\uC6A9\uAC10 \uCC28\uC774\uAC00 \uD06C\uAC8C \uB290\uAEF4\uC9C8 \uC218 \uC788\uC5B4\uC11C, \uB9DE\uB294 \uC81C\uD615\uC73C\uB85C \uACE0\uB974\uB294 \uAC8C \uC911\uC694\uD574\uC694.`
+    : '\uD53C\uBD80 \uD0C0\uC785 \uC815\uBCF4\uAC00 \uC5C6\uC5B4\uC11C \uBA3C\uC800 \uBB34\uB09C\uD558\uAC8C \uC2DC\uC791\uD560 \uC218 \uC788\uB294 \uD750\uB984\uC73C\uB85C \uC815\uB9AC\uD574\uB4DC\uB9B4\uAC8C\uC694.';
+  lines.push(empathyPrefix);
 
-  const rankNames = ranked.map((item, idx) => `${idx + 1}\uC21C\uC704 ${String(item?.name || '').trim()}`);
-  if (rankNames.length) {
-    lines.push(rankNames.join(' / '));
-  }
-
-  if (ranked.length >= 2) {
-    const topWhy = String(ranked[0]?.why_pick || ranked[0]?.key_point || '\uBB34\uB09C\uD558\uAC8C \uC2DC\uC791\uD558\uAE30 \uC88B\uC740 \uC120\uD0DD').trim();
-    lines.push(`1\uC21C\uC704\uB294 ${topWhy}\uC5D0 \uAC00\uAE5D\uACE0, 2\uC21C\uC704\uB294 \uBE44\uAD50\uD558\uAE30 \uC88B\uC740 \uB300\uC548 \uD750\uB984\uC73C\uB85C \uBCF4\uC2DC\uBA74 \uB3FC\uC694.`);
-  } else {
-    lines.push('\uC9C0\uAE08 \uD6C4\uBCF4 \uC218\uAC00 \uC801\uC5B4\uC11C 1\uC21C\uC704 \uAE30\uC900\uC73C\uB85C \uBA3C\uC800 \uBCF4\uC2DC\uB294 \uAC8C \uC88B\uC544\uC694.');
-  }
-
+  const topWhy = String(topItem?.why_pick || topItem?.key_point || '\uBB34\uB09C\uD558\uAC8C \uC2DC\uC791\uD558\uAE30 \uC88B\uC740 \uC120\uD0DD').trim();
+  lines.push(`\uADF8 \uAE30\uC900\uC5D0\uC11C\uB294 ${conclusionDisplayName || String(topItem?.name || '').trim()}\uC774 \uAC00\uC7A5 \uBA3C\uC800 \uBCF4\uAE30 \uC88B\uC740 \uC120\uD0DD\uC774\uC5D0\uC694.`);
   lines.push('');
-  lines.push(`\uC9C0\uAE08 \uAE30\uC900\uC774\uBA74 ${conclusionDisplayName || String(topItem?.name || '').trim()}\uBD80\uD130 \uBCF4\uB294 \uAC8C \uC88B\uC544\uC694.`);
+
+  ranked.forEach((item, idx) => {
+    const rank = idx + 1;
+    const name = String(item?.name || '').trim();
+    const why = String(item?.why_pick || item?.key_point || '\uC694\uCCAD \uC870\uAC74\uACFC \uC5B4\uC6B8\uB9AC\uB294 \uC0AC\uC6A9\uAC10\uC73C\uB85C \uBCF4\uC2DC\uBA74 \uC88B\uC544\uC694.').trim();
+    const tip = String(item?.usage_tip || '').trim();
+
+    let compareLine = '\uB370\uC77C\uB9AC \uAE30\uC900\uC73C\uB85C \uBB34\uB09C\uD558\uAC8C \uBCF4\uAE30 \uC88B\uC740 \uC21C\uC11C\uC608\uC694.';
+    if (rank === 2) compareLine = '\u3141\uC21C\uC704\uAC00 \uC870\uAE08 \uBB34\uAC81\uAC8C \uB290\uAEF4\uC9C8 \uB54C \uBE44\uAD50\uD558\uAE30 \uC88B\uC740 \uB300\uC548\uC774\uC5D0\uC694.';
+    if (rank === 3) compareLine = '\uC0AC\uC6A9 \uC0C1\uD669\uC774\uB098 \uCDE8\uD5A5\uC5D0 \uB9DE\uCDB0 \uD3ED\uB113\uAC8C \uBE44\uAD50\uD574\uBCFC \uC218 \uC788\uB294 \uC120\uD0DD\uC9C0\uC608\uC694.';
+
+    lines.push(`${rank}\uC21C\uC704 ${name}`);
+    lines.push(`- \uC65C \uCD94\uCC9C\uD558\uB0D0\uBA74: ${why}`);
+    lines.push(`- \uC5B8\uC81C \uC798 \uB9DE\uB0D0\uBA74: ${compareLine}`);
+    if (tip) lines.push(`- \uC4F0\uB294 \uD301: ${tip}`);
+    if (idx < ranked.length - 1) lines.push('');
+  });
+
+  const defaultTip =
+    '\uAE30\uCD08 \uB9C8\uC9C0\uB9C9 \uB2E8\uACC4\uC5D0\uC11C \uD55C \uBC88\uC5D0 \uB9CE\uC774 \uBC14\uB974\uAE30\uBCF4\uB2E4 \uC587\uAC8C \uB098\uB220 \uBC14\uB974\uBA74 \uBC00\uB9BC \uBD80\uB2F4\uC744 \uC904\uC774\uAE30 \uC88B\uC544\uC694.';
+  lines.push('');
+  lines.push(`\uB9C8\uBB34\uB9AC \uD301: ${defaultTip}`);
+
+  if (concerns.length > 0) {
+    lines.push(
+      '\uD53C\uBD80\uAC00 \uAC74\uC870\uD55C \uD3B8\uC778\uC9C0, \uBC88\uB4E4\uAC70\uB9BC\uC774 \uB354 \uACE0\uBBFC\uC778\uC9C0 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uC774 \uC911\uC5D0\uC11C 1\uAC1C\uB85C \uB354 \uC815\uD655\uD558\uAC8C \uC881\uD600\uB4DC\uB9B4\uAC8C\uC694.'
+    );
+  } else {
+    lines.push(
+      '\uAC00\uBCBD\uAC8C \uBC14\uB974\uB294 \uCABD\uC774 \uC88B\uC740\uC9C0, \uCD09\uCD09\uD55C \uB9C8\uBB34\uB9AC\uAC00 \uC88B\uC740\uC9C0 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uC774 \uC911\uC5D0\uC11C 1\uAC1C\uB85C \uC881\uD600\uB4DC\uB9B4\uAC8C\uC694.'
+    );
+  }
+
   return lines.join('\n');
 }
 

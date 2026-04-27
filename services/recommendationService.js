@@ -495,6 +495,97 @@ function isCategoryMatchedByIntent(item = {}, parsedIntent = {}) {
   return item.category_key === parsedIntent.requested_category;
 }
 
+function isExplicitBbRequest(parsedIntent = {}, args = {}) {
+  if (parsedIntent?.requested_category === 'bb') return true;
+  const merged = `${args.category || ''} ${args.query || ''} ${args.q || ''}`.toLowerCase();
+  return /(비비\s*크림|bb\s*cream|bb\s*크림|bbcream|비비크림)/i.test(merged);
+}
+
+function isBbLikeCandidate(item = {}, parsedIntent = {}) {
+  const requestedIds = (parsedIntent.requested_category_ids || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  if (requestedIds.length > 0) {
+    const ids = Array.isArray(item.category_ids) ? item.category_ids.map((n) => Number(n)) : [];
+    if (ids.some((id) => requestedIds.includes(id))) return true;
+  }
+
+  if (item?.category_key === 'bb') return true;
+
+  const source = `${item?.name || ''} ${item?.text || ''}`.toLowerCase();
+  return /(비비|bb|blemish|블레미쉬|밤 인텐시브|선베이스|sun base|쿠션|cushion)/i.test(source);
+}
+
+function enforceBbMainMix(selected = [], deduped = [], parsedIntent = {}, sameScoreBand = 3) {
+  const finalLimit = selected.length;
+  if (parsedIntent.requested_category !== 'bb' || finalLimit < 3) return selected;
+
+  const next = [...selected];
+  const nextIds = new Set(next.map((item) => String(item?.id || '')));
+  const scoreOf = (item) => Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
+  const requiredBbMin = Math.min(2, finalLimit, deduped.filter((item) => isBbLikeCandidate(item, parsedIntent)).length);
+  const countSelectedBb = () => next.filter((item) => isBbLikeCandidate(item, parsedIntent)).length;
+
+  while (countSelectedBb() < requiredBbMin) {
+    const candidateIn = deduped
+      .filter((item) => isBbLikeCandidate(item, parsedIntent) && !nextIds.has(String(item?.id || '')))
+      .sort((a, b) => scoreOf(b) - scoreOf(a))[0];
+    if (!candidateIn) break;
+
+    const candidateOut = next
+      .filter((item) => !isBbLikeCandidate(item, parsedIntent))
+      .sort((a, b) => scoreOf(a) - scoreOf(b))[0];
+    if (!candidateOut) break;
+
+    const outIdx = next.findIndex((x) => String(x?.id || '') === String(candidateOut?.id || ''));
+    if (outIdx < 0) break;
+
+    next[outIdx] = candidateIn;
+    nextIds.delete(String(candidateOut?.id || ''));
+    nextIds.add(String(candidateIn?.id || ''));
+  }
+
+  // If non-BB is selected but BB-like candidate exists in close score band, prefer BB-like.
+  const selectedNonBb = next
+    .filter((item) => !isBbLikeCandidate(item, parsedIntent))
+    .sort((a, b) => scoreOf(a) - scoreOf(b));
+  if (selectedNonBb.length > 0) {
+    const candidateOut = selectedNonBb[0];
+    const candidateIn = deduped
+      .filter((item) => isBbLikeCandidate(item, parsedIntent) && !nextIds.has(String(item?.id || '')))
+      .sort((a, b) => scoreOf(b) - scoreOf(a))[0];
+    if (candidateIn && scoreOf(candidateIn) >= scoreOf(candidateOut) - sameScoreBand) {
+      const outIdx = next.findIndex((x) => String(x?.id || '') === String(candidateOut?.id || ''));
+      if (outIdx >= 0) {
+        next[outIdx] = candidateIn;
+        nextIds.delete(String(candidateOut?.id || ''));
+        nextIds.add(String(candidateIn?.id || ''));
+      }
+    }
+  }
+
+  // If we already have enough BB-like candidates, keep main fully BB-first.
+  // Allow 1 alternative only when BB-like pool itself is insufficient.
+  const bbPoolCount = deduped.filter((item) => isBbLikeCandidate(item, parsedIntent)).length;
+  const canUseAlternative = bbPoolCount < finalLimit;
+  const hasAlternative = next.some((item) => !isBbLikeCandidate(item, parsedIntent));
+  if (canUseAlternative && !hasAlternative) {
+    const candidateNonBb = deduped
+      .filter((item) => !isBbLikeCandidate(item, parsedIntent) && !nextIds.has(String(item?.id || '')))
+      .sort((a, b) => scoreOf(b) - scoreOf(a))[0];
+    const candidateOut = next
+      .filter((item) => isBbLikeCandidate(item, parsedIntent))
+      .sort((a, b) => scoreOf(a) - scoreOf(b))[0];
+
+    if (candidateNonBb && candidateOut && scoreOf(candidateNonBb) >= scoreOf(candidateOut) - sameScoreBand) {
+      const outIdx = next.findIndex((x) => String(x?.id || '') === String(candidateOut?.id || ''));
+      if (outIdx >= 0) next[outIdx] = candidateNonBb;
+    }
+  }
+
+  return next.sort((a, b) => scoreOf(b) - scoreOf(a));
+}
+
 function enforceMainPolicyOnRanked(
   ranked = [],
   parsedIntent = {},
@@ -588,9 +679,10 @@ function enforceMainPolicyOnRanked(
   }
 
   selected.sort((a, b) => scoreOf(b) - scoreOf(a));
+  const bbMixedSelected = enforceBbMainMix(selected, deduped, parsedIntent, sameScoreBand);
 
   return {
-    selected,
+    selected: bbMixedSelected,
     drop_stats: drop,
     pre_policy_count: (ranked || []).length,
     pass_count: passed.length,
@@ -741,7 +833,13 @@ export const recommendationService = {
       ruleParsed,
       config.INTENT_NORMALIZER_MODEL || config.RERANK_MODEL || RECOMMENDATION_POLICY.rerank.model
     );
-    const parsed = applySessionContextToIntent(normalizedIntentResult.intent, sessionContext);
+    let parsed = applySessionContextToIntent(normalizedIntentResult.intent, sessionContext);
+    if (isExplicitBbRequest(parsed, args) && parsed.requested_category !== 'bb') {
+      parsed = {
+        ...parsed,
+        requested_category: 'bb',
+      };
+    }
     logger.info(
       `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'}`
     );

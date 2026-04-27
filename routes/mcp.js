@@ -170,6 +170,16 @@ function normalizeCategory(category) {
   const rawCat = String(category || '').toLowerCase().trim();
   if (!rawCat) return { rawCat: '', standardCat: '' };
   const compact = rawCat.replace(/[\s_-]+/g, '');
+  const isBbExplicit =
+    /(비비\s*크림|bb\s*cream|bb\s*크림|bbcream|비비크림)/i.test(rawCat) ||
+    /(비비크림|bbcream)/i.test(compact);
+
+  if (isBbExplicit) {
+    return {
+      rawCat,
+      standardCat: '비비크림',
+    };
+  }
   return {
     rawCat,
     standardCat: CATEGORY_SYNONYM_MAP[rawCat] || CATEGORY_SYNONYM_MAP[compact] || rawCat,
@@ -229,6 +239,32 @@ function buildCanonicalConsultText(mainRecommendations = []) {
   return lines.join('\n');
 }
 
+function buildCanonicalConsultTextV2(mainRecommendations = []) {
+  if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
+    return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
+  }
+
+  const ranked = mainRecommendations.slice(0, 3);
+  const lines = ['카드와 같은 추천을 순서대로 간단히 설명드릴게요.', ''];
+
+  ranked.forEach((item, idx) => {
+    const rank = idx + 1;
+    const name = String(item?.name || '').trim();
+    const why = String(item?.why_pick || item?.key_point || '').trim();
+    const tip = String(item?.usage_tip || '').trim();
+
+    lines.push(`${rank}순위: ${name}`);
+    if (why) lines.push(`- 추천 이유: ${why}`);
+    if (tip) lines.push(`- 사용 팁: ${tip}`);
+    if (idx < ranked.length - 1) lines.push('');
+  });
+
+  lines.push('');
+  lines.push('고르는 기준이 애매하면 1순위부터 비교해보는 게 가장 안전해요.');
+  lines.push('원하시면 피부 타입이나 원하는 사용감을 알려주시면 1개로 좁혀드릴게요.');
+  return lines.join('\n');
+}
+
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -238,7 +274,10 @@ async function executeTool(args = {}) {
   }
 
   const { rawCat, standardCat } = normalizeCategory(args.category);
-  const lookupKeywords = FORCED_LOOKUP[standardCat] || [standardCat].filter(Boolean);
+  const lookupKeywords =
+    standardCat === '비비크림'
+      ? ['비비크림']
+      : FORCED_LOOKUP[standardCat] || [standardCat].filter(Boolean);
   const categoryNos = cafe24ApiService.getDynamicCategoryNos(lookupKeywords) || [];
 
   let rawProducts = [];
@@ -332,7 +371,7 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = buildCanonicalConsultText(canonicalMain);
+  const consultText = buildCanonicalConsultTextV2(canonicalMain);
 
   return {
     content: [{ type: 'text', text: consultText }],

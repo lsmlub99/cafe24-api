@@ -138,11 +138,24 @@ function debugCtaLog(event, payload = {}) {
   console.info(`[CTA Debug] ${event}`, payload);
 }
 
-function CardText({ label, text }) {
+function CardText({ label, text, maxLines = 0 }) {
   if (!text) return null;
+  const lineClampStyle =
+    maxLines > 0
+      ? {
+          display: '-webkit-box',
+          WebkitLineClamp: maxLines,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          wordBreak: 'keep-all',
+          overflowWrap: 'anywhere',
+        }
+      : {};
   return (
     <div style={{ fontSize: '0.82rem', color: '#444', marginBottom: '8px', lineHeight: '1.55' }}>
-      <strong>{label}:</strong> {text}
+      <strong>{label}:</strong>
+      <div style={lineClampStyle}>{text}</div>
     </div>
   );
 }
@@ -281,7 +294,7 @@ function buildCardCopyFromSlots(slots = {}, item = {}) {
   }
 
   return {
-    coreReason: clampText(rawCore, 26) || '무난하게 쓰기 좋은 데일리형',
+    coreReason: removeForbiddenCopy(rawCore) || '무난하게 쓰기 좋은 데일리형',
     supportReason: clampText(`${supportReason} ${safetyLine}`, 70) || '데일리로 쓰기 편한 사용감이에요.',
     usageTip,
   };
@@ -880,7 +893,7 @@ function App() {
                 <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
 
                 <div style={{ minHeight: '132px' }}>
-                  <CardText label="핵심 포인트" text={cardCopy?.coreReason} />
+                  <CardText label="핵심 포인트" text={cardCopy?.coreReason} maxLines={2} />
                   <CardText label="추천 이유" text={cardCopy?.supportReason} />
                   <CardText label="사용 팁" text={cardCopy?.usageTip} />
                 </div>

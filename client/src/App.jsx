@@ -345,10 +345,6 @@ function buildSelectionGuide(recommendations = []) {
     return clampText(line, 34);
   });
 
-  while (lines.length < 3) {
-    lines.push(`${lines.length + 1}번: 상황에 맞는 대안을 추가로 비교할 때`);
-  }
-
   return lines;
 }
 

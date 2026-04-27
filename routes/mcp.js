@@ -265,6 +265,49 @@ function buildCanonicalConsultTextV2(mainRecommendations = []) {
   return lines.join('\n');
 }
 
+function buildCanonicalConsultTextV3(mainRecommendations = [], args = {}) {
+  if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
+    return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
+  }
+
+  const ranked = mainRecommendations.slice(0, 3);
+  const skin = String(args.skin_type || '').trim();
+  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
+  const query = String(args.query || args.q || '').trim();
+  const contextParts = [skin ? `${skin} 피부` : '', concerns.length ? `고민: ${concerns.join(', ')}` : '', query ? `요청: ${query}` : ''].filter(Boolean);
+
+  const lines = [];
+  lines.push(contextParts.length ? `요청 기준(${contextParts.join(' / ')})으로 카드와 같은 순서로 설명드릴게요.` : '요청 기준으로 카드와 같은 순서로 설명드릴게요.');
+  lines.push('');
+
+  ranked.forEach((item, idx) => {
+    const rank = idx + 1;
+    const name = String(item?.name || '').trim();
+    const why = String(item?.why_pick || item?.key_point || '').trim();
+    const tip = String(item?.usage_tip || '').trim();
+    const form = String(item?.form || '').toLowerCase();
+
+    const situation =
+      form.includes('cushion')
+        ? '메이크업 톤 보정이나 커버를 같이 보고 싶을 때'
+        : form.includes('serum')
+        ? '더 가볍게 바르고 싶은 날'
+        : form.includes('stick') || form.includes('spray')
+        ? '외출 중 수정이나 덧바름이 필요한 상황'
+        : '데일리 베이스 단계에서 무난하게 쓰고 싶을 때';
+
+    lines.push(`${rank}순위: ${name}`);
+    lines.push(`- 추천 이유: ${why || '요청 조건과의 일치도가 높은 후보예요.'}`);
+    lines.push(`- 잘 맞는 상황: ${situation}.`);
+    if (tip) lines.push(`- 사용 팁: ${tip}`);
+    if (idx < ranked.length - 1) lines.push('');
+  });
+
+  lines.push('');
+  lines.push('사용 팁: 기초 마지막 단계에서 얇게 나눠 바르면 밀림 부담을 줄이기 좋아요.');
+  return lines.join('\n');
+}
+
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -371,7 +414,7 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = buildCanonicalConsultTextV2(canonicalMain);
+  const consultText = buildCanonicalConsultTextV3(canonicalMain, args);
 
   return {
     content: [{ type: 'text', text: consultText }],

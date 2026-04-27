@@ -481,6 +481,48 @@ function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
   return lines.join('\n');
 }
 
+function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
+  if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
+    return '\uC870\uAC74\uC5D0 \uB9DE\uB294 \uCD94\uCC9C \uACB0\uACFC\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC5B4\uC694. \uD53C\uBD80 \uD0C0\uC785\uC774\uB098 \uC6D0\uD558\uB294 \uC0AC\uC6A9\uAC10\uC744 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uB2E4\uC2DC \uC88C\uD798\uD560\uAC8C\uC694.';
+  }
+
+  const ranked = mainRecommendations.slice(0, 3);
+  const topItem = ranked[0] || {};
+  const conclusionDisplayName = resolveConclusionDisplayNameV14(topItem, args?.category || '');
+
+  const skin = String(args.skin_type || '').trim();
+  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
+  const query = String(args.query || args.q || '').trim();
+
+  const contextParts = [];
+  if (skin) contextParts.push(`${skin}\uAE30\uC900`);
+  if (concerns.length) contextParts.push(`\uACE0\uBBFC:${concerns.join(', ')}`);
+  if (query) contextParts.push(`\uC694\uCCAD:${query}`);
+
+  const lines = [];
+  if (contextParts.length) {
+    lines.push(`\uC694\uCCAD \uAE30\uC900(${contextParts.join(' / ')})\uC73C\uB85C \uCE74\uB4DC \uCD94\uCC9C\uC744 \uC9E7\uAC8C \uC815\uB9AC\uD574\uB4DC\uB9B4\uAC8C\uC694.`);
+  } else {
+    lines.push('\uD53C\uBD80 \uC815\uBCF4\uAC00 \uC5C6\uC5B4\uC11C \uCE74\uB4DC \uCD94\uCC9C\uC744 \uC778\uAE30/\uC0AC\uC6A9\uC131 \uAE30\uC900\uC73C\uB85C \uBA3C\uC800 \uC815\uB9AC\uD588\uC5B4\uC694.');
+  }
+
+  const rankNames = ranked.map((item, idx) => `${idx + 1}\uC21C\uC704 ${String(item?.name || '').trim()}`);
+  if (rankNames.length) {
+    lines.push(rankNames.join(' / '));
+  }
+
+  if (ranked.length >= 2) {
+    const topWhy = String(ranked[0]?.why_pick || ranked[0]?.key_point || '\uBB34\uB09C\uD558\uAC8C \uC2DC\uC791\uD558\uAE30 \uC88B\uC740 \uC120\uD0DD').trim();
+    lines.push(`1\uC21C\uC704\uB294 ${topWhy}\uC5D0 \uAC00\uAE5D\uACE0, 2\uC21C\uC704\uB294 \uBE44\uAD50\uD558\uAE30 \uC88B\uC740 \uB300\uC548 \uD750\uB984\uC73C\uB85C \uBCF4\uC2DC\uBA74 \uB3FC\uC694.`);
+  } else {
+    lines.push('\uC9C0\uAE08 \uD6C4\uBCF4 \uC218\uAC00 \uC801\uC5B4\uC11C 1\uC21C\uC704 \uAE30\uC900\uC73C\uB85C \uBA3C\uC800 \uBCF4\uC2DC\uB294 \uAC8C \uC88B\uC544\uC694.');
+  }
+
+  lines.push('');
+  lines.push(`\uC9C0\uAE08 \uAE30\uC900\uC774\uBA74 ${conclusionDisplayName || String(topItem?.name || '').trim()}\uBD80\uD130 \uBCF4\uB294 \uAC8C \uC88B\uC544\uC694.`);
+  return lines.join('\n');
+}
+
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -587,7 +629,14 @@ async function executeTool(args = {}) {
     };
   }
 
-  const consultText = buildCanonicalConsultTextRich(canonicalMain, args);
+  const consultText = buildCanonicalConsultTextFixed(canonicalMain, args);
+  const bodyConclusionProduct = String(canonicalMain?.[0]?.name || '').trim();
+  const mainTop1Product = String(canonicalMain?.[0]?.name || '').trim();
+  const bodyTop1Match =
+    !bodyConclusionProduct || !mainTop1Product ? true : bodyConclusionProduct === mainTop1Product;
+  logger.info(
+    `[Body Sync] body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
+  );
 
   return {
     content: [{ type: 'text', text: consultText }],

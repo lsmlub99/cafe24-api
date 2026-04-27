@@ -308,6 +308,119 @@ function buildCanonicalConsultTextV3(mainRecommendations = [], args = {}) {
   return lines.join('\n');
 }
 
+function normalizeForKeywordMatch(text = '') {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\s\-_:/\\()[\]{}.,!?'"]/g, '');
+}
+
+function includesFormKeyword(name = '', categoryHint = '') {
+  const normalized = normalizeForKeywordMatch(name);
+  if (!normalized) return false;
+
+  const defaultKeywords = ['선크림', '썬크림', '선세럼', '썬세럼', '세럼', '스틱', '스프레이', '쿠션', '비비', 'bb', '톤업'];
+  const hasDefaultKeyword = defaultKeywords.some((keyword) =>
+    normalized.includes(normalizeForKeywordMatch(keyword))
+  );
+
+  const categoryNorm = normalizeForKeywordMatch(categoryHint);
+  const isBbContext = ['bb', '비비크림', 'bbcream'].some((token) => categoryNorm.includes(token));
+  if (!isBbContext) return hasDefaultKeyword;
+
+  const bbKeywords = ['비비', 'bb', '베이스', '선베이스'];
+  return bbKeywords.some((keyword) => normalized.includes(normalizeForKeywordMatch(keyword)));
+}
+
+function buildShortConclusionName(originalName = '', displayNameShort = '') {
+  const original = String(originalName || '').trim();
+  if (!original) return '';
+
+  const providedShort = String(displayNameShort || '').trim();
+  if (providedShort) return providedShort;
+
+  const withoutSize = original
+    .replace(/\s*\d+\s?(ml|g|kg|oz|ea|매|개)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const candidate = withoutSize || original;
+  if (candidate.length <= 25) return candidate;
+  return `${candidate.slice(0, 25).trim()}…`;
+}
+
+function resolveConclusionDisplayName(item = {}, categoryHint = '') {
+  const originalName = String(item?.name || '').trim();
+  const shortName = buildShortConclusionName(originalName, item?.display_name_short);
+
+  if (!shortName) return originalName;
+  if (!includesFormKeyword(shortName, categoryHint)) {
+    return originalName;
+  }
+  return shortName;
+}
+
+function includesFormKeywordV14(name = '', categoryHint = '') {
+  const normalize = (text = '') =>
+    String(text || '')
+      .toLowerCase()
+      .replace(/[\s\-_:/\\()[\]{}.,!?'"]/g, '');
+
+  const normalized = normalize(name);
+  if (!normalized) return false;
+
+  const defaultKeywords = [
+    '\uC120\uD06C\uB9BC',
+    '\uC36C\uD06C\uB9BC',
+    '\uC120\uC138\uB7FC',
+    '\uC36C\uC138\uB7FC',
+    '\uC138\uB7FC',
+    '\uC2A4\uD2F1',
+    '\uC2A4\uD504\uB808\uC774',
+    '\uCFE0\uC158',
+    '\uBE44\uBE44',
+    'bb',
+    '\uD1A4\uC5C5',
+  ];
+  const hasDefaultKeyword = defaultKeywords.some((keyword) => normalized.includes(normalize(keyword)));
+
+  const categoryNorm = normalize(categoryHint);
+  const isBbContext = ['bb', '\uBE44\uBE44\uD06C\uB9BC', 'bbcream'].some((token) =>
+    categoryNorm.includes(normalize(token))
+  );
+  if (!isBbContext) return hasDefaultKeyword;
+
+  const bbKeywords = ['\uBE44\uBE44', 'bb', '\uBCA0\uC774\uC2A4', '\uC120\uBCA0\uC774\uC2A4'];
+  return bbKeywords.some((keyword) => normalized.includes(normalize(keyword)));
+}
+
+function buildShortConclusionNameV14(originalName = '', displayNameShort = '') {
+  const original = String(originalName || '').trim();
+  if (!original) return '';
+
+  const providedShort = String(displayNameShort || '').trim();
+  if (providedShort) return providedShort;
+
+  const withoutSize = original
+    .replace(/\s*\d+\s?(ml|g|kg|oz|ea)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const candidate = withoutSize || original;
+  if (candidate.length <= 25) return candidate;
+  return `${candidate.slice(0, 25).trim()}...`;
+}
+
+function resolveConclusionDisplayNameV14(item = {}, categoryHint = '') {
+  const originalName = String(item?.name || '').trim();
+  const shortName = buildShortConclusionNameV14(originalName, item?.display_name_short);
+  if (!shortName) return originalName;
+
+  if (!includesFormKeywordV14(shortName, categoryHint)) {
+    return originalName;
+  }
+  return shortName;
+}
+
 function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
@@ -320,6 +433,14 @@ function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
   const contextParts = [skin ? `${skin} 피부` : '', concerns.length ? `고민: ${concerns.join(', ')}` : '', query ? `요청: ${query}` : ''].filter(Boolean);
 
   const lines = [];
+  const topItem = ranked[0] || {};
+  const conclusionDisplayName = resolveConclusionDisplayNameV14(topItem, args?.category || '');
+  if (conclusionDisplayName) {
+    lines.push(`吏湲?湲곗??대㈃ ${conclusionDisplayName}?쇰줈 ?쒖옉?섎뒗 寃?媛???덉젙?곸씠?먯슂.`);
+  }
+  if (conclusionDisplayName && lines.length > 0) {
+    lines[lines.length - 1] = `\uC9C0\uAE08 \uAE30\uC900\uC774\uBA74 ${conclusionDisplayName}\uC73C\uB85C \uC2DC\uC791\uD558\uB294 \uAC8C \uAC00\uC7A5 \uC548\uC815\uC801\uC774\uC5D0\uC694.`;
+  }
   lines.push(
     contextParts.length
       ? `요청 기준(${contextParts.join(' / ')})으로 카드와 같은 순서로 정리해드릴게요.`

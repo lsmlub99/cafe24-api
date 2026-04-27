@@ -86,6 +86,7 @@ function normalizeWidgetData(raw) {
     secondary_recommendations: secondary,
     promotions,
     reasoning_tags: Array.isArray(structured.reasoning_tags) ? structured.reasoning_tags : [],
+    applied_policy: isObject(structured.applied_policy) ? structured.applied_policy : {},
     summary,
     strategy: structured.strategy || summary.strategy || '',
     conclusion: structured.conclusion || summary.conclusion || '',
@@ -400,6 +401,35 @@ function buildConversationalPrompts(widgetData = {}) {
     '순한 쪽으로 좁혀볼까요, 아니면 사용감 가벼운 쪽으로 볼까요?',
     '원하시면 기준을 알려주시면 그에 맞게 다시 추천드릴게요.',
   ];
+}
+
+function buildWidgetBottomLine(widgetData = {}) {
+  const recommendations = Array.isArray(widgetData.recommendations) ? widgetData.recommendations : [];
+  const top1 = recommendations[0];
+  const tags = Array.isArray(widgetData.reasoning_tags) ? widgetData.reasoning_tags : [];
+  const policy = isObject(widgetData.applied_policy) ? widgetData.applied_policy : {};
+  const sortMode = String(policy.sort_mode || '').toLowerCase();
+
+  const 상담형문구 = (() => {
+    if (tags.includes('skin_type:sensitive') || tags.includes('concern:soothing') || tags.includes('fit_issue:irritation')) {
+      return '원하시면 자극 부담이 적은 기준으로 1개로 좁혀드릴게요.';
+    }
+    if (tags.includes('skin_type:oily') || tags.includes('skin_type:combination') || tags.includes('concern:sebum_control')) {
+      return '원하시면 번들 부담 적은 기준으로 1개로 좁혀드릴게요.';
+    }
+    if (tags.includes('skin_type:dry') || tags.includes('concern:hydration')) {
+      return '원하시면 보습감 중심 기준으로 1개로 좁혀드릴게요.';
+    }
+    return '원하시면 피부 타입/사용감 기준으로 1개로 좁혀드릴게요.';
+  })();
+
+  if (!top1) return 상담형문구;
+
+  const purchaseNudgeEligible = sortMode === 'popular' || sortMode === 'condition_based';
+  const shouldShowPurchaseNudge = purchaseNudgeEligible && parseInt(hashString(top1.name || ''), 16) % 5 === 0;
+  if (shouldShowPurchaseNudge) return '지금 고른 1순위부터 먼저 써보는 방식이 가장 무난해요.';
+
+  return 상담형문구;
 }
 
 function getProductIdFromUrl(url = '') {
@@ -827,6 +857,7 @@ function App() {
   const isWidgetMode = Boolean(window.__WIDGET_MODE__ || window.__MCP_WIDGET__ || widgetData);
   const cardCopies = widgetData?.recommendations?.length ? buildCardCopies(widgetData.recommendations) : [];
   const selectionGuideLines = widgetData?.recommendations?.length ? buildSelectionGuide(widgetData.recommendations) : [];
+  const widgetBottomLine = buildWidgetBottomLine(widgetData || {});
   useEffect(() => {
     if (!ctaDebugEnabled) {
       prevFollowupLoadingRef.current = isFollowupLoading;
@@ -965,7 +996,7 @@ function App() {
               </div>
             ))}
             <div style={{ fontSize: '0.85rem', color: '#444', marginTop: '6px', lineHeight: 1.5 }}>
-              피부 타입이나 원하는 사용감을 알려주시면 1개로 좁혀드릴게요.
+              {widgetBottomLine}
             </div>
           </div>
         )}

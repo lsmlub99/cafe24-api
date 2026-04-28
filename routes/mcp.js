@@ -522,102 +522,95 @@ function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
 // so card(top1) and body conclusion stay consistent.
 function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
-    return '\uC870\uAC74\uC5D0 \uB9DE\uB294 \uCD94\uCC9C \uACB0\uACFC\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC5B4\uC694. \uD53C\uBD80 \uD0C0\uC785\uC774\uB098 \uC6D0\uD558\uB294 \uC0AC\uC6A9\uAC10\uC744 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uB2E4\uC2DC \uC88C\uD798\uD560\uAC8C\uC694.';
+    return '조건에 맞는 제품을 찾지 못했어요.';
   }
 
   const ranked = mainRecommendations.slice(0, 3);
   const topItem = ranked[0] || {};
-  const conclusionDisplayName = resolveConclusionDisplayNameV14(topItem, args?.category || '');
-
-  const skin = String(args.skin_type || '').trim();
-  const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
-  const concernText = concerns.map((c) => String(c || '').trim()).filter(Boolean).join(', ');
   const lines = [];
-  const empathyPrefix = skin
-    ? `${skin} 기준이면 사용감 차이가 크게 느껴질 수 있어서, 제형과 마무리감을 같이 보고 고르는 게 좋아요.`
-    : concernText
-    ? `${concernText} 고민이 있으면 한 번에 많이 바르기보다, 상황에 맞는 사용감으로 고르는 게 더 편해요.`
-    : '피부 타입 정보가 없어서, 먼저 쓰기 편한 순서로 비교해드릴게요.';
-  lines.push(empathyPrefix);
-  lines.push(`그 기준에서는 ${conclusionDisplayName || String(topItem?.name || '').trim()}부터 보는 게 가장 무난해요.`);
+
+  const normalizeText = (value = '') =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const includesAny = (text, words = []) => words.some((w) => text.includes(w));
+  const safePrice = (item = {}) => {
+    const raw = String(item?.price || '').trim();
+    if (!raw) return '-';
+    return /원$/.test(raw) ? raw : `${raw}원`;
+  };
+  const categoryDisplay = (item = {}, categoryArg = '') => {
+    const cat = normalizeText(categoryArg) || normalizeText(item?.category_key || '');
+    if (includesAny(cat, ['bb', '비비'])) return '비비크림';
+    if (includesAny(cat, ['stick', '스틱'])) return '선스틱';
+    if (includesAny(cat, ['spray', '스프레이'])) return '선스프레이';
+    if (includesAny(cat, ['serum', '세럼', '앰플'])) return '세럼';
+    if (includesAny(cat, ['cream', '크림'])) return '크림';
+    if (includesAny(cat, ['sunscreen', '선크림', 'sun'])) return '선케어';
+    return String(categoryArg || item?.category_key || '추천 제품').trim();
+  };
+  const pickRoleKeyword = (item = {}, rank = 1) => {
+    const form = normalizeText(item?.form || '');
+    const dataText = normalizeText(
+      [
+        item?.name,
+        item?.summary_description,
+        JSON.stringify(item?.attributes || {}),
+        JSON.stringify(item?.derived_attributes || {}),
+        item?.form,
+      ].join(' ')
+    );
+
+    if (includesAny(dataText, ['비비', 'bb', '쿠션', '커버', '베이스', '톤업'])) return '커버/톤 보정용';
+    if (includesAny(dataText, ['민감', '진정', 'calm', 'soothing', '저자극'])) return '민감 피부 부담 완화용';
+    if (form === 'stick' || includesAny(dataText, ['스틱'])) return '보송한 수정용';
+    if (form === 'serum' || includesAny(dataText, ['세럼', '앰플', '가벼운'])) return '산뜻한 수분감';
+    if (form === 'cream' || form === 'lotion' || includesAny(dataText, ['크림', '보습', '데일리'])) return '기본 데일리용';
+
+    if (rank === 1) return '기본 데일리용';
+    if (rank === 2) return '다른 사용감 비교용';
+    return '추가 옵션 확인용';
+  };
+  const pickSituation = (item = {}, roleKeyword = '', rank = 1) => {
+    const form = normalizeText(item?.form || '');
+    if (roleKeyword === '민감 피부 부담 완화용') return '자극 부담을 줄이면서 편하게 쓰고 싶을 때';
+    if (roleKeyword === '커버/톤 보정용') return '톤 보정이나 피부 표현을 함께 챙기고 싶을 때';
+    if (roleKeyword === '보송한 수정용') return '외출 중 덧바름이나 보송한 마무리가 필요할 때';
+    if (roleKeyword === '산뜻한 수분감') return '답답함 없이 가볍고 산뜻한 사용감을 원할 때';
+    if (roleKeyword === '기본 데일리용') return '매일 부담 없이 꾸준히 쓰기 좋은 제품이 필요할 때';
+    if (form === 'spray') return '빠르게 덧바르기 쉬운 타입이 필요할 때';
+    if (form === 'stick') return '휴대하면서 간편하게 수정하고 싶을 때';
+    if (rank === 1) return '가장 먼저 시작할 제품이 필요할 때';
+    if (rank === 2) return '1위와 다른 사용감을 비교하고 싶을 때';
+    return '추가 옵션까지 같이 비교해보고 싶을 때';
+  };
+
+  lines.push(`${categoryDisplay(topItem, args?.category)}은 현재 ${ranked.length}가지가 있어요. 사용 목적에 따라 이렇게 고르면 쉬워요.`);
   lines.push('');
-
-  const rankKeywordPools = [
-    ['무난한 데일리', '밀림 부담 완화'],
-    ['산뜻한 수분감', '가벼운 레이어링'],
-    ['보송한 수정용', '외출 중 보완'],
-  ];
-  const usedKeywords = new Set();
-  const usedRoleLabels = new Set();
-  const hasSensitiveSignal =
-    String(args.fit_issue || '').includes('irritation') ||
-    concerns.some((c) => /따가움|자극|민감|진정/i.test(String(c)));
-
-  const pickRoleLabel = (item, rank) => {
-    const form = String(item?.form || '').toLowerCase();
-    const text = `${String(item?.name || '')} ${String(item?.base_name || '')}`.toLowerCase();
-
-    const candidates = [];
-    if (hasSensitiveSignal && rank === 1) candidates.push('민감 피부 부담 완화용');
-    if (form === 'stick') candidates.push(rank === 1 ? '기본 데일리용' : '보송한 수정용');
-    if (form === 'spray') candidates.push('보송한 수정용');
-    if (form === 'serum') candidates.push('산뜻한 수분감');
-    if (form === 'cream' || form === 'lotion') candidates.push('기본 데일리용');
-    if (/비비|bb|쿠션|톤업|커버|베이스/.test(text)) candidates.push('커버/톤 보정용');
-    if (hasSensitiveSignal) candidates.push('민감 피부 부담 완화용');
-
-    const fallbackByRank = ['기본 데일리용', '산뜻한 수분감', '보송한 수정용'];
-    candidates.push(fallbackByRank[Math.min(rank - 1, fallbackByRank.length - 1)]);
-
-    const uniqueCandidate = candidates.find((label) => !usedRoleLabels.has(label)) || candidates[0];
-    usedRoleLabels.add(uniqueCandidate);
-    return uniqueCandidate;
-  };
-
-  const pickDistinctKeywords = (rank) => {
-    const pool = rankKeywordPools[Math.min(rank - 1, rankKeywordPools.length - 1)];
-    const first = pool.find((k) => !usedKeywords.has(k)) || pool[0];
-    usedKeywords.add(first);
-    const second = pool.find((k) => k !== first && !usedKeywords.has(k)) || pool.find((k) => k !== first) || first;
-    usedKeywords.add(second);
-    return [first, second];
-  };
-
-  const sanitizeWhy = (rawWhy) => {
-    const text = String(rawWhy || '').replace(/\s+/g, ' ').trim();
-    if (!text) return '';
-    // Prevent system/debug wording and unsupported medical/certification claims from leaking into body text.
-    if (/의미 매칭|알고리즘|점수|로직|모델|디버그|임상|인증|완치|치료|재생/i.test(text)) return '';
-    return text;
-  };
 
   ranked.forEach((item, idx) => {
     const rank = idx + 1;
     const name = String(item?.name || '').trim();
-    const roleLabel = pickRoleLabel(item, rank);
-    const [kw1, kw2] = pickDistinctKeywords(rank);
-    const safeWhy = sanitizeWhy(item?.why_pick || item?.key_point);
-    const tip = String(item?.usage_tip || '').trim();
-
-    const roleByRank =
-      rank === 1
-        ? '첫 선택으로 가장 먼저 보기 좋아요.'
-        : rank === 2
-        ? '1위와 비교할 때 사용감 차이를 보기 좋은 대안이에요.'
-        : '상황에 맞춰 폭넓게 비교하기 좋은 보완 선택지예요.';
-
-    lines.push(`${rank}순위 ${name}`);
-    lines.push(`- [${roleLabel}] ${roleByRank}`);
-    lines.push(`- 추천 포인트: ${kw1}, ${kw2} 쪽으로 보시면 선택이 쉬워요.`);
-    lines.push(`- 왜 추천하냐면: ${safeWhy || `${kw1} 중심으로 쓰기 편하고, ${kw2} 쪽 만족도가 높은 편이에요.`}`);
-    if (tip) lines.push(`- 쓰는 팁: ${tip}`);
+    const roleKeyword = pickRoleKeyword(item, rank);
+    const situation = pickSituation(item, roleKeyword, rank);
+    lines.push(`${rank}. ${name}`);
+    lines.push(`- 가격: ${safePrice(item)}`);
+    lines.push(`- 추천 포인트: ${roleKeyword}`);
+    lines.push(`- 이런 분께 좋아요: ${situation}`);
     if (idx < ranked.length - 1) lines.push('');
   });
 
   lines.push('');
-  lines.push('마무리 팁: 기초 마지막 단계에서 한 번에 많이 바르기보다 얇게 나눠 바르면 밀림 부담을 줄이기 좋아요.');
+  lines.push('[선택 가이드]');
+  lines.push(`- 가장 먼저 볼 제품: ${String(ranked[0]?.name || '').trim()}`);
+  if (ranked.length >= 2) lines.push(`- 함께 비교할 제품: ${String(ranked[1]?.name || '').trim()}`);
+  if (ranked.length >= 3) lines.push(`- 추가로 참고할 제품: ${String(ranked[2]?.name || '').trim()}`);
+
+  lines.push('');
   lines.push(
-    '가볍게 시작해보고 싶다면 1위 제품부터 보셔도 좋고, 원하시면 사용감 기준으로 더 좁혀드릴게요.'
+    `처음 고르신다면 ${String(ranked[0]?.name || '').trim()}부터 보셔도 좋고, 원하시면 피부 타입이나 사용감 기준으로 더 좁혀드릴게요.`
   );
 
   return lines.join('\n');
@@ -695,11 +688,12 @@ async function executeTool(args = {}) {
       : { message: '조건에 맞는 결과가 없습니다.', strategy: '', conclusion: '' };
 
   if (!Array.isArray(canonicalMain) || canonicalMain.length === 0) {
-    const bodyTemplateVersion = 'mcp_v2_3';
+    const bodyTemplateVersion = 'fixed_v1';
     const bodyItemsCount = 0;
+    const bodyRankLinesCount = 0;
     // Body Sync log: verifies MCP body-template version and body/card consistency signals.
     logger.info(
-      `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_conclusion_product="" main_top1_product="" body_top1_match=true`
+      `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_rank_lines_count=${bodyRankLinesCount} body_conclusion_product="" main_top1_product="" body_top1_match=true`
     );
 
     return {
@@ -737,15 +731,16 @@ async function executeTool(args = {}) {
   }
 
   const consultText = buildCanonicalConsultTextFixed(canonicalMain, args);
-  const bodyTemplateVersion = 'mcp_v2_3';
+  const bodyTemplateVersion = 'fixed_v1';
   const bodyItemsCount = Array.isArray(canonicalMain) ? canonicalMain.length : 0;
+  const bodyRankLinesCount = bodyItemsCount;
   const bodyConclusionProduct = String(canonicalMain?.[0]?.name || '').trim();
   const mainTop1Product = String(canonicalMain?.[0]?.name || '').trim();
   const bodyTop1Match =
     !bodyConclusionProduct || !mainTop1Product ? true : bodyConclusionProduct === mainTop1Product;
   // Body Sync log: submission-time checkpoint for "card = source of truth, body = explanation".
   logger.info(
-    `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
+    `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_rank_lines_count=${bodyRankLinesCount} body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
   );
 
   return {

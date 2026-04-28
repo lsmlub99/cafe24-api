@@ -161,6 +161,18 @@ function CardText({ label, text, maxLines = 0 }) {
   );
 }
 
+function clampMultilineStyle(lines = 2) {
+  return {
+    display: '-webkit-box',
+    WebkitLineClamp: lines,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    wordBreak: 'keep-all',
+    overflowWrap: 'anywhere',
+  };
+}
+
 const FORBIDDEN_COPY_TERMS = ['점수', '의미 매칭', '추천 알고리즘', '모델', '로직 기반', '추천 로직'];
 const FOLLOWUP_ERROR_HINT = '잠시 네트워크가 불안정해요. 다시 시도해볼까요?';
 
@@ -905,24 +917,28 @@ function App() {
             const buyButtonLabel = variants.buyButton === 'B' ? '이걸로 시작하기' : '지금 구매하기';
 
             return (
-              <div
-                key={`${product.buy_url || product.name}-${idx}`}
-                style={{ minWidth: '260px', maxWidth: '300px', border: '1px solid #eee', borderRadius: '12px', padding: '14px', background: '#fff' }}
-              >
+                <div
+                  key={`${product.buy_url || product.name}-${idx}`}
+                  style={{
+                    minWidth: '260px',
+                    maxWidth: '300px',
+                    border: '1px solid #eee',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    background: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
                 <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{isTop ? '🏅 BEST' : `${rank}위`}</div>
-                {isTop && variants.banner === 'B' && (
-                  <div style={{ fontSize: '0.76rem', color: '#555', marginBottom: '8px', background: '#f7f7f7', borderRadius: '999px', display: 'inline-block', padding: '4px 8px' }}>
-                    지금 조건 기준 추천 1순위
-                  </div>
-                )}
                 <img src={product.image} alt={product.name} style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }} />
-                <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px' }}>{product.name}</div>
+                <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px', ...clampMultilineStyle(2) }}>{product.name}</div>
                 <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
 
                 <div style={{ minHeight: '132px' }}>
                   <CardText label="핵심 포인트" text={cardCopy?.coreReason} maxLines={2} />
-                  <CardText label="추천 이유" text={cardCopy?.supportReason} />
-                  <CardText label="사용 팁" text={cardCopy?.usageTip} />
+                  <CardText label="추천 이유" text={cardCopy?.supportReason} maxLines={2} />
+                  <CardText label="사용 팁" text={cardCopy?.usageTip} maxLines={2} />
                 </div>
 
                 <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px' }}>{trustLine}</div>
@@ -942,6 +958,7 @@ function App() {
                     border: 'none',
                     cursor: 'pointer',
                     fontWeight: 'bold',
+                    marginTop: 'auto',
                   }}
                 >
                   {buyButtonLabel}

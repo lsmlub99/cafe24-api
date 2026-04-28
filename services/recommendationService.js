@@ -594,7 +594,8 @@ function enforceMainPolicyOnRanked(
   categoryLocked = false,
   formLocked = false,
   allowedMainForms = [],
-  limit = RECOMMENDATION_POLICY.limits.defaultMain
+  limit = RECOMMENDATION_POLICY.limits.defaultMain,
+  options = {}
 ) {
   const scoreOf = (item) => Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
   const formPolicy = RECOMMENDATION_POLICY.formPolicy || {};
@@ -637,6 +638,7 @@ function enforceMainPolicyOnRanked(
 
   const finalLimit = Math.max(1, limit);
   const isBbRequest = parsedIntent.requested_category === 'bb';
+  const strictExplicitForm = Boolean(options?.strict_explicit_form);
   if (!isBbRequest && !(formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0)) {
     return {
       selected: deduped.slice(0, finalLimit),
@@ -652,6 +654,21 @@ function enforceMainPolicyOnRanked(
   }
 
   const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
+  if (strictExplicitForm && !isBbRequest) {
+    const strictOnly = deduped.filter(isMatch).slice(0, finalLimit);
+    return {
+      selected: strictOnly,
+      drop_stats: drop,
+      pre_policy_count: (ranked || []).length,
+      pass_count: passed.length,
+      bb_policy: {
+        bb_like_candidate_count: 0,
+        main_bb_like_count: 0,
+        non_bb_dropped_from_main: 0,
+      },
+    };
+  }
+
   const matchedCount = deduped.filter(isMatch).length;
   const minFormMatch = Math.min(finalLimit, Math.max(0, configuredMinMatch), matchedCount);
 
@@ -860,6 +877,7 @@ export const recommendationService = {
     );
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
+    const isExplicitStrictMain = Boolean(parsed.explicit_form_request && parsed.requested_form);
     const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
     const retrievalIntent = shouldUnlockCategoryForMain
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
@@ -876,7 +894,11 @@ export const recommendationService = {
 
     let { category_locked, form_locked, allowed_main_forms = [] } = strictPrimary;
     let candidates = Array.isArray(broadPrimary.candidates) ? broadPrimary.candidates : [];
-    if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
+    if (isExplicitStrictMain) {
+      candidates = Array.isArray(strictPrimary.candidates) ? strictPrimary.candidates : [];
+      form_locked = true;
+      allowed_main_forms = parsed.requested_form ? [parsed.requested_form] : [];
+    } else if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
       candidates = strictPrimary.candidates;
     }
     parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
@@ -920,7 +942,8 @@ export const recommendationService = {
       category_locked,
       form_locked,
       allowed_main_forms,
-      limit
+      limit,
+      { strict_explicit_form: isExplicitStrictMain }
     );
     let policyMain = policyGate.selected;
     logger.info(
@@ -942,7 +965,7 @@ export const recommendationService = {
       );
     }
 
-    if (!policyMain.length && category_locked) {
+    if (!policyMain.length && category_locked && !isExplicitStrictMain) {
       usedFallback = true;
       fallbackSteps.push('popular_same_category');
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
@@ -954,7 +977,8 @@ export const recommendationService = {
         category_locked,
         form_locked,
         allowed_main_forms,
-        limit
+        limit,
+        { strict_explicit_form: isExplicitStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -964,7 +988,7 @@ export const recommendationService = {
       );
     }
 
-    if (!policyMain.length && category_locked) {
+    if (!policyMain.length && category_locked && !isExplicitStrictMain) {
       usedFallback = true;
       fallbackSteps.push('relax_form');
       const fallbackPrimary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
@@ -981,7 +1005,8 @@ export const recommendationService = {
         category_locked,
         form_locked,
         allowed_main_forms,
-        limit
+        limit,
+        { strict_explicit_form: isExplicitStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -993,6 +1018,11 @@ export const recommendationService = {
 
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
+    logger.info(
+      `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
+        allowed_main_forms || []
+      ).join(',')} main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',')}`
+    );
 
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
@@ -1066,7 +1096,7 @@ export const recommendationService = {
     if (hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
       trackFormLockViolation();
       logger.warn(
-        `[Policy] form lock violation detected requested_form=${parsed.requested_form || 'default'} allowed=${(
+        `[Policy] form lock violation detected strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'default'} allowed=${(
           allowed_main_forms || []
         ).join(',')} main=${mainRecommendations.map((x) => `${x.name}:${x.form || 'unknown'}`).join(', ')}`
       );

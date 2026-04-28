@@ -38,7 +38,8 @@ function detectExplicitSunForm(text = '') {
   if (includesAny(src, ['선스틱', '썬스틱', 'sunstick', 'sun stick'])) return 'stick';
   if (includesAny(src, ['선스프레이', '썬스프레이', 'sunspray', 'sun spray'])) return 'spray';
   if (includesAny(src, ['선쿠션', '썬쿠션', 'sun cushion'])) return 'cushion';
-  if (includesAny(src, ['선크림', '썬크림', '선스크린', '썬스크린', 'suncream', 'sun cream', 'sunscreen'])) return 'cream';
+  // Keep generic sunscreen queries as category intent, not explicit cream-form intent.
+  if (includesAny(src, ['크림형 선크림', '크림 타입 선크림', '선크림 크림형', 'sun cream type', 'cream type sunscreen'])) return 'cream';
   return null;
 }
 

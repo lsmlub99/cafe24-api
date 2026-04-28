@@ -586,7 +586,8 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
   const sanitizeWhy = (rawWhy) => {
     const text = String(rawWhy || '').replace(/\s+/g, ' ').trim();
     if (!text) return '';
-    if (/의미 매칭|알고리즘|점수|로직|모델/i.test(text)) return '';
+    // Prevent system/debug wording and unsupported medical/certification claims from leaking into body text.
+    if (/의미 매칭|알고리즘|점수|로직|모델|디버그|임상|인증|완치|치료|재생/i.test(text)) return '';
     return text;
   };
 
@@ -615,15 +616,9 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
 
   lines.push('');
   lines.push('마무리 팁: 기초 마지막 단계에서 한 번에 많이 바르기보다 얇게 나눠 바르면 밀림 부담을 줄이기 좋아요.');
-
-  const optionLabels = Array.from(usedRoleLabels).slice(0, ranked.length);
-  const question =
-    optionLabels.length >= 3
-      ? `지금은 ${optionLabels[0]}, ${optionLabels[1]}, ${optionLabels[2]} 중에서 어디에 더 가깝나요? 원하시면 1순위부터 먼저 시작하는 기준으로 바로 좁혀드릴게요.`
-      : optionLabels.length === 2
-      ? `${optionLabels[0]} 쪽으로 먼저 갈까요, 아니면 ${optionLabels[1]} 쪽이 더 필요하세요? 말씀 주시면 지금 추천에서 1개로 바로 좁혀드릴게요.`
-      : '지금은 1순위부터 먼저 써보실까요? 원하시면 사용감 기준으로 1개만 딱 맞게 좁혀드릴게요.';
-  lines.push(question);
+  lines.push(
+    '가볍게 시작해보고 싶다면 1위 제품부터 보셔도 좋고, 원하시면 사용감 기준으로 더 좁혀드릴게요.'
+  );
 
   return lines.join('\n');
 }

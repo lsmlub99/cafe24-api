@@ -67,7 +67,8 @@ const TOOLS = [
   {
     name: TOOL_NAME,
     title: 'Search CellFusionC Products',
-    description: '[GEN-UI] Analyze skin needs and recommend matching products.',
+    description:
+      '[GEN-UI] Analyze skin needs and recommend matching products. End with one narrowing follow-up question to help user choose the next step.',
     annotations: {
       readOnlyHint: true,
       openWorldHint: false,
@@ -618,10 +619,10 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
   const optionLabels = Array.from(usedRoleLabels).slice(0, ranked.length);
   const question =
     optionLabels.length >= 3
-      ? `${optionLabels[0]}, ${optionLabels[1]}, ${optionLabels[2]} 중에서 지금 더 필요한 쪽이 어느 쪽일까요?`
+      ? `지금은 ${optionLabels[0]}, ${optionLabels[1]}, ${optionLabels[2]} 중에서 어디에 더 가깝나요? 원하시면 1순위부터 먼저 시작하는 기준으로 바로 좁혀드릴게요.`
       : optionLabels.length === 2
-      ? `${optionLabels[0]} 쪽이 좋으세요, 아니면 ${optionLabels[1]} 쪽이 더 필요하세요?`
-      : '지금은 이 제품부터 시작해보고, 원하시면 사용감 기준으로 1개로 더 좁혀드릴게요.';
+      ? `${optionLabels[0]} 쪽으로 먼저 갈까요, 아니면 ${optionLabels[1]} 쪽이 더 필요하세요? 말씀 주시면 지금 추천에서 1개로 바로 좁혀드릴게요.`
+      : '지금은 1순위부터 먼저 써보실까요? 원하시면 사용감 기준으로 1개만 딱 맞게 좁혀드릴게요.';
   lines.push(question);
 
   return lines.join('\n');

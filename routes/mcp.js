@@ -530,47 +530,99 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
 
   const skin = String(args.skin_type || '').trim();
   const concerns = Array.isArray(args.concerns) ? args.concerns.filter(Boolean) : [];
+  const concernText = concerns.map((c) => String(c || '').trim()).filter(Boolean).join(', ');
   const lines = [];
   const empathyPrefix = skin
-    ? `${skin}\uC774\uBA74 \uC0AC\uC6A9\uAC10 \uCC28\uC774\uAC00 \uD06C\uAC8C \uB290\uAEF4\uC9C8 \uC218 \uC788\uC5B4\uC11C, \uB9DE\uB294 \uC81C\uD615\uC73C\uB85C \uACE0\uB974\uB294 \uAC8C \uC911\uC694\uD574\uC694.`
-    : '\uD53C\uBD80 \uD0C0\uC785 \uC815\uBCF4\uAC00 \uC5C6\uC5B4\uC11C \uBA3C\uC800 \uBB34\uB09C\uD558\uAC8C \uC2DC\uC791\uD560 \uC218 \uC788\uB294 \uD750\uB984\uC73C\uB85C \uC815\uB9AC\uD574\uB4DC\uB9B4\uAC8C\uC694.';
+    ? `${skin} 기준이면 사용감 차이가 크게 느껴질 수 있어서, 제형과 마무리감을 같이 보고 고르는 게 좋아요.`
+    : concernText
+    ? `${concernText} 고민이 있으면 한 번에 많이 바르기보다, 상황에 맞는 사용감으로 고르는 게 더 편해요.`
+    : '피부 타입 정보가 없어서, 먼저 쓰기 편한 순서로 비교해드릴게요.';
   lines.push(empathyPrefix);
-
-  const topWhy = String(topItem?.why_pick || topItem?.key_point || '\uBB34\uB09C\uD558\uAC8C \uC2DC\uC791\uD558\uAE30 \uC88B\uC740 \uC120\uD0DD').trim();
-  lines.push(`\uADF8 \uAE30\uC900\uC5D0\uC11C\uB294 ${conclusionDisplayName || String(topItem?.name || '').trim()}\uC774 \uAC00\uC7A5 \uBA3C\uC800 \uBCF4\uAE30 \uC88B\uC740 \uC120\uD0DD\uC774\uC5D0\uC694.`);
+  lines.push(`그 기준에서는 ${conclusionDisplayName || String(topItem?.name || '').trim()}부터 보는 게 가장 무난해요.`);
   lines.push('');
+
+  const rankKeywordPools = [
+    ['무난한 데일리', '밀림 부담 완화'],
+    ['산뜻한 수분감', '가벼운 레이어링'],
+    ['보송한 수정용', '외출 중 보완'],
+  ];
+  const usedKeywords = new Set();
+  const usedRoleLabels = new Set();
+  const hasSensitiveSignal =
+    String(args.fit_issue || '').includes('irritation') ||
+    concerns.some((c) => /따가움|자극|민감|진정/i.test(String(c)));
+
+  const pickRoleLabel = (item, rank) => {
+    const form = String(item?.form || '').toLowerCase();
+    const text = `${String(item?.name || '')} ${String(item?.base_name || '')}`.toLowerCase();
+
+    const candidates = [];
+    if (hasSensitiveSignal && rank === 1) candidates.push('민감 피부 부담 완화용');
+    if (form === 'stick') candidates.push(rank === 1 ? '기본 데일리용' : '보송한 수정용');
+    if (form === 'spray') candidates.push('보송한 수정용');
+    if (form === 'serum') candidates.push('산뜻한 수분감');
+    if (form === 'cream' || form === 'lotion') candidates.push('기본 데일리용');
+    if (/비비|bb|쿠션|톤업|커버|베이스/.test(text)) candidates.push('커버/톤 보정용');
+    if (hasSensitiveSignal) candidates.push('민감 피부 부담 완화용');
+
+    const fallbackByRank = ['기본 데일리용', '산뜻한 수분감', '보송한 수정용'];
+    candidates.push(fallbackByRank[Math.min(rank - 1, fallbackByRank.length - 1)]);
+
+    const uniqueCandidate = candidates.find((label) => !usedRoleLabels.has(label)) || candidates[0];
+    usedRoleLabels.add(uniqueCandidate);
+    return uniqueCandidate;
+  };
+
+  const pickDistinctKeywords = (rank) => {
+    const pool = rankKeywordPools[Math.min(rank - 1, rankKeywordPools.length - 1)];
+    const first = pool.find((k) => !usedKeywords.has(k)) || pool[0];
+    usedKeywords.add(first);
+    const second = pool.find((k) => k !== first && !usedKeywords.has(k)) || pool.find((k) => k !== first) || first;
+    usedKeywords.add(second);
+    return [first, second];
+  };
+
+  const sanitizeWhy = (rawWhy) => {
+    const text = String(rawWhy || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    if (/의미 매칭|알고리즘|점수|로직|모델/i.test(text)) return '';
+    return text;
+  };
 
   ranked.forEach((item, idx) => {
     const rank = idx + 1;
     const name = String(item?.name || '').trim();
-    const why = String(item?.why_pick || item?.key_point || '\uC694\uCCAD \uC870\uAC74\uACFC \uC5B4\uC6B8\uB9AC\uB294 \uC0AC\uC6A9\uAC10\uC73C\uB85C \uBCF4\uC2DC\uBA74 \uC88B\uC544\uC694.').trim();
+    const roleLabel = pickRoleLabel(item, rank);
+    const [kw1, kw2] = pickDistinctKeywords(rank);
+    const safeWhy = sanitizeWhy(item?.why_pick || item?.key_point);
     const tip = String(item?.usage_tip || '').trim();
 
-    let compareLine = '\uB370\uC77C\uB9AC \uAE30\uC900\uC73C\uB85C \uBB34\uB09C\uD558\uAC8C \uBCF4\uAE30 \uC88B\uC740 \uC21C\uC11C\uC608\uC694.';
-    if (rank === 2) compareLine = '\u3141\uC21C\uC704\uAC00 \uC870\uAE08 \uBB34\uAC81\uAC8C \uB290\uAEF4\uC9C8 \uB54C \uBE44\uAD50\uD558\uAE30 \uC88B\uC740 \uB300\uC548\uC774\uC5D0\uC694.';
-    if (rank === 3) compareLine = '\uC0AC\uC6A9 \uC0C1\uD669\uC774\uB098 \uCDE8\uD5A5\uC5D0 \uB9DE\uCDB0 \uD3ED\uB113\uAC8C \uBE44\uAD50\uD574\uBCFC \uC218 \uC788\uB294 \uC120\uD0DD\uC9C0\uC608\uC694.';
+    const roleByRank =
+      rank === 1
+        ? '첫 선택으로 가장 먼저 보기 좋아요.'
+        : rank === 2
+        ? '1위와 비교할 때 사용감 차이를 보기 좋은 대안이에요.'
+        : '상황에 맞춰 폭넓게 비교하기 좋은 보완 선택지예요.';
 
-    lines.push(`${rank}\uC21C\uC704 ${name}`);
-    lines.push(`- \uC65C \uCD94\uCC9C\uD558\uB0D0\uBA74: ${why}`);
-    lines.push(`- \uC5B8\uC81C \uC798 \uB9DE\uB0D0\uBA74: ${compareLine}`);
-    if (tip) lines.push(`- \uC4F0\uB294 \uD301: ${tip}`);
+    lines.push(`${rank}순위 ${name}`);
+    lines.push(`- [${roleLabel}] ${roleByRank}`);
+    lines.push(`- 추천 포인트: ${kw1}, ${kw2} 쪽으로 보시면 선택이 쉬워요.`);
+    lines.push(`- 왜 추천하냐면: ${safeWhy || `${kw1} 중심으로 쓰기 편하고, ${kw2} 쪽 만족도가 높은 편이에요.`}`);
+    if (tip) lines.push(`- 쓰는 팁: ${tip}`);
     if (idx < ranked.length - 1) lines.push('');
   });
 
-  const defaultTip =
-    '\uAE30\uCD08 \uB9C8\uC9C0\uB9C9 \uB2E8\uACC4\uC5D0\uC11C \uD55C \uBC88\uC5D0 \uB9CE\uC774 \uBC14\uB974\uAE30\uBCF4\uB2E4 \uC587\uAC8C \uB098\uB220 \uBC14\uB974\uBA74 \uBC00\uB9BC \uBD80\uB2F4\uC744 \uC904\uC774\uAE30 \uC88B\uC544\uC694.';
   lines.push('');
-  lines.push(`\uB9C8\uBB34\uB9AC \uD301: ${defaultTip}`);
+  lines.push('마무리 팁: 기초 마지막 단계에서 한 번에 많이 바르기보다 얇게 나눠 바르면 밀림 부담을 줄이기 좋아요.');
 
-  if (concerns.length > 0) {
-    lines.push(
-      '\uD53C\uBD80\uAC00 \uAC74\uC870\uD55C \uD3B8\uC778\uC9C0, \uBC88\uB4E4\uAC70\uB9BC\uC774 \uB354 \uACE0\uBBFC\uC778\uC9C0 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uC774 \uC911\uC5D0\uC11C 1\uAC1C\uB85C \uB354 \uC815\uD655\uD558\uAC8C \uC881\uD600\uB4DC\uB9B4\uAC8C\uC694.'
-    );
-  } else {
-    lines.push(
-      '\uAC00\uBCBD\uAC8C \uBC14\uB974\uB294 \uCABD\uC774 \uC88B\uC740\uC9C0, \uCD09\uCD09\uD55C \uB9C8\uBB34\uB9AC\uAC00 \uC88B\uC740\uC9C0 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uC774 \uC911\uC5D0\uC11C 1\uAC1C\uB85C \uC881\uD600\uB4DC\uB9B4\uAC8C\uC694.'
-    );
-  }
+  const optionLabels = Array.from(usedRoleLabels).slice(0, ranked.length);
+  const question =
+    optionLabels.length >= 3
+      ? `${optionLabels[0]}, ${optionLabels[1]}, ${optionLabels[2]} 중에서 지금 더 필요한 쪽이 어느 쪽일까요?`
+      : optionLabels.length === 2
+      ? `${optionLabels[0]} 쪽이 좋으세요, 아니면 ${optionLabels[1]} 쪽이 더 필요하세요?`
+      : '지금은 이 제품부터 시작해보고, 원하시면 사용감 기준으로 1개로 더 좁혀드릴게요.';
+  lines.push(question);
 
   return lines.join('\n');
 }

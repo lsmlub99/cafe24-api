@@ -195,7 +195,7 @@ function computeEnrichMaxFetch(args = {}) {
   return shouldEnrich ? config.ENRICH_MAX_FETCH_INGREDIENT : config.ENRICH_MAX_FETCH_BASE;
 }
 
-function buildCompactConsultText(args = {}, mainRecommendations = []) {
+function buildCompactConsultTextLegacy(args = {}, mainRecommendations = []) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 본품 후보를 찾지 못했어요. 원하시면 피부 타입이나 사용감을 알려주시면 다시 좁혀드릴게요.';
   }
@@ -215,7 +215,7 @@ function buildCompactConsultText(args = {}, mainRecommendations = []) {
   return lines.join('\n');
 }
 
-function buildCanonicalConsultText(mainRecommendations = []) {
+function buildCanonicalConsultTextLegacy(mainRecommendations = []) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
   }
@@ -239,7 +239,7 @@ function buildCanonicalConsultText(mainRecommendations = []) {
   return lines.join('\n');
 }
 
-function buildCanonicalConsultTextV2(mainRecommendations = []) {
+function buildCanonicalConsultTextV2Legacy(mainRecommendations = []) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
   }
@@ -265,7 +265,7 @@ function buildCanonicalConsultTextV2(mainRecommendations = []) {
   return lines.join('\n');
 }
 
-function buildCanonicalConsultTextV3(mainRecommendations = [], args = {}) {
+function buildCanonicalConsultTextV3Legacy(mainRecommendations = [], args = {}) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
   }
@@ -314,7 +314,7 @@ function normalizeForKeywordMatch(text = '') {
     .replace(/[\s\-_:/\\()[\]{}.,!?'"]/g, '');
 }
 
-function includesFormKeyword(name = '', categoryHint = '') {
+function includesFormKeywordLegacy(name = '', categoryHint = '') {
   const normalized = normalizeForKeywordMatch(name);
   if (!normalized) return false;
 
@@ -331,7 +331,7 @@ function includesFormKeyword(name = '', categoryHint = '') {
   return bbKeywords.some((keyword) => normalized.includes(normalizeForKeywordMatch(keyword)));
 }
 
-function buildShortConclusionName(originalName = '', displayNameShort = '') {
+function buildShortConclusionNameLegacy(originalName = '', displayNameShort = '') {
   const original = String(originalName || '').trim();
   if (!original) return '';
 
@@ -348,7 +348,7 @@ function buildShortConclusionName(originalName = '', displayNameShort = '') {
   return `${candidate.slice(0, 25).trim()}…`;
 }
 
-function resolveConclusionDisplayName(item = {}, categoryHint = '') {
+function resolveConclusionDisplayNameLegacy(item = {}, categoryHint = '') {
   const originalName = String(item?.name || '').trim();
   const shortName = buildShortConclusionName(originalName, item?.display_name_short);
 
@@ -421,7 +421,7 @@ function resolveConclusionDisplayNameV14(item = {}, categoryHint = '') {
   return shortName;
 }
 
-function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
+function buildCanonicalConsultTextRichLegacy(mainRecommendations = [], args = {}) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
   }
@@ -481,6 +481,44 @@ function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
   return lines.join('\n');
 }
 
+// Legacy helper compatibility layer:
+// keep old exported helper names stable, but always route to the fixed canonical builder.
+// This prevents accidental use of old text paths while preserving backward references.
+function buildCompactConsultText(args = {}, mainRecommendations = []) {
+  return buildCanonicalConsultTextFixed(mainRecommendations, args);
+}
+
+function buildCanonicalConsultText(mainRecommendations = []) {
+  return buildCanonicalConsultTextFixed(mainRecommendations, {});
+}
+
+function buildCanonicalConsultTextV2(mainRecommendations = []) {
+  return buildCanonicalConsultTextFixed(mainRecommendations, {});
+}
+
+function buildCanonicalConsultTextV3(mainRecommendations = [], args = {}) {
+  return buildCanonicalConsultTextFixed(mainRecommendations, args);
+}
+
+function includesFormKeyword(name = '', categoryHint = '') {
+  return includesFormKeywordV14(name, categoryHint);
+}
+
+function buildShortConclusionName(originalName = '', displayNameShort = '') {
+  return buildShortConclusionNameV14(originalName, displayNameShort);
+}
+
+function resolveConclusionDisplayName(item = {}, categoryHint = '') {
+  return resolveConclusionDisplayNameV14(item, categoryHint);
+}
+
+function buildCanonicalConsultTextRich(mainRecommendations = [], args = {}) {
+  return buildCanonicalConsultTextFixed(mainRecommendations, args);
+}
+
+// MCP body single source of truth.
+// App in GPT body text must be derived from canonical main recommendations only,
+// so card(top1) and body conclusion stay consistent.
 function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '\uC870\uAC74\uC5D0 \uB9DE\uB294 \uCD94\uCC9C \uACB0\uACFC\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC5B4\uC694. \uD53C\uBD80 \uD0C0\uC785\uC774\uB098 \uC6D0\uD558\uB294 \uC0AC\uC6A9\uAC10\uC744 \uC54C\uB824\uC8FC\uC2DC\uBA74 \uB2E4\uC2DC \uC88C\uD798\uD560\uAC8C\uC694.';
@@ -611,6 +649,7 @@ async function executeTool(args = {}) {
   if (!Array.isArray(canonicalMain) || canonicalMain.length === 0) {
     const bodyTemplateVersion = 'mcp_v2_3';
     const bodyItemsCount = 0;
+    // Body Sync log: verifies MCP body-template version and body/card consistency signals.
     logger.info(
       `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_conclusion_product="" main_top1_product="" body_top1_match=true`
     );
@@ -656,6 +695,7 @@ async function executeTool(args = {}) {
   const mainTop1Product = String(canonicalMain?.[0]?.name || '').trim();
   const bodyTop1Match =
     !bodyConclusionProduct || !mainTop1Product ? true : bodyConclusionProduct === mainTop1Product;
+  // Body Sync log: submission-time checkpoint for "card = source of truth, body = explanation".
   logger.info(
     `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
   );

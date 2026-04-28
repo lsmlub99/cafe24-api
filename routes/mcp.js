@@ -609,6 +609,12 @@ async function executeTool(args = {}) {
       : { message: '조건에 맞는 결과가 없습니다.', strategy: '', conclusion: '' };
 
   if (!Array.isArray(canonicalMain) || canonicalMain.length === 0) {
+    const bodyTemplateVersion = 'mcp_v2_3';
+    const bodyItemsCount = 0;
+    logger.info(
+      `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_conclusion_product="" main_top1_product="" body_top1_match=true`
+    );
+
     return {
       content: [{ type: 'text', text: safeSummary.message || '조건에 맞는 결과가 없습니다.' }],
       structuredContent: {
@@ -644,12 +650,14 @@ async function executeTool(args = {}) {
   }
 
   const consultText = buildCanonicalConsultTextFixed(canonicalMain, args);
+  const bodyTemplateVersion = 'mcp_v2_3';
+  const bodyItemsCount = Array.isArray(canonicalMain) ? canonicalMain.length : 0;
   const bodyConclusionProduct = String(canonicalMain?.[0]?.name || '').trim();
   const mainTop1Product = String(canonicalMain?.[0]?.name || '').trim();
   const bodyTop1Match =
     !bodyConclusionProduct || !mainTop1Product ? true : bodyConclusionProduct === mainTop1Product;
   logger.info(
-    `[Body Sync] body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
+    `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
   );
 
   return {

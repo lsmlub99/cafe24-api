@@ -14,6 +14,36 @@ function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
 }
 
+function findWidgetDataCandidate(node, depth = 0) {
+  if (!node || depth > 6) return null;
+  const parsed = tryParseJson(node);
+
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) {
+      const found = findWidgetDataCandidate(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (!isObject(parsed)) return null;
+  if (isObject(parsed._meta?.widgetData)) return parsed._meta.widgetData;
+  if (isObject(parsed.widgetData)) return parsed.widgetData;
+
+  const directKeys = ['_meta', 'result', 'payload', 'data', 'output', 'toolOutput', 'params', 'structuredContent'];
+  for (const key of directKeys) {
+    if (parsed[key] == null) continue;
+    const found = findWidgetDataCandidate(parsed[key], depth + 1);
+    if (found) return found;
+  }
+
+  for (const value of Object.values(parsed)) {
+    const found = findWidgetDataCandidate(value, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
 function findStructuredCandidate(node, depth = 0) {
   if (!node || depth > 6) return null;
   const parsed = tryParseJson(node);
@@ -57,7 +87,8 @@ function findStructuredCandidate(node, depth = 0) {
 }
 
 function normalizeWidgetData(raw) {
-  const structured = findStructuredCandidate(raw);
+  const primaryWidgetData = findWidgetDataCandidate(raw);
+  const structured = primaryWidgetData || findStructuredCandidate(raw);
   if (!structured) return null;
 
   const mainRaw = Array.isArray(structured.main_recommendations)

@@ -5,6 +5,7 @@ import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { recommendationService } from '../services/recommendationService.js';
+import { buildMcpToolResult as buildMcpToolResultContract } from './mcpResponseContract.js';
 
 const router = express.Router();
 let clientStream = null;
@@ -149,6 +150,32 @@ const ENRICH_TRIGGER_KEYWORDS = [
   'ingredients',
   'inci',
 ];
+
+function buildMcpToolResult({
+  requestedCategory = null,
+  canonicalMain = [],
+  canonicalSecondary = [],
+  reasoningTags = [],
+  appliedPolicy = {},
+  promotions = [],
+  safeSummary = {},
+  consultText = '',
+  bodyTemplateVersion = 'fixed_v1',
+} = {}) {
+  return buildMcpToolResultContract({
+    requestedCategory,
+    canonicalMain,
+    canonicalSecondary,
+    reasoningTags,
+    appliedPolicy,
+    promotions,
+    safeSummary,
+    consultText,
+    bodyTemplateVersion,
+    widgetHttpUri: WIDGET_HTTP_URI,
+    minimalStructuredEnv: process.env.MCP_MINIMAL_STRUCTURED,
+  });
+}
 
 function sendToClient(msg) {
   if (clientStream && !clientStream.writableEnded) {
@@ -687,48 +714,7 @@ async function executeTool(args = {}) {
       ? summary
       : { message: '조건에 맞는 결과가 없습니다.', strategy: '', conclusion: '' };
 
-  if (!Array.isArray(canonicalMain) || canonicalMain.length === 0) {
-    const bodyTemplateVersion = 'fixed_v1';
-    const bodyItemsCount = 0;
-    const bodyRankLinesCount = 0;
-    // Body Sync log: verifies MCP body-template version and body/card consistency signals.
-    logger.info(
-      `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_rank_lines_count=${bodyRankLinesCount} body_conclusion_product="" main_top1_product="" body_top1_match=true`
-    );
-
-    return {
-      content: [{ type: 'text', text: safeSummary.message || '조건에 맞는 결과가 없습니다.' }],
-      structuredContent: {
-        requested_category: requestedCategory,
-        main_recommendations: [],
-        secondary_recommendations: canonicalSecondary,
-        reasoning_tags: reasoningTags,
-        applied_policy: appliedPolicy,
-        recommendations: [],
-        promotions: promotions || [],
-        reference_recommendations: canonicalSecondary || [],
-        summary: safeSummary,
-        strategy: safeSummary.strategy || '',
-        conclusion: safeSummary.conclusion || '',
-      },
-      _meta: {
-        ui: { resourceUri: WIDGET_HTTP_URI },
-        'openai/outputTemplate': WIDGET_HTTP_URI,
-        'openai/widgetAccessible': true,
-        widgetData: {
-          requested_category: requestedCategory,
-          main_recommendations: [],
-          secondary_recommendations: canonicalSecondary,
-          reasoning_tags: reasoningTags,
-          applied_policy: appliedPolicy,
-          recommendations: [],
-          promotions: promotions || [],
-          reference_recommendations: canonicalSecondary || [],
-          summary: safeSummary,
-        },
-      },
-    };
-  }
+  // unified body generation path: even when main is empty we keep fixed_v1 text shape.
 
   const consultText = buildCanonicalConsultTextFixed(canonicalMain, args);
   const bodyTemplateVersion = 'fixed_v1';
@@ -743,38 +729,32 @@ async function executeTool(args = {}) {
     `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_rank_lines_count=${bodyRankLinesCount} body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
   );
 
-  return {
-    content: [{ type: 'text', text: consultText }],
-    structuredContent: {
-      requested_category: requestedCategory,
-      main_recommendations: canonicalMain,
-      secondary_recommendations: canonicalSecondary,
-      reasoning_tags: reasoningTags,
-      applied_policy: appliedPolicy,
-      recommendations: canonicalMain,
-      promotions: promotions || [],
-      reference_recommendations: canonicalSecondary || [],
-      summary: safeSummary,
-      strategy: safeSummary.strategy || '',
-      conclusion: safeSummary.conclusion || '',
-    },
-    _meta: {
-      ui: { resourceUri: WIDGET_HTTP_URI },
-      'openai/outputTemplate': WIDGET_HTTP_URI,
-      'openai/widgetAccessible': true,
-      widgetData: {
-        requested_category: requestedCategory,
-        main_recommendations: canonicalMain,
-        secondary_recommendations: canonicalSecondary,
-        reasoning_tags: reasoningTags,
-        applied_policy: appliedPolicy,
-        recommendations: canonicalMain,
-        promotions: promotions || [],
-        reference_recommendations: canonicalSecondary || [],
-        summary: safeSummary,
-      },
-    },
-  };
+  const toolResult = buildMcpToolResultContract({
+    requestedCategory,
+    canonicalMain,
+    canonicalSecondary,
+    reasoningTags,
+    appliedPolicy,
+    promotions,
+    safeSummary,
+    consultText,
+    bodyTemplateVersion,
+    widgetHttpUri: WIDGET_HTTP_URI,
+    minimalStructuredEnv: process.env.MCP_MINIMAL_STRUCTURED,
+  });
+  const structuredContentKeys = Object.keys(toolResult?.structuredContent || {});
+  const structuredContentHasRecommendations = Object.prototype.hasOwnProperty.call(
+    toolResult?.structuredContent || {},
+    'recommendations'
+  );
+  const structuredContentHasSummary = Object.prototype.hasOwnProperty.call(toolResult?.structuredContent || {}, 'summary');
+  const metaWidgetDataHasRecommendations = Boolean(
+    toolResult?._meta?.widgetData?.recommendations || toolResult?._meta?.widgetData?.main_recommendations
+  );
+  logger.info(
+    `[MCP Shape] structuredContent_keys=${structuredContentKeys.join(',')} structuredContent_has_recommendations=${structuredContentHasRecommendations} structuredContent_has_summary=${structuredContentHasSummary} meta_widgetData_has_recommendations=${metaWidgetDataHasRecommendations}`
+  );
+  return toolResult;
 }
 
 function handleSseConnect(req, res) {
@@ -887,7 +867,9 @@ async function handleMcpMessage(req, res) {
         finalResult.output = toolResult.structuredContent;
       }
 
-      const recCount = Array.isArray(toolResult?.structuredContent?.main_recommendations)
+      const recCount = Array.isArray(toolResult?._meta?.widgetData?.main_recommendations)
+        ? toolResult._meta.widgetData.main_recommendations.length
+        : Array.isArray(toolResult?.structuredContent?.main_recommendations)
         ? toolResult.structuredContent.main_recommendations.length
         : Array.isArray(toolResult?.structuredContent?.recommendations)
         ? toolResult.structuredContent.recommendations.length

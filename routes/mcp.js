@@ -108,6 +108,7 @@ const TOOLS = [
       ui: { resourceUri: WIDGET_HTTP_URI, visibility: ['model', 'app'] },
       'openai/outputTemplate': WIDGET_HTTP_URI,
       'openai/widgetAccessible': true,
+      'openai/resultCanProduceWidget': true,
       'openai/toolInvocation/invoking': 'Analyzing your skin needs...',
       'openai/toolInvocation/invoked': 'Recommendation results are ready.',
     },
@@ -922,9 +923,15 @@ router.get('/widget-data/:id', (req, res) => {
 
   const widgetData = readWidgetData(String(req.params.id || ''));
   if (!widgetData) {
+    logger.warn(`[MCP WidgetData] miss id=${String(req.params.id || '')}`);
     res.status(404).json({ error: 'widget_data_expired' });
     return;
   }
+  logger.info(
+    `[MCP WidgetData] hit id=${String(req.params.id || '')} main_count=${
+      Array.isArray(widgetData?.main_recommendations) ? widgetData.main_recommendations.length : 0
+    }`
+  );
   res.json(widgetData);
 });
 

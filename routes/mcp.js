@@ -677,112 +677,6 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
   return lines.join('\n');
 }
 
-function buildCanonicalConsultTextFixedClean(mainRecommendations = [], args = {}) {
-  if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
-    return '조건에 맞는 제품을 찾지 못했어요.';
-  }
-
-  const ranked = mainRecommendations.slice(0, 3);
-  const topItem = ranked[0] || {};
-  const lines = [];
-
-  const normalizeText = (value = '') =>
-    String(value || '')
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const includesAny = (text, words = []) => words.some((word) => text.includes(word));
-
-  const safePrice = (item = {}) => {
-    const raw = String(item?.price || '').trim();
-    if (!raw) return '-';
-    return /원$/.test(raw) ? raw : `${raw}원`;
-  };
-
-  const categoryDisplay = (item = {}, categoryArg = '') => {
-    const text = normalizeText(`${categoryArg || ''} ${item?.category_key || ''} ${item?.form || ''} ${item?.name || ''}`);
-    if (includesAny(text, ['bb', '비비'])) return '비비크림';
-    if (includesAny(text, ['stick', '스틱'])) return '선스틱';
-    if (includesAny(text, ['spray', '스프레이'])) return '선스프레이';
-    if (includesAny(text, ['serum', '세럼', '앰플'])) return '세럼';
-    if (includesAny(text, ['mask', '마스크'])) return '마스크팩';
-    if (includesAny(text, ['toner', '토너'])) return '토너';
-    if (includesAny(text, ['sunscreen', 'sun', '선크림', '썬스크린'])) return '선크림';
-    if (includesAny(text, ['cream', '크림'])) return '크림';
-    return String(categoryArg || item?.category_key || '추천 제품').trim();
-  };
-
-  const productText = (item = {}) =>
-    normalizeText(
-      [
-        item?.name,
-        item?.summary_description,
-        JSON.stringify(item?.attributes || {}),
-        JSON.stringify(item?.derived_attributes || {}),
-        item?.form,
-      ].join(' ')
-    );
-
-  const pickRoleKeyword = (item = {}, rank = 1) => {
-    const form = normalizeText(item?.form || '');
-    const text = productText(item);
-    if (includesAny(text, ['비비', 'bb', '쿠션', '커버', '베이스', '메이크업'])) return '커버/톤 보정용';
-    if (includesAny(text, ['민감', '진정', 'calm', 'soothing', '시카', '릴리프'])) return '민감 피부 부담 완화용';
-    if (form === 'stick' || includesAny(text, ['스틱', '블러', '보송'])) return '보송한 수정용';
-    if (form === 'spray' || includesAny(text, ['스프레이'])) return '빠른 덧바름용';
-    if (form === 'serum' || includesAny(text, ['세럼', '앰플', '가벼운'])) return '산뜻한 사용감';
-    if (form === 'cream' || form === 'lotion' || includesAny(text, ['크림', '보습', '데일리'])) return '기본 데일리용';
-    if (rank === 1) return '기본 데일리용';
-    if (rank === 2) return '다른 사용감 비교용';
-    return '추가 옵션 확인용';
-  };
-
-  const pickSituation = (item = {}, roleKeyword = '', rank = 1) => {
-    const form = normalizeText(item?.form || '');
-    if (roleKeyword === '민감 피부 부담 완화용') return '자극 부담을 줄이면서 편하게 쓰고 싶을 때';
-    if (roleKeyword === '커버/톤 보정용') return '톤 보정이나 베이스 표현까지 함께 보고 싶을 때';
-    if (roleKeyword === '보송한 수정용') return '외출 중 덧바르거나 보송한 마무리가 필요할 때';
-    if (roleKeyword === '빠른 덧바름용') return '손에 묻히지 않고 빠르게 다시 바르고 싶을 때';
-    if (roleKeyword === '산뜻한 사용감') return '답답함 없이 가볍게 바르는 쪽을 원할 때';
-    if (roleKeyword === '기본 데일리용') return '매일 부담 없이 꾸준히 쓰기 좋은 제품이 필요할 때';
-    if (form === 'spray') return '빠르게 덧바르기 쉬운 타입이 필요할 때';
-    if (form === 'stick') return '휴대하면서 간편하게 수정하고 싶을 때';
-    if (rank === 1) return '가장 먼저 시작할 제품이 필요할 때';
-    if (rank === 2) return '1위와 다른 사용감을 비교하고 싶을 때';
-    return '추가 옵션까지 같이 비교해보고 싶을 때';
-  };
-
-  lines.push(`${categoryDisplay(topItem, args?.category)}은 현재 ${ranked.length}가지가 있어요. 사용 목적에 따라 이렇게 고르면 쉬워요.`);
-  lines.push('');
-
-  ranked.forEach((item, idx) => {
-    const rank = idx + 1;
-    const name = String(item?.name || '').trim();
-    const roleKeyword = pickRoleKeyword(item, rank);
-    const situation = pickSituation(item, roleKeyword, rank);
-    lines.push(`${rank}. ${name}`);
-    lines.push(`- 가격: ${safePrice(item)}`);
-    lines.push(`- 추천 포인트: ${roleKeyword}`);
-    lines.push(`- 이런 분께 좋아요: ${situation}`);
-    if (idx < ranked.length - 1) lines.push('');
-  });
-
-  lines.push('');
-  lines.push('[선택 가이드]');
-  lines.push(`- 가장 먼저 볼 제품: ${String(ranked[0]?.name || '').trim()}`);
-  if (ranked.length >= 2) lines.push(`- 함께 비교할 제품: ${String(ranked[1]?.name || '').trim()}`);
-  if (ranked.length >= 3) lines.push(`- 추가로 참고할 제품: ${String(ranked[2]?.name || '').trim()}`);
-
-  lines.push('');
-  lines.push(
-    `처음 고르신다면 ${String(ranked[0]?.name || '').trim()}부터 보셔도 좋고, 원하시면 피부 타입이나 사용감 기준으로 더 좁혀드릴게요.`
-  );
-
-  return lines.join('\n');
-}
-
 async function executeTool(args = {}) {
   logger.info(`[Tool Exec] ${TOOL_NAME} start`);
 
@@ -856,7 +750,7 @@ async function executeTool(args = {}) {
 
   // unified body generation path: even when main is empty we keep fixed_v1 text shape.
 
-  const consultText = buildCanonicalConsultTextFixedClean(canonicalMain, args);
+  const consultText = buildCanonicalConsultTextFixed(canonicalMain, args);
   const bodyTemplateVersion = 'fixed_v1';
   const bodyItemsCount = Array.isArray(canonicalMain) ? canonicalMain.length : 0;
   const bodyRankLinesCount = bodyItemsCount;

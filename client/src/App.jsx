@@ -86,37 +86,6 @@ function findStructuredCandidate(node, depth = 0) {
   return null;
 }
 
-function findWidgetDataUrl(node, depth = 0) {
-  if (!node || depth > 6) return '';
-  const parsed = tryParseJson(node);
-
-  if (Array.isArray(parsed)) {
-    for (const item of parsed) {
-      const found = findWidgetDataUrl(item, depth + 1);
-      if (found) return found;
-    }
-    return '';
-  }
-
-  if (!isObject(parsed)) return '';
-  if (typeof parsed.widget_data_url === 'string' && parsed.widget_data_url.trim()) {
-    return parsed.widget_data_url.trim();
-  }
-
-  const directKeys = ['structuredContent', 'output', 'data', 'result', 'payload', 'toolOutput', '_meta', 'params'];
-  for (const key of directKeys) {
-    if (parsed[key] == null) continue;
-    const found = findWidgetDataUrl(parsed[key], depth + 1);
-    if (found) return found;
-  }
-
-  for (const value of Object.values(parsed)) {
-    const found = findWidgetDataUrl(value, depth + 1);
-    if (found) return found;
-  }
-  return '';
-}
-
 function normalizeWidgetData(raw) {
   const primaryWidgetData = findWidgetDataCandidate(raw);
   const structured = primaryWidgetData || findStructuredCandidate(raw);
@@ -181,13 +150,6 @@ function buildApiUrl(path) {
   const normalizedPath = String(path || '').startsWith('/') ? path : `/${String(path || '')}`;
   const base = getApiBaseUrl();
   return base ? `${base}${normalizedPath}` : normalizedPath;
-}
-
-function resolveWidgetDataUrl(url = '') {
-  const raw = String(url || '').trim();
-  if (!raw) return '';
-  if (/^https?:\/\//i.test(raw)) return raw;
-  return buildApiUrl(raw);
 }
 
 function isCtaDebugEnabled() {
@@ -607,7 +569,6 @@ function App() {
   const lastWidgetSignatureRef = useRef('');
   const fallbackPollRef = useRef(null);
   const widgetDataRef = useRef(null);
-  const fetchedWidgetDataUrlsRef = useRef(new Set());
   const sessionIdRef = useRef(getOrCreateSessionId());
   const impressionDedupeRef = useRef(new Set());
   const followupRequestIdRef = useRef(0);
@@ -835,24 +796,8 @@ function App() {
   }, [messages]);
 
   useEffect(() => {
-    const applyWidgetData = async (payload) => {
-      let nextData = normalizeWidgetData(payload);
-      if (!nextData) {
-        const widgetDataUrl = resolveWidgetDataUrl(findWidgetDataUrl(payload));
-        if (widgetDataUrl && !fetchedWidgetDataUrlsRef.current.has(widgetDataUrl)) {
-          fetchedWidgetDataUrlsRef.current.add(widgetDataUrl);
-          try {
-            const response = await fetch(widgetDataUrl, { cache: 'no-store' });
-            if (response.ok) {
-              nextData = normalizeWidgetData(await response.json());
-            } else {
-              fetchedWidgetDataUrlsRef.current.delete(widgetDataUrl);
-            }
-          } catch {
-            fetchedWidgetDataUrlsRef.current.delete(widgetDataUrl);
-          }
-        }
-      }
+    const applyWidgetData = (payload) => {
+      const nextData = normalizeWidgetData(payload);
       if (!nextData) return;
 
       const nextHasRecs = nextData.recommendations.length > 0;
@@ -876,7 +821,7 @@ function App() {
 
     const handleMessage = (event) => {
       if (!event?.data) return;
-      void applyWidgetData(event.data);
+      applyWidgetData(event.data);
     };
 
     window.addEventListener('message', handleMessage);
@@ -890,11 +835,11 @@ function App() {
       window.__TOOL_OUTPUT__,
       window.__WIDGET_DATA__,
     ];
-    bootstrapCandidates.forEach((c) => c && void applyWidgetData(c));
+    bootstrapCandidates.forEach((c) => c && applyWidgetData(c));
 
     fallbackPollRef.current = window.setInterval(() => {
       const candidates = [window.openai?.toolOutput, window.openai?.appData, window.__TOOL_OUTPUT__, window.__WIDGET_DATA__];
-      candidates.forEach((c) => c && void applyWidgetData(c));
+      candidates.forEach((c) => c && applyWidgetData(c));
     }, 400);
 
     const inIframe = window.parent && window.parent !== window;

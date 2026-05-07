@@ -2,16 +2,12 @@ function isTruthyEnv(value) {
   return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
 
-function buildMinimalStructuredContent(bodyTemplateVersion = 'fixed_v1', widgetDataUrl = '') {
-  const content = {
+function buildMinimalStructuredContent(bodyTemplateVersion = 'fixed_v1') {
+  return {
     status: 'ok',
     display_mode: 'widget',
     body_template_version: bodyTemplateVersion,
   };
-  if (widgetDataUrl) {
-    content.widget_data_url = widgetDataUrl;
-  }
-  return content;
 }
 
 function buildLegacyStructuredContent({
@@ -85,11 +81,10 @@ export function buildMcpToolResult({
   consultText = '',
   bodyTemplateVersion = 'fixed_v1',
   widgetHttpUri = '',
-  widgetDataUrl = '',
   minimalStructuredEnv = process.env.MCP_MINIMAL_STRUCTURED,
 } = {}) {
   const structuredContent = isTruthyEnv(resolveMinimalStructuredEnv(minimalStructuredEnv))
-    ? buildMinimalStructuredContent(bodyTemplateVersion, widgetDataUrl)
+    ? buildMinimalStructuredContent(bodyTemplateVersion)
     : buildLegacyStructuredContent({
         requestedCategory,
         canonicalMain,

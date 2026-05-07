@@ -18,8 +18,6 @@ const WIDGET_UI_URI = `ui://widget/recommendation-${WIDGET_TEMPLATE_VERSION}.htm
 const WIDGET_HTTP_URI = `${BASE_URL}/ui/recommendation`;
 const TOOL_NAME = 'search_cafe24_real_products';
 const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
-const WIDGET_DATA_TTL_MS = 10 * 60 * 1000;
-const widgetDataStore = new Map();
 
 const RESOURCE_META = {
   ui: {
@@ -65,33 +63,6 @@ const RESOURCES = [
     _meta: RESOURCE_META,
   },
 ];
-
-function pruneWidgetDataStore(now = Date.now()) {
-  for (const [id, entry] of widgetDataStore.entries()) {
-    if (!entry || entry.expiresAt <= now) widgetDataStore.delete(id);
-  }
-}
-
-function createWidgetDataId() {
-  return `wd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function storeWidgetData(id, data) {
-  if (!id || !data) return;
-  const now = Date.now();
-  pruneWidgetDataStore(now);
-  widgetDataStore.set(id, {
-    data,
-    expiresAt: now + WIDGET_DATA_TTL_MS,
-  });
-}
-
-function readWidgetData(id) {
-  pruneWidgetDataStore();
-  const entry = widgetDataStore.get(id);
-  if (!entry) return null;
-  return entry.data;
-}
 
 const TOOLS = [
   {
@@ -191,9 +162,7 @@ function buildMcpToolResult({
   consultText = '',
   bodyTemplateVersion = 'fixed_v1',
 } = {}) {
-  const widgetDataId = createWidgetDataId();
-  const widgetDataUrl = `${BASE_URL}/mcp/widget-data/${encodeURIComponent(widgetDataId)}`;
-  const toolResult = buildMcpToolResultContract({
+  return buildMcpToolResultContract({
     requestedCategory,
     canonicalMain,
     canonicalSecondary,
@@ -204,11 +173,8 @@ function buildMcpToolResult({
     consultText,
     bodyTemplateVersion,
     widgetHttpUri: WIDGET_HTTP_URI,
-    widgetDataUrl,
     minimalStructuredEnv: process.env.MCP_MINIMAL_STRUCTURED,
   });
-  storeWidgetData(widgetDataId, toolResult?._meta?.widgetData);
-  return toolResult;
 }
 
 function sendToClient(msg) {
@@ -763,7 +729,7 @@ async function executeTool(args = {}) {
     `[Body Sync] body_template_version=${bodyTemplateVersion} body_items_count=${bodyItemsCount} body_rank_lines_count=${bodyRankLinesCount} body_conclusion_product="${bodyConclusionProduct}" main_top1_product="${mainTop1Product}" body_top1_match=${bodyTop1Match}`
   );
 
-  const toolResult = buildMcpToolResult({
+  const toolResult = buildMcpToolResultContract({
     requestedCategory,
     canonicalMain,
     canonicalSecondary,
@@ -782,12 +748,11 @@ async function executeTool(args = {}) {
     'recommendations'
   );
   const structuredContentHasSummary = Object.prototype.hasOwnProperty.call(toolResult?.structuredContent || {}, 'summary');
-  const structuredContentHasWidgetDataUrl = Boolean(toolResult?.structuredContent?.widget_data_url);
   const metaWidgetDataHasRecommendations = Boolean(
     toolResult?._meta?.widgetData?.recommendations || toolResult?._meta?.widgetData?.main_recommendations
   );
   logger.info(
-    `[MCP Shape] structuredContent_keys=${structuredContentKeys.join(',')} structuredContent_has_recommendations=${structuredContentHasRecommendations} structuredContent_has_summary=${structuredContentHasSummary} structuredContent_has_widget_data_url=${structuredContentHasWidgetDataUrl} meta_widgetData_has_recommendations=${metaWidgetDataHasRecommendations}`
+    `[MCP Shape] structuredContent_keys=${structuredContentKeys.join(',')} structuredContent_has_recommendations=${structuredContentHasRecommendations} structuredContent_has_summary=${structuredContentHasSummary} meta_widgetData_has_recommendations=${metaWidgetDataHasRecommendations}`
   );
   return toolResult;
 }
@@ -808,19 +773,6 @@ function handleSseConnect(req, res) {
 
 router.get('/', handleSseConnect);
 router.get('/sse', handleSseConnect);
-
-router.get('/widget-data/:id', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Cache-Control', 'no-store');
-
-  const widgetData = readWidgetData(String(req.params.id || ''));
-  if (!widgetData) {
-    res.status(404).json({ error: 'widget_data_expired' });
-    return;
-  }
-  res.json(widgetData);
-});
 
 async function handleMcpMessage(req, res) {
   const { method, params, id } = req.body || {};

@@ -639,6 +639,7 @@ function enforceMainPolicyOnRanked(
   const finalLimit = Math.max(1, limit);
   const isBbRequest = parsedIntent.requested_category === 'bb';
   const strictExplicitForm = Boolean(options?.strict_explicit_form);
+  const strictDefaultCategoryForm = Boolean(options?.strict_default_category_form);
   if (!isBbRequest && !(formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0)) {
     return {
       selected: deduped.slice(0, finalLimit),
@@ -654,7 +655,7 @@ function enforceMainPolicyOnRanked(
   }
 
   const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
-  if (strictExplicitForm && !isBbRequest) {
+  if ((strictExplicitForm || strictDefaultCategoryForm) && !isBbRequest) {
     const strictOnly = deduped.filter(isMatch).slice(0, finalLimit);
     return {
       selected: strictOnly,
@@ -878,6 +879,7 @@ export const recommendationService = {
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
     const isExplicitStrictMain = Boolean(parsed.explicit_form_request && parsed.requested_form);
+    const isDefaultSunscreenStrictMain = Boolean(!parsed.requested_form && parsed.requested_category === 'sunscreen');
     const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
     const retrievalIntent = shouldUnlockCategoryForMain
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
@@ -943,7 +945,7 @@ export const recommendationService = {
       form_locked,
       allowed_main_forms,
       limit,
-      { strict_explicit_form: isExplicitStrictMain }
+      { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultSunscreenStrictMain }
     );
     let policyMain = policyGate.selected;
     logger.info(
@@ -978,7 +980,7 @@ export const recommendationService = {
         form_locked,
         allowed_main_forms,
         limit,
-        { strict_explicit_form: isExplicitStrictMain }
+        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultSunscreenStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -1006,7 +1008,7 @@ export const recommendationService = {
         form_locked,
         allowed_main_forms,
         limit,
-        { strict_explicit_form: isExplicitStrictMain }
+        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultSunscreenStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(

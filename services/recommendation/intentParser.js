@@ -127,7 +127,9 @@ export function parseUserIntent(args = {}, taxonomy) {
   const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
   const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);
   const explicitSunForm = detectExplicitSunForm(fullSignalText);
-  const requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
+  const formFromArgs = findFirstAliasKey(args.form || '', taxonomy.forms);
+  const formFromText = findFirstAliasKey(formText, taxonomy.forms);
+  let requestedForm = explicitSunForm || formFromArgs || formFromText || null;
   const skinTypeFromField = findFirstAliasKey(args.skin_type || '', taxonomy.skinTypes);
   const skinTypeFromQuery = findFirstAliasKey(q, taxonomy.skinTypes);
   const skinType = skinTypeFromField || skinTypeFromQuery || null;
@@ -146,7 +148,12 @@ export function parseUserIntent(args = {}, taxonomy) {
   const popularityIntent = includesAny(q, taxonomy.popularityKeywords || []);
   const varietyIntent = includesAny(q, VARIETY_WORDS);
   const priceIntent = parsePriceIntent(q);
-  const explicitFormRequest = Boolean(requestedForm);
+  let explicitFormRequest = Boolean(explicitSunForm || formFromArgs);
+
+  // Keep generic sunscreen requests as category intent, not explicit cream form lock.
+  if (!explicitFormRequest && requestedCategory === 'sunscreen' && requestedForm === 'cream') {
+    requestedForm = null;
+  }
   const negativeScope = detectNegativeScope(fullSignalText, requestedCategory);
   const allowCategorySwitch = includesAny(fullSignalText, CATEGORY_EXIT_WORDS);
   const sensitivitySignal = detectSensitivitySignal(fullSignalText, concern, fitIssue);

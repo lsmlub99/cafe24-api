@@ -879,7 +879,14 @@ export const recommendationService = {
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
     const isExplicitStrictMain = Boolean(parsed.explicit_form_request && parsed.requested_form);
-    const isDefaultSunscreenStrictMain = Boolean(!parsed.requested_form && parsed.requested_category === 'sunscreen');
+    const isPlainSunscreenRequest =
+      parsed.requested_category === 'sunscreen' &&
+      !parsed.requested_form &&
+      !parsed.skin_type &&
+      (!Array.isArray(parsed.concern) || parsed.concern.length === 0) &&
+      (!Array.isArray(parsed.situation) || parsed.situation.length === 0) &&
+      (!Array.isArray(parsed.preference) || parsed.preference.length === 0);
+    const isDefaultSunscreenStrictMain = Boolean(isPlainSunscreenRequest);
     const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
     const retrievalIntent = shouldUnlockCategoryForMain
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }

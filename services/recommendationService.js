@@ -32,6 +32,14 @@ import { applySemanticSignals } from './recommendation/semanticRetriever.js';
 let openaiClient = null;
 let openaiLoadAttempted = false;
 
+const PLAIN_CATEGORY_ALLOWED_BASELINE_CONCERNS = {
+  sunscreen: new Set(['uv_protection']),
+};
+
+const DEFAULT_CATEGORY_MAIN_FORM_POLICY = {
+  sunscreen: ['cream', 'lotion'],
+};
+
 async function getOpenAIClient() {
   if (openaiClient) return openaiClient;
   if (openaiLoadAttempted) return null;
@@ -89,6 +97,24 @@ function isSemanticActivationSuccess(diag = {}) {
   const count = Number(diag.semantic_nonzero_count || 0);
   const ratio = Number(diag.semantic_nonzero_ratio || 0);
   return count >= 3 || ratio >= 0.2;
+}
+
+function hasOnlyPlainCategoryBaselineConcerns(category, concerns = []) {
+  if (!Array.isArray(concerns)) return true;
+  const baselineSet = PLAIN_CATEGORY_ALLOWED_BASELINE_CONCERNS[category];
+  if (!baselineSet) return concerns.length === 0;
+  return concerns.every((concern) => baselineSet.has(concern));
+}
+
+function resolveDefaultCategoryMainForms(category) {
+  return Array.isArray(DEFAULT_CATEGORY_MAIN_FORM_POLICY[category]) ? DEFAULT_CATEGORY_MAIN_FORM_POLICY[category] : [];
+}
+
+function applyCategoryDefaultMainFormGate(candidates = [], enabled = false, allowedForms = []) {
+  if (!enabled) return Array.isArray(candidates) ? candidates : [];
+  if (!Array.isArray(candidates) || !candidates.length) return [];
+  if (!Array.isArray(allowedForms) || !allowedForms.length) return [];
+  return candidates.filter((item) => item?.form && allowedForms.includes(item.form));
 }
 
 function buildReasoningTags(parsedIntent) {
@@ -722,6 +748,90 @@ function enforceMainPolicyOnRanked(
   };
 }
 
+function hasConditionQuerySignals(parsedIntent = {}) {
+  return Boolean(
+    parsedIntent?.skin_type ||
+      (Array.isArray(parsedIntent?.concern) && parsedIntent.concern.length > 0) ||
+      (Array.isArray(parsedIntent?.fit_issue) && parsedIntent.fit_issue.length > 0) ||
+      (Array.isArray(parsedIntent?.situation) && parsedIntent.situation.length > 0) ||
+      (Array.isArray(parsedIntent?.preference) && parsedIntent.preference.length > 0)
+  );
+}
+
+function applySessionFreshMainSelection({
+  policyMain = [],
+  ranked = [],
+  parsedIntent = {},
+  categoryLocked = false,
+  formLocked = false,
+  allowedMainForms = [],
+  limit = RECOMMENDATION_POLICY.limits.defaultMain,
+  strictOptions = {},
+  sessionContext = {},
+  conditionQuery = false,
+}) {
+  const seenBases = new Set((sessionContext?.recent_main_base_names || []).map((x) => String(x || '').trim()).filter(Boolean));
+  const sameCategoryContext =
+    Boolean(parsedIntent?.requested_category) &&
+    Boolean(sessionContext?.recent_main_category) &&
+    String(parsedIntent.requested_category) === String(sessionContext.recent_main_category);
+  const shouldApply = Boolean(conditionQuery && sameCategoryContext && seenBases.size > 0);
+  if (!shouldApply) {
+    return {
+      selected: policyMain,
+      repeat_excluded_count: 0,
+      repeat_reintroduced_count: 0,
+      main_selection_source: 'fallback_with_seen',
+      session_seen_bases: [...seenBases],
+    };
+  }
+
+  const targetMainCount = Math.max(1, Math.min(limit, Array.isArray(policyMain) && policyMain.length > 0 ? policyMain.length : limit));
+  const freshRanked = (ranked || []).filter((item) => !seenBases.has(String(item?.base_name || '').trim()));
+  const freshPolicy = enforceMainPolicyOnRanked(
+    freshRanked,
+    parsedIntent,
+    categoryLocked,
+    formLocked,
+    allowedMainForms,
+    limit,
+    strictOptions
+  );
+  const freshSelected = Array.isArray(freshPolicy.selected) ? freshPolicy.selected.slice(0, targetMainCount) : [];
+
+  if (freshSelected.length >= targetMainCount) {
+    const excludedCount = (policyMain || []).filter((item) => seenBases.has(String(item?.base_name || '').trim())).length;
+    return {
+      selected: freshSelected,
+      repeat_excluded_count: excludedCount,
+      repeat_reintroduced_count: 0,
+      main_selection_source: 'fresh_only',
+      session_seen_bases: [...seenBases],
+    };
+  }
+
+  const selected = [...freshSelected];
+  const selectedIds = new Set(selected.map((item) => String(item?.id || '')));
+  let reintroduced = 0;
+  for (const item of policyMain || []) {
+    if (selected.length >= targetMainCount) break;
+    const id = String(item?.id || '');
+    if (selectedIds.has(id)) continue;
+    selected.push(item);
+    selectedIds.add(id);
+    if (seenBases.has(String(item?.base_name || '').trim())) reintroduced += 1;
+  }
+
+  const excludedCount = Math.max(0, (policyMain || []).length - selected.length);
+  return {
+    selected,
+    repeat_excluded_count: excludedCount,
+    repeat_reintroduced_count: reintroduced,
+    main_selection_source: 'fallback_with_seen',
+    session_seen_bases: [...seenBases],
+  };
+}
+
 export const recommendationService = {
   parse_user_request(args = {}) {
     return parseUserIntent(args, RECOMMENDATION_TAXONOMY);
@@ -873,20 +983,30 @@ export const recommendationService = {
         requested_category: 'bb',
       };
     }
+    if (!parsed.requested_category && sessionContext?.recent_main_category && hasConditionQuerySignals(parsed)) {
+      parsed = {
+        ...parsed,
+        requested_category: sessionContext.recent_main_category,
+        requested_category_ids: [],
+        sort_intent: parsed.sort_intent === 'popular' ? 'condition_based' : parsed.sort_intent,
+      };
+    }
     logger.info(
       `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'}`
     );
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
     const isExplicitStrictMain = Boolean(parsed.explicit_form_request && parsed.requested_form);
-    const isPlainSunscreenRequest =
-      parsed.requested_category === 'sunscreen' &&
+    const isPlainCategoryRequest =
+      Boolean(parsed.requested_category) &&
       !parsed.requested_form &&
+      hasOnlyPlainCategoryBaselineConcerns(parsed.requested_category, parsed.concern || []) &&
       !parsed.skin_type &&
-      (!Array.isArray(parsed.concern) || parsed.concern.length === 0) &&
+      (!Array.isArray(parsed.fit_issue) || parsed.fit_issue.length === 0) &&
       (!Array.isArray(parsed.situation) || parsed.situation.length === 0) &&
       (!Array.isArray(parsed.preference) || parsed.preference.length === 0);
-    const isDefaultSunscreenStrictMain = Boolean(isPlainSunscreenRequest);
+    const defaultMainFormsByCategory = resolveDefaultCategoryMainForms(parsed.requested_category);
+    const isDefaultCategoryStrictMain = Boolean(!isExplicitStrictMain && isPlainCategoryRequest && defaultMainFormsByCategory.length > 0);
     const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
     const retrievalIntent = shouldUnlockCategoryForMain
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
@@ -907,9 +1027,14 @@ export const recommendationService = {
       candidates = Array.isArray(strictPrimary.candidates) ? strictPrimary.candidates : [];
       form_locked = true;
       allowed_main_forms = parsed.requested_form ? [parsed.requested_form] : [];
+    } else if (isDefaultCategoryStrictMain) {
+      candidates = applyCategoryDefaultMainFormGate(candidates, true, defaultMainFormsByCategory);
+      form_locked = true;
+      allowed_main_forms = defaultMainFormsByCategory;
     } else if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
       candidates = strictPrimary.candidates;
     }
+    candidates = applyCategoryDefaultMainFormGate(candidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
     parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
 
     let usedFallback = false;
@@ -943,6 +1068,7 @@ export const recommendationService = {
     };
 
     let semanticCandidates = await runSemantic(candidates, parsed);
+    semanticCandidates = applyCategoryDefaultMainFormGate(semanticCandidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
 
     let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
     let policyGate = enforceMainPolicyOnRanked(
@@ -952,7 +1078,7 @@ export const recommendationService = {
       form_locked,
       allowed_main_forms,
       limit,
-      { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultSunscreenStrictMain }
+      { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain }
     );
     let policyMain = policyGate.selected;
     logger.info(
@@ -979,6 +1105,7 @@ export const recommendationService = {
       fallbackSteps.push('popular_same_category');
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       semanticCandidates = await runSemantic(candidates, relaxed);
+      semanticCandidates = applyCategoryDefaultMainFormGate(semanticCandidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
       ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
@@ -987,7 +1114,7 @@ export const recommendationService = {
         form_locked,
         allowed_main_forms,
         limit,
-        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultSunscreenStrictMain }
+        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -1002,11 +1129,17 @@ export const recommendationService = {
       fallbackSteps.push('relax_form');
       const fallbackPrimary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
       candidates = fallbackPrimary.candidates;
+      candidates = applyCategoryDefaultMainFormGate(candidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
       category_locked = strictPrimary.category_locked;
       form_locked = strictPrimary.form_locked;
       allowed_main_forms = strictPrimary.allowed_main_forms || [];
+      if (isDefaultCategoryStrictMain) {
+        form_locked = true;
+        allowed_main_forms = defaultMainFormsByCategory;
+      }
       parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
+      semanticCandidates = applyCategoryDefaultMainFormGate(semanticCandidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
       ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
@@ -1015,7 +1148,7 @@ export const recommendationService = {
         form_locked,
         allowed_main_forms,
         limit,
-        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultSunscreenStrictMain }
+        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -1025,12 +1158,47 @@ export const recommendationService = {
       );
     }
 
+    const conditionQuery = hasConditionQuerySignals(parsed);
+    const freshnessSelection = applySessionFreshMainSelection({
+      policyMain,
+      ranked,
+      parsedIntent: parsed,
+      categoryLocked: category_locked,
+      formLocked: form_locked,
+      allowedMainForms: allowed_main_forms,
+      limit,
+      strictOptions: { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain },
+      sessionContext,
+      conditionQuery,
+    });
+    policyMain = freshnessSelection.selected;
+
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
     logger.info(
-      `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
+      `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
         allowed_main_forms || []
       ).join(',')} main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',')}`
+    );
+    logger.info(
+      `[Form Plain Debug] query="${(parsed.query || '').replace(/\s+/g, ' ').trim()}" requested_category=${parsed.requested_category || 'none'} requested_form=${
+        parsed.requested_form || 'none'
+      } concerns=${(parsed.concern || []).join('|') || 'none'} skin_type=${parsed.skin_type || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} situation=${(
+        parsed.situation || []
+      ).join('|') || 'none'} preference=${(parsed.preference || []).join('|') || 'none'} is_plain_category_request=${
+        isPlainCategoryRequest ? 1 : 0
+      } strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} allowed_main_forms=${(allowed_main_forms || []).join(',') || 'none'} main_forms=${
+        mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'
+      }`
+    );
+    logger.info(
+      `[Main Diversity] condition_query=${conditionQuery ? 1 : 0} session_seen_bases=${(freshnessSelection.session_seen_bases || []).join('|') || 'none'} repeat_excluded_count=${
+        freshnessSelection.repeat_excluded_count || 0
+      } repeat_reintroduced_count=${freshnessSelection.repeat_reintroduced_count || 0} main_selection_source=${
+        freshnessSelection.main_selection_source || 'fallback_with_seen'
+      } main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'} main_product_names=${
+        mainRecommendations.map((x) => x.name || 'unknown').join(' | ') || 'none'
+      }`
     );
 
     if (!mainRecommendations.length && category_locked) {

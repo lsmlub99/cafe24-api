@@ -63,13 +63,6 @@ function buildSafeBodyText(consultText = '') {
   return text || '조건에 맞는 제품을 찾지 못했어요.';
 }
 
-function resolveMinimalStructuredEnv(value) {
-  const normalized = String(value ?? '').trim();
-  // Default to the minimal MCP response shape so ChatGPT sees the fixed body
-  // text instead of re-reading rich recommendation data from structuredContent.
-  return normalized || '1';
-}
-
 export function buildMcpToolResult({
   requestedCategory = null,
   canonicalMain = [],
@@ -83,7 +76,7 @@ export function buildMcpToolResult({
   widgetHttpUri = '',
   minimalStructuredEnv = process.env.MCP_MINIMAL_STRUCTURED,
 } = {}) {
-  const structuredContent = isTruthyEnv(resolveMinimalStructuredEnv(minimalStructuredEnv))
+  const structuredContent = isTruthyEnv(minimalStructuredEnv)
     ? buildMinimalStructuredContent(bodyTemplateVersion)
     : buildLegacyStructuredContent({
         requestedCategory,
@@ -114,3 +107,4 @@ export function buildMcpToolResult({
     },
   };
 }
+

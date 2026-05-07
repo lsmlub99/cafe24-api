@@ -770,19 +770,31 @@ function applySessionFreshMainSelection({
   sessionContext = {},
   conditionQuery = false,
 }) {
+  const conditionTieBand = Number(RECOMMENDATION_POLICY.formPolicy?.sameScoreBand || 3);
+  const strictExplicitForm = Boolean(strictOptions?.strict_explicit_form);
+  const enableConditionFreshGuard = Boolean(conditionQuery && !strictExplicitForm);
+  const conditionScoreOf = (item) => Number(item?._score_breakdown?.condition_score || 0);
+  const finalScoreOf = (item) =>
+    Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
+
   const seenBases = new Set((sessionContext?.recent_main_base_names || []).map((x) => String(x || '').trim()).filter(Boolean));
   const sameCategoryContext =
     Boolean(parsedIntent?.requested_category) &&
     Boolean(sessionContext?.recent_main_category) &&
     String(parsedIntent.requested_category) === String(sessionContext.recent_main_category);
-  const shouldApply = Boolean(conditionQuery && sameCategoryContext && seenBases.size > 0);
+  const shouldApply = Boolean(enableConditionFreshGuard && sameCategoryContext && seenBases.size > 0);
   if (!shouldApply) {
     return {
       selected: policyMain,
       repeat_excluded_count: 0,
       repeat_reintroduced_count: 0,
-      main_selection_source: 'fallback_with_seen',
+      main_selection_source: strictExplicitForm ? 'explicit_strict' : 'fallback_with_seen',
       session_seen_bases: [...seenBases],
+      enable_condition_fresh_guard: enableConditionFreshGuard,
+      fresh_promoted_count: 0,
+      fresh_blocked_zero_condition_count: 0,
+      seen_retained_by_condition_count: 0,
+      dry_hydration_balance_applied: 0,
     };
   }
 
@@ -797,38 +809,93 @@ function applySessionFreshMainSelection({
     limit,
     strictOptions
   );
-  const freshSelected = Array.isArray(freshPolicy.selected) ? freshPolicy.selected.slice(0, targetMainCount) : [];
-
-  if (freshSelected.length >= targetMainCount) {
-    const excludedCount = (policyMain || []).filter((item) => seenBases.has(String(item?.base_name || '').trim())).length;
-    return {
-      selected: freshSelected,
-      repeat_excluded_count: excludedCount,
-      repeat_reintroduced_count: 0,
-      main_selection_source: 'fresh_only',
-      session_seen_bases: [...seenBases],
-    };
-  }
-
-  const selected = [...freshSelected];
+  const freshPool = (freshPolicy.selected || [])
+    .slice()
+    .sort((a, b) => conditionScoreOf(b) - conditionScoreOf(a) || finalScoreOf(b) - finalScoreOf(a));
+  const selected = (policyMain || []).slice(0, targetMainCount);
   const selectedIds = new Set(selected.map((item) => String(item?.id || '')));
-  let reintroduced = 0;
-  for (const item of policyMain || []) {
-    if (selected.length >= targetMainCount) break;
-    const id = String(item?.id || '');
-    if (selectedIds.has(id)) continue;
-    selected.push(item);
-    selectedIds.add(id);
-    if (seenBases.has(String(item?.base_name || '').trim())) reintroduced += 1;
+  let freshPromoted = 0;
+  let freshBlockedZeroCondition = 0;
+  let seenRetainedByCondition = 0;
+
+  for (let i = 0; i < selected.length; i += 1) {
+    const current = selected[i];
+    if (!current) continue;
+    const isSeenCurrent = seenBases.has(String(current?.base_name || '').trim());
+    if (!isSeenCurrent) continue;
+
+    const candidateInIdx = freshPool.findIndex((item) => !selectedIds.has(String(item?.id || '')));
+    if (candidateInIdx < 0) continue;
+    const candidateIn = freshPool[candidateInIdx];
+    const seenCondition = conditionScoreOf(current);
+    const freshCondition = conditionScoreOf(candidateIn);
+
+    if (seenCondition > 0 && freshCondition <= 0) {
+      freshBlockedZeroCondition += 1;
+      seenRetainedByCondition += 1;
+      continue;
+    }
+    if (freshCondition + conditionTieBand < seenCondition) {
+      seenRetainedByCondition += 1;
+      continue;
+    }
+
+    selected[i] = candidateIn;
+    selectedIds.delete(String(current?.id || ''));
+    selectedIds.add(String(candidateIn?.id || ''));
+    freshPool.splice(candidateInIdx, 1);
+    freshPromoted += 1;
   }
 
-  const excludedCount = Math.max(0, (policyMain || []).length - selected.length);
+  const needsMoistureBalance = Boolean(
+    parsedIntent?.skin_type === 'dry' ||
+      (Array.isArray(parsedIntent?.concern) && (parsedIntent.concern.includes('hydration') || parsedIntent.concern.includes('soothing')))
+  );
+  let dryHydrationBalanceApplied = 0;
+  if (needsMoistureBalance) {
+    const hasCreamOrLotion = selected.some((item) => ['cream', 'lotion'].includes(String(item?.form || '')));
+    if (!hasCreamOrLotion) {
+      const creamLotionCandidate = (ranked || [])
+        .filter((item) => ['cream', 'lotion'].includes(String(item?.form || '')))
+        .sort((a, b) => conditionScoreOf(b) - conditionScoreOf(a) || finalScoreOf(b) - finalScoreOf(a))[0];
+      if (creamLotionCandidate) {
+        const replaceIdx = selected.findIndex((item) => ['stick', 'spray'].includes(String(item?.form || '')));
+        if (replaceIdx >= 0) {
+          selected[replaceIdx] = creamLotionCandidate;
+          dryHydrationBalanceApplied = 1;
+        }
+      }
+    }
+  }
+
+  selected.sort((a, b) => conditionScoreOf(b) - conditionScoreOf(a) || finalScoreOf(b) - finalScoreOf(a));
+
+  const selectedBases = new Set(selected.map((item) => String(item?.base_name || '').trim()).filter(Boolean));
+  let reintroduced = 0;
+  for (const base of selectedBases) {
+    if (seenBases.has(base)) reintroduced += 1;
+  }
+  const excludedCount = (policyMain || []).filter((item) => {
+    const base = String(item?.base_name || '').trim();
+    return base && seenBases.has(base) && !selectedBases.has(base);
+  }).length;
+  const mainSelectionSource =
+    freshPromoted > 0 && reintroduced === 0
+      ? 'fresh_only'
+      : seenRetainedByCondition > 0
+      ? 'condition_priority_with_seen'
+      : 'fallback_with_seen';
   return {
     selected,
     repeat_excluded_count: excludedCount,
     repeat_reintroduced_count: reintroduced,
-    main_selection_source: 'fallback_with_seen',
+    main_selection_source: mainSelectionSource,
     session_seen_bases: [...seenBases],
+    enable_condition_fresh_guard: enableConditionFreshGuard,
+    fresh_promoted_count: freshPromoted,
+    fresh_blocked_zero_condition_count: freshBlockedZeroCondition,
+    seen_retained_by_condition_count: seenRetainedByCondition,
+    dry_hydration_balance_applied: dryHydrationBalanceApplied,
   };
 }
 
@@ -1034,6 +1101,10 @@ export const recommendationService = {
     } else if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
       candidates = strictPrimary.candidates;
     }
+    if (!isExplicitStrictMain && !isDefaultCategoryStrictMain) {
+      form_locked = false;
+      allowed_main_forms = [];
+    }
     candidates = applyCategoryDefaultMainFormGate(candidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
     parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
 
@@ -1136,6 +1207,9 @@ export const recommendationService = {
       if (isDefaultCategoryStrictMain) {
         form_locked = true;
         allowed_main_forms = defaultMainFormsByCategory;
+      } else if (!isExplicitStrictMain) {
+        form_locked = false;
+        allowed_main_forms = [];
       }
       parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
@@ -1196,6 +1270,12 @@ export const recommendationService = {
         freshnessSelection.repeat_excluded_count || 0
       } repeat_reintroduced_count=${freshnessSelection.repeat_reintroduced_count || 0} main_selection_source=${
         freshnessSelection.main_selection_source || 'fallback_with_seen'
+      } enable_condition_fresh_guard=${freshnessSelection.enable_condition_fresh_guard ? 1 : 0} fresh_promoted_count=${
+        freshnessSelection.fresh_promoted_count || 0
+      } fresh_blocked_zero_condition_count=${freshnessSelection.fresh_blocked_zero_condition_count || 0} seen_retained_by_condition_count=${
+        freshnessSelection.seen_retained_by_condition_count || 0
+      } dry_hydration_balance_applied=${freshnessSelection.dry_hydration_balance_applied ? 1 : 0} strict_explicit_form=${
+        isExplicitStrictMain ? 1 : 0
       } main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'} main_product_names=${
         mainRecommendations.map((x) => x.name || 'unknown').join(' | ') || 'none'
       }`
@@ -1270,7 +1350,7 @@ export const recommendationService = {
           .join(', ')}`
       );
     }
-    if (hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
+    if (form_locked && Array.isArray(allowed_main_forms) && allowed_main_forms.length > 0 && hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
       trackFormLockViolation();
       logger.warn(
         `[Policy] form lock violation detected strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'default'} allowed=${(

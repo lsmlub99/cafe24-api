@@ -1022,6 +1022,11 @@ async function handleMcpMessage(req, res) {
       const toolArgs = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {};
       const enrichedArgs = { ...toolArgs, __session_key: String(sessionHeaderKey) };
       const toolResult = await executeTool(enrichedArgs);
+      const finalResult = { ...toolResult };
+      if (toolResult.structuredContent) {
+        finalResult.data = toolResult.structuredContent;
+        finalResult.output = toolResult.structuredContent;
+      }
 
       const recCount = Array.isArray(toolResult?._meta?.widgetData?.main_recommendations)
         ? toolResult._meta.widgetData.main_recommendations.length
@@ -1038,7 +1043,7 @@ async function handleMcpMessage(req, res) {
             : '')
       );
 
-      sendToClient({ jsonrpc: '2.0', id, result: toolResult });
+      sendToClient({ jsonrpc: '2.0', id, result: finalResult });
       return;
     }
 

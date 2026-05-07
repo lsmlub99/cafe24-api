@@ -67,15 +67,19 @@ test('MCP_MINIMAL_STRUCTURED=1이면 structuredContent는 최소 키만 유지�
       consultText,
       bodyTemplateVersion: 'fixed_v1',
       widgetHttpUri: 'https://cafe24-api.onrender.com/ui/recommendation',
+      widgetDataUrl: 'https://cafe24-api.onrender.com/mcp/widget-data/test-id',
       minimalStructuredEnv: process.env.MCP_MINIMAL_STRUCTURED,
     });
 
     const structured = toolResult.structuredContent || {};
     assert.deepStrictEqual(
       Object.keys(structured).sort(),
-      ['body_template_version', 'display_mode', 'status'].sort()
+      ['body_template_version', 'display_mode', 'status', 'widget_data_url'].sort()
     );
     assert.equal(structured.body_template_version, 'fixed_v1');
+    assert.equal(typeof structured.widget_data_url, 'string');
+    assert.equal(structured.widget_data_url.includes('recommendations'), false);
+    assert.equal(structured.widget_data_url.includes('summary'), false);
 
     for (const key of FORBIDDEN_STRUCTURED_FIELDS) {
       assert.equal(
@@ -117,14 +121,16 @@ test('MCP_MINIMAL_STRUCTURED 미설정 상태도 minimal structured를 기본값
       consultText: '선크림은 현재 2가지가 있어요.',
       bodyTemplateVersion: 'fixed_v1',
       widgetHttpUri: 'https://cafe24-api.onrender.com/ui/recommendation',
+      widgetDataUrl: 'https://cafe24-api.onrender.com/mcp/widget-data/default-id',
     });
 
     const structured = toolResult.structuredContent || {};
     assert.deepStrictEqual(
       Object.keys(structured).sort(),
-      ['body_template_version', 'display_mode', 'status'].sort()
+      ['body_template_version', 'display_mode', 'status', 'widget_data_url'].sort()
     );
     assert.equal(structured.body_template_version, 'fixed_v1');
+    assert.equal(typeof structured.widget_data_url, 'string');
     assert.equal(Object.prototype.hasOwnProperty.call(structured, 'recommendations'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(structured, 'summary'), false);
     assert.equal(Array.isArray(toolResult?._meta?.widgetData?.main_recommendations), true);

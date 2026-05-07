@@ -324,7 +324,7 @@ function buildCardCopyFromSlots(slots = {}, item = {}) {
   const signals = collectSignals(item);
   const rawCore = `${slots.rankRole} · ${slots.primaryBenefit}`;
   const supportReason = `${slots.usageContext} ${slots.secondaryBenefit} 편이에요.`;
-  const usageTip = clampText(item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.', 52);
+  const usageTip = removeForbiddenCopy(item.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀림을 줄이기 좋아요.');
 
   let safetyLine = '';
   if (signals.includes('따가') || signals.includes('자극') || signals.includes('민감')) {
@@ -339,7 +339,7 @@ function buildCardCopyFromSlots(slots = {}, item = {}) {
 
   return {
     coreReason: removeForbiddenCopy(rawCore) || '무난하게 쓰기 좋은 데일리형',
-    supportReason: clampText(`${supportReason} ${safetyLine}`, 70) || '데일리로 쓰기 편한 사용감이에요.',
+    supportReason: removeForbiddenCopy(`${supportReason} ${safetyLine}`) || '데일리로 쓰기 편한 사용감이에요.',
     usageTip,
   };
 }

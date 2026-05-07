@@ -107,7 +107,6 @@ export function buildMcpToolResult({
       ui: { resourceUri: widgetHttpUri },
       'openai/outputTemplate': widgetHttpUri,
       'openai/widgetAccessible': true,
-      'openai/resultCanProduceWidget': true,
       widgetData: buildWidgetData({
         requestedCategory,
         canonicalMain,

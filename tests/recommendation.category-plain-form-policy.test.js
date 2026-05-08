@@ -58,16 +58,23 @@ function getMainForms(response) {
   return (response.main_recommendations || []).map((item) => item.form);
 }
 
-test('A. plain sunscreen query keeps default strict form policy', async () => {
+test('A. plain sunscreen keeps core forms in slot1-2 and allows exploration slot3', async () => {
   const res = await runQuery('선크림 추천해주세요');
   const forms = getMainForms(res);
+  const mainNames = (res.main_recommendations || []).map((item) => item.base_name || item.name);
   const recommendationForms = (res.recommendations || []).map((item) => item.form);
 
   assert.equal(res.requested_category, 'sunscreen');
   assert.equal(res.applied_policy.requested_form, null);
   assert.deepStrictEqual(res.applied_policy.allowed_main_forms, ['cream', 'lotion']);
-  assert.equal(forms.every((form) => ['cream', 'lotion'].includes(form)), true);
-  assert.equal(forms.some((form) => ['serum', 'stick', 'spray'].includes(form)), false);
+  assert.equal(forms.length >= 1, true);
+  const coreCount = forms.filter((form) => ['cream', 'lotion'].includes(form)).length;
+  assert.equal(coreCount >= 1, true);
+  assert.equal(['cream', 'lotion'].includes(forms[0]), true);
+  if (forms.length >= 3) {
+    assert.equal(['cream', 'lotion', 'serum', 'stick', 'spray'].includes(forms[2]), true);
+  }
+  assert.equal(new Set(mainNames).size, mainNames.length);
   assert.equal(recommendationForms.some((form) => ['serum', 'stick', 'spray'].includes(form)), true);
 });
 
@@ -108,7 +115,7 @@ test('E. explicit stick request keeps strict explicit form policy', async () => 
 });
 
 test('F. tone-up sunscreen is not plain, so default strict form lock is off', async () => {
-  const res = await runQuery('tone up sunscreen 추천');
+  const res = await runQuery('톤업 선크림 추천');
   assert.equal(res.requested_category, 'sunscreen');
   assert.equal(res.applied_policy.requested_form, null);
   assert.deepStrictEqual(res.applied_policy.allowed_main_forms || [], []);

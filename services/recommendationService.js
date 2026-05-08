@@ -667,12 +667,21 @@ function enforceMainPolicyOnRanked(
   const isBbRequest = parsedIntent.requested_category === 'bb';
   const strictExplicitForm = Boolean(options?.strict_explicit_form);
   const strictDefaultCategoryForm = Boolean(options?.strict_default_category_form);
+  const mainOverlay = {
+    default_main_core_forms: Array.isArray(allowedMainForms) ? [...allowedMainForms] : [],
+    default_main_core_count: 0,
+    default_main_exploration_slot_enabled: 0,
+    exploration_slot_candidate_count: 0,
+    exploration_slot_product: null,
+    exploration_slot_excluded_reasons: [],
+  };
   if (!isBbRequest && !(formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0)) {
     return {
       selected: deduped.slice(0, finalLimit),
       drop_stats: drop,
       pre_policy_count: (ranked || []).length,
       pass_count: passed.length,
+      main_overlay: mainOverlay,
       bb_policy: {
         bb_like_candidate_count: 0,
         main_bb_like_count: 0,
@@ -682,13 +691,65 @@ function enforceMainPolicyOnRanked(
   }
 
   const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
-  if ((strictExplicitForm || strictDefaultCategoryForm) && !isBbRequest) {
+  if (strictDefaultCategoryForm && !strictExplicitForm && !isBbRequest) {
+    const coreForms = Array.isArray(allowedMainForms) ? allowedMainForms : [];
+    const coreCandidates = deduped.filter(isMatch);
+    const selected = [];
+    const selectedBaseNames = new Set();
+
+    const coreTargetCount = Math.min(finalLimit, 2);
+    for (const item of coreCandidates) {
+      if (selected.length >= coreTargetCount) break;
+      const base = String(item?.base_name || '').trim();
+      if (!base || selectedBaseNames.has(base)) continue;
+      selected.push(item);
+      selectedBaseNames.add(base);
+    }
+
+    mainOverlay.default_main_core_count = selected.length;
+    mainOverlay.default_main_exploration_slot_enabled = finalLimit >= 3 ? 1 : 0;
+
+    const explorationCandidates = deduped.filter((item) => {
+      const base = String(item?.base_name || '').trim();
+      return Boolean(base) && !selectedBaseNames.has(base);
+    });
+    mainOverlay.exploration_slot_candidate_count = explorationCandidates.length;
+
+    if (selected.length < finalLimit) {
+      for (const item of explorationCandidates) {
+        if (selected.length >= finalLimit) break;
+        const base = String(item?.base_name || '').trim();
+        if (!base || selectedBaseNames.has(base)) continue;
+        selected.push(item);
+        selectedBaseNames.add(base);
+      }
+    }
+
+    const slot3 = selected[2];
+    if (slot3) mainOverlay.exploration_slot_product = String(slot3?.name || null);
+    if (!slot3 && finalLimit >= 3) mainOverlay.exploration_slot_excluded_reasons.push('no_valid_exploration_candidate');
+
+    return {
+      selected,
+      drop_stats: drop,
+      pre_policy_count: (ranked || []).length,
+      pass_count: passed.length,
+      main_overlay: mainOverlay,
+      bb_policy: {
+        bb_like_candidate_count: 0,
+        main_bb_like_count: 0,
+        non_bb_dropped_from_main: 0,
+      },
+    };
+  }
+  if (strictExplicitForm && !isBbRequest) {
     const strictOnly = deduped.filter(isMatch).slice(0, finalLimit);
     return {
       selected: strictOnly,
       drop_stats: drop,
       pre_policy_count: (ranked || []).length,
       pass_count: passed.length,
+      main_overlay: mainOverlay,
       bb_policy: {
         bb_like_candidate_count: 0,
         main_bb_like_count: 0,
@@ -741,6 +802,7 @@ function enforceMainPolicyOnRanked(
     drop_stats: drop,
     pre_policy_count: (ranked || []).length,
     pass_count: passed.length,
+    main_overlay: mainOverlay,
     bb_policy: {
       bb_like_candidate_count: Number(bbPolicy.bb_like_candidate_count || 0),
       main_bb_like_count: Number(bbPolicy.main_bb_like_count || 0),
@@ -1428,7 +1490,7 @@ export const recommendationService = {
       RECOMMENDATION_POLICY.limits.defaultSecondary
     );
     logger.info(
-      `[Main Slot Policy] strict_default_category_form_applied_stage=main_only raw_category_pool_count=${rawCategoryPoolCount} semantic_pool_count=${semanticPoolCount} ranked_pool_count=${rankedPoolCount} main_policy_pool_count=${mainPolicyPoolCount} excluded_from_main_by_default_form_count=${excludedFromMainByDefaultFormCount} main_forms=${mainRecommendations
+      `[Main Slot Policy] strict_default_category_form_applied_stage=main_only raw_category_pool_count=${rawCategoryPoolCount} semantic_pool_count=${semanticPoolCount} ranked_pool_count=${rankedPoolCount} main_policy_pool_count=${mainPolicyPoolCount} excluded_from_main_by_default_form_count=${excludedFromMainByDefaultFormCount} default_main_core_forms=${(policyGate?.main_overlay?.default_main_core_forms || []).join(',') || 'none'} default_main_core_count=${Number(policyGate?.main_overlay?.default_main_core_count || 0)} default_main_exploration_slot_enabled=${Number(policyGate?.main_overlay?.default_main_exploration_slot_enabled || 0)} exploration_slot_candidate_count=${Number(policyGate?.main_overlay?.exploration_slot_candidate_count || 0)} exploration_slot_product=${policyGate?.main_overlay?.exploration_slot_product || 'none'} exploration_slot_excluded_reasons=${(policyGate?.main_overlay?.exploration_slot_excluded_reasons || []).join('|') || 'none'} main_forms=${mainRecommendations
         .map((x) => x.form || 'unknown')
         .join(',') || 'none'} secondary_forms=${secondary.map((x) => x.form || 'unknown').join(',') || 'none'} reference_forms=${secondary
         .map((x) => x.form || 'unknown')

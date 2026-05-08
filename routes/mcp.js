@@ -155,6 +155,7 @@ function buildMcpToolResult({
   requestedCategory = null,
   canonicalMain = [],
   canonicalSecondary = [],
+  generalRecommendations = [],
   reasoningTags = [],
   appliedPolicy = {},
   promotions = [],
@@ -166,6 +167,7 @@ function buildMcpToolResult({
     requestedCategory,
     canonicalMain,
     canonicalSecondary,
+    generalRecommendations,
     reasoningTags,
     appliedPolicy,
     promotions,
@@ -688,9 +690,9 @@ async function executeTool(args = {}) {
     requested_category: requestedCategory = null,
     main_recommendations: mainRecommendations = [],
     secondary_recommendations: secondaryRecommendations = [],
+    recommendations: generalRecommendations = [],
     reasoning_tags: reasoningTags = [],
     applied_policy: appliedPolicy = {},
-    recommendations = [],
     promotions = [],
     summary = {},
     reference_recommendations: referenceRecommendations = [],
@@ -699,8 +701,8 @@ async function executeTool(args = {}) {
   const canonicalMain =
     Array.isArray(mainRecommendations) && mainRecommendations.length > 0
       ? mainRecommendations
-      : Array.isArray(recommendations)
-      ? recommendations
+      : Array.isArray(generalRecommendations)
+      ? generalRecommendations
       : [];
   const canonicalSecondary =
     Array.isArray(secondaryRecommendations) && secondaryRecommendations.length > 0
@@ -733,6 +735,7 @@ async function executeTool(args = {}) {
     requestedCategory,
     canonicalMain,
     canonicalSecondary,
+    generalRecommendations,
     reasoningTags,
     appliedPolicy,
     promotions,
@@ -753,6 +756,14 @@ async function executeTool(args = {}) {
   );
   logger.info(
     `[MCP Shape] structuredContent_keys=${structuredContentKeys.join(',')} structuredContent_has_recommendations=${structuredContentHasRecommendations} structuredContent_has_summary=${structuredContentHasSummary} meta_widgetData_has_recommendations=${metaWidgetDataHasRecommendations}`
+  );
+  const policyMainNames = canonicalMain.map((x) => String(x?.name || '').trim()).filter(Boolean);
+  const structuredMainNames = (toolResult?.structuredContent?.main_recommendations || []).map((x) => String(x?.name || '').trim());
+  const structuredRecommendationsNames = (toolResult?.structuredContent?.recommendations || []).map((x) => String(x?.name || '').trim());
+  const widgetRecommendationsNames = (toolResult?._meta?.widgetData?.recommendations || []).map((x) => String(x?.name || '').trim());
+  const bodyRankNames = canonicalMain.map((x) => String(x?.name || '').trim()).filter(Boolean);
+  logger.info(
+    `[MCP Output Path] policy_main_product_names=${policyMainNames.join(' | ') || 'none'} structured_main_product_names=${structuredMainNames.join(' | ') || 'none'} structured_recommendations_product_names=${structuredRecommendationsNames.join(' | ') || 'none'} meta_widget_recommendations_product_names=${widgetRecommendationsNames.join(' | ') || 'none'} body_rank_product_names=${bodyRankNames.join(' | ') || 'none'}`
   );
   return toolResult;
 }

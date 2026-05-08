@@ -130,3 +130,79 @@ test('E. when fresh candidates are insufficient, reintroducing seen items is all
   assert.equal(second.requested_category, 'sunscreen');
   assert.equal(overlapCount(firstBases, secondBases) > 0, true);
 });
+
+test('F. variety follow-up should avoid repeating previous main top results when fresh exists', async () => {
+  const products = [
+    buildProduct({ id: 51, name: 'Classic Sun Cream A 50ml', review_count: 500, rating: 4.9, sales_count: 1000 }),
+    buildProduct({ id: 52, name: 'Classic Sun Lotion B 50ml', review_count: 450, rating: 4.8, sales_count: 900 }),
+    buildProduct({ id: 53, name: 'Sun Serum C 40ml', summary: 'light daily sunscreen', review_count: 120, rating: 4.6, sales_count: 300 }),
+    buildProduct({ id: 54, name: 'Sun Stick D 19g', summary: 'portable reapply', review_count: 90, rating: 4.5, sales_count: 250 }),
+    buildProduct({ id: 55, name: 'Sun Spray E 100ml', summary: 'outdoor reapply', review_count: 85, rating: 4.4, sales_count: 230 }),
+  ];
+
+  const sessionKey = 'test-variety-followup';
+  const first = await recommendationService.scoreAndFilterProducts(
+    products,
+    { query: '선크림 추천', target_category_ids: [93], __session_key: sessionKey },
+    3
+  );
+  const firstTop2 = topBaseNames(first, 2);
+
+  const second = await recommendationService.scoreAndFilterProducts(
+    products,
+    { query: '다른 선크림 없나요?', target_category_ids: [93], __session_key: sessionKey },
+    3
+  );
+  const secondTop2 = topBaseNames(second, 2);
+
+  assert.equal(second.requested_category, 'sunscreen');
+  assert.equal(overlapCount(firstTop2, secondTop2) < 2, true);
+});
+
+test('I. variety query without prior session history should not force follow-up variety branch', async () => {
+  const products = [
+    buildProduct({ id: 81, name: 'Plain Sun Cream A 50ml', review_count: 500, rating: 4.9, sales_count: 1000 }),
+    buildProduct({ id: 82, name: 'Plain Sun Lotion B 50ml', review_count: 450, rating: 4.8, sales_count: 900 }),
+    buildProduct({ id: 83, name: 'Alt Sun Serum C 40ml', summary: 'light daily sunscreen', review_count: 120, rating: 4.6, sales_count: 300 }),
+  ];
+
+  const sessionKey = 'test-variety-first-turn';
+  const res = await recommendationService.scoreAndFilterProducts(
+    products,
+    { query: '다른 선크림 없나요?', target_category_ids: [93], __session_key: sessionKey },
+    3
+  );
+
+  assert.equal(res.requested_category, 'sunscreen');
+  assert.equal(Array.isArray(res.main_recommendations), true);
+  assert.equal(res.main_recommendations.length >= 1, true);
+});
+
+test('G. condition sunscreen query without reapply intent should keep top1 in primary-use forms', async () => {
+  const products = [
+    buildProduct({ id: 61, name: 'Sunscreen Spray Fresh 100ml', summary: 'hydration soothing dry skin outdoor', review_count: 150, rating: 4.8, sales_count: 500 }),
+    buildProduct({ id: 62, name: 'Hydra Sun Cream Main 50ml', summary: 'hydration soothing dry skin daily', review_count: 140, rating: 4.7, sales_count: 480 }),
+    buildProduct({ id: 63, name: 'Calming Sun Lotion Main 50ml', summary: 'soothing hydration sensitive daily', review_count: 130, rating: 4.7, sales_count: 460 }),
+    buildProduct({ id: 64, name: 'Pocket Sun Stick 19g', summary: 'portable reapply', review_count: 100, rating: 4.5, sales_count: 300 }),
+  ];
+
+  const res = await recommendationService.scoreAndFilterProducts(products, { query: '건성용 선크림은 뭐가 좋아요?' }, 3);
+  const top1Form = String(res?.main_recommendations?.[0]?.form || '');
+
+  assert.equal(res.requested_category, 'sunscreen');
+  assert.equal(['cream', 'lotion', 'serum'].includes(top1Form), true);
+});
+
+test('H. reapply intent query can keep spray or stick at top1', async () => {
+  const products = [
+    buildProduct({ id: 71, name: 'Daily Sun Cream Alpha 50ml', summary: 'daily sunscreen', review_count: 110, rating: 4.5, sales_count: 320 }),
+    buildProduct({ id: 72, name: 'Outdoor Sun Spray Beta 100ml', summary: 'outdoor reapply portable', review_count: 160, rating: 4.8, sales_count: 520 }),
+    buildProduct({ id: 73, name: 'Pocket Sun Stick Gamma 19g', summary: 'portable reapply', review_count: 150, rating: 4.7, sales_count: 500 }),
+  ];
+
+  const res = await recommendationService.scoreAndFilterProducts(products, { query: '외출 중 덧바르기 좋은 선크림' }, 3);
+  const top1Form = String(res?.main_recommendations?.[0]?.form || '');
+
+  assert.equal(res.requested_category, 'sunscreen');
+  assert.equal(['spray', 'stick', 'cream', 'lotion', 'serum'].includes(top1Form), true);
+});

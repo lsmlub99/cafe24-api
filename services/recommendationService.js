@@ -471,9 +471,13 @@ function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLoc
   return mainRecommendations.some((item) => item?.category_key && item.category_key !== parsedIntent.requested_category);
 }
 
-function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked) {
+function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked, options = {}) {
   if (!formLocked || !Array.isArray(allowedMainForms) || !allowedMainForms.length) return false;
-  return mainRecommendations.some((item) => item?.form && !allowedMainForms.includes(item.form));
+  const allowSlot3NonCore = Boolean(options?.allow_slot3_non_core);
+  return mainRecommendations.some((item, idx) => {
+    if (allowSlot3NonCore && idx >= 2) return false;
+    return item?.form && !allowedMainForms.includes(item.form);
+  });
 }
 
 function hasExplanationMismatch(mainRecommendations = []) {
@@ -819,6 +823,183 @@ function hasConditionQuerySignals(parsedIntent = {}) {
       (Array.isArray(parsedIntent?.situation) && parsedIntent.situation.length > 0) ||
       (Array.isArray(parsedIntent?.preference) && parsedIntent.preference.length > 0)
   );
+}
+
+function applyVarietyMainSelection({
+  ranked = [],
+  parsedIntent = {},
+  categoryLocked = false,
+  formLocked = false,
+  allowedMainForms = [],
+  limit = RECOMMENDATION_POLICY.limits.defaultMain,
+  strictOptions = {},
+  sessionContext = {},
+}) {
+  const seenBases = new Set((sessionContext?.recent_main_base_names || []).map((x) => String(x || '').trim()).filter(Boolean));
+  const scoreOf = (item) =>
+    Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
+  const isSeen = (item) => seenBases.has(String(item?.base_name || '').trim());
+
+  const freshRanked = (ranked || []).filter((item) => !isSeen(item));
+  const freshPolicy = enforceMainPolicyOnRanked(
+    freshRanked,
+    parsedIntent,
+    categoryLocked,
+    formLocked,
+    allowedMainForms,
+    limit,
+    strictOptions
+  );
+  let selected = (freshPolicy.selected || []).slice(0, Math.max(1, limit));
+  let mainSelectionSource = 'fresh_only';
+
+  if (selected.length < Math.max(1, limit)) {
+    const fallbackPolicy = enforceMainPolicyOnRanked(
+      ranked,
+      parsedIntent,
+      categoryLocked,
+      formLocked,
+      allowedMainForms,
+      limit,
+      strictOptions
+    );
+    const selectedBaseNames = new Set(selected.map((x) => String(x?.base_name || '').trim()).filter(Boolean));
+    for (const item of fallbackPolicy.selected || []) {
+      if (selected.length >= Math.max(1, limit)) break;
+      const base = String(item?.base_name || '').trim();
+      if (!base || selectedBaseNames.has(base)) continue;
+      selected.push(item);
+      selectedBaseNames.add(base);
+    }
+    mainSelectionSource = 'fallback_with_seen';
+  }
+
+  selected = selected
+    .slice()
+    .sort((a, b) => {
+      const aSeen = isSeen(a);
+      const bSeen = isSeen(b);
+      if (aSeen !== bSeen) return aSeen ? 1 : -1;
+      return scoreOf(b) - scoreOf(a);
+    })
+    .slice(0, Math.max(1, limit));
+
+  const reintroduced = selected.filter((item) => isSeen(item)).length;
+  return {
+    selected,
+    repeat_excluded_count: Math.max(0, seenBases.size - reintroduced),
+    repeat_reintroduced_count: reintroduced,
+    main_selection_source: mainSelectionSource,
+    session_seen_bases: [...seenBases],
+    enable_condition_fresh_guard: false,
+    fresh_promoted_count: selected.filter((item) => !isSeen(item)).length,
+    fresh_blocked_zero_condition_count: 0,
+    seen_retained_by_condition_count: 0,
+    dry_hydration_balance_applied: 0,
+    sorted_main_candidate_names_before_cut: selected.map((x) => String(x?.name || 'unknown')),
+    sorted_main_candidate_condition_scores: selected.map((x) => Number(x?._score_breakdown?.condition_score || 0)),
+    sorted_main_candidate_seen_flags: selected.map((x) => (isSeen(x) ? 1 : 0)),
+    fresh_tie_promoted_names: [],
+    lower_condition_selected_reason: 'variety_intent_fresh_first',
+  };
+}
+
+function applySunscreenTop1PrimaryGuard({
+  policyMain = [],
+  ranked = [],
+  parsedIntent = {},
+  conditionQuery = false,
+  strictExplicitForm = false,
+}) {
+  const hasReapplyIntent = Boolean(parsedIntent?.has_reapply_intent);
+  const enabled = Boolean(
+    conditionQuery &&
+      !strictExplicitForm &&
+      parsedIntent?.requested_category === 'sunscreen' &&
+      !hasReapplyIntent
+  );
+  const selected = Array.isArray(policyMain) ? policyMain.slice() : [];
+  const top1Before = String(selected?.[0]?.name || '').trim() || 'none';
+  let replacementReason = 'guard_not_applied';
+  if (!enabled || !selected.length) {
+    return {
+      selected,
+      top1_primary_guard_enabled: enabled,
+      has_reapply_intent: hasReapplyIntent,
+      top1_before_guard: top1Before,
+      top1_after_guard: top1Before,
+      top1_primary_replacement_reason: replacementReason,
+    };
+  }
+
+  const PRIMARY_FORMS = new Set(['cream', 'lotion', 'serum']);
+  const top1Form = String(selected[0]?.form || '').toLowerCase();
+  if (PRIMARY_FORMS.has(top1Form)) {
+    replacementReason = 'top1_already_primary_use_form';
+    return {
+      selected,
+      top1_primary_guard_enabled: enabled,
+      has_reapply_intent: hasReapplyIntent,
+      top1_before_guard: top1Before,
+      top1_after_guard: top1Before,
+      top1_primary_replacement_reason: replacementReason,
+    };
+  }
+
+  const scoreOf = (item) =>
+    Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
+  const condOf = (item) => Number(item?._score_breakdown?.condition_score || 0);
+  const selectedIds = new Set(selected.map((x) => String(x?.id || '')));
+  const primaryCandidate = (ranked || [])
+    .filter((item) => {
+      const form = String(item?.form || '').toLowerCase();
+      return PRIMARY_FORMS.has(form) && !item?.is_promo;
+    })
+    .sort((a, b) => {
+      const condGap = condOf(b) - condOf(a);
+      if (condGap !== 0) return condGap;
+      return scoreOf(b) - scoreOf(a);
+    })[0];
+
+  if (!primaryCandidate) {
+    replacementReason = 'no_primary_candidate_found';
+    return {
+      selected,
+      top1_primary_guard_enabled: enabled,
+      has_reapply_intent: hasReapplyIntent,
+      top1_before_guard: top1Before,
+      top1_after_guard: top1Before,
+      top1_primary_replacement_reason: replacementReason,
+    };
+  }
+
+  if (!selectedIds.has(String(primaryCandidate?.id || ''))) {
+    // replace the weakest non-primary item first, fallback to top1 replacement
+    const replaceIdx = selected.findIndex((item) => !PRIMARY_FORMS.has(String(item?.form || '').toLowerCase()));
+    if (replaceIdx >= 0) selected[replaceIdx] = primaryCandidate;
+    else selected[0] = primaryCandidate;
+  }
+  // always make sure top1 is primary by re-sorting selected with primary preference for first slot
+  selected.sort((a, b) => {
+    const aPrimary = PRIMARY_FORMS.has(String(a?.form || '').toLowerCase());
+    const bPrimary = PRIMARY_FORMS.has(String(b?.form || '').toLowerCase());
+    if (aPrimary !== bPrimary) return aPrimary ? -1 : 1;
+    const condGap = condOf(b) - condOf(a);
+    if (condGap !== 0) return condGap;
+    return scoreOf(b) - scoreOf(a);
+  });
+
+  const top1After = String(selected?.[0]?.name || '').trim() || 'none';
+  replacementReason =
+    top1After !== top1Before ? 'replaced_non_primary_top1_for_condition_query' : 'primary_candidate_added_no_top1_change';
+  return {
+    selected,
+    top1_primary_guard_enabled: enabled,
+    has_reapply_intent: hasReapplyIntent,
+    top1_before_guard: top1Before,
+    top1_after_guard: top1After,
+    top1_primary_replacement_reason: replacementReason,
+  };
 }
 
 function applySessionFreshMainSelection({
@@ -1170,6 +1351,7 @@ export const recommendationService = {
     const isPlainCategoryRequest =
       Boolean(parsed.requested_category) &&
       !parsed.requested_form &&
+      !parsed.variety_intent &&
       hasOnlyPlainCategoryBaselineConcerns(parsed.requested_category, parsed.concern || []) &&
       !parsed.skin_type &&
       (!Array.isArray(parsed.fit_issue) || parsed.fit_issue.length === 0) &&
@@ -1333,19 +1515,45 @@ export const recommendationService = {
     }
 
     const conditionQuery = hasConditionQuerySignals(parsed);
-    const freshnessSelection = applySessionFreshMainSelection({
+    const hasSeenMainHistory = Array.isArray(sessionContext?.recent_main_base_names) && sessionContext.recent_main_base_names.length > 0;
+    const isVarietyFollowUp =
+      parsed.requested_category === 'sunscreen' &&
+      Boolean(parsed.variety_intent) &&
+      !isExplicitStrictMain &&
+      hasSeenMainHistory;
+    const freshnessSelection = isVarietyFollowUp
+      ? applyVarietyMainSelection({
+          ranked,
+          parsedIntent: parsed,
+          categoryLocked: category_locked,
+          formLocked: form_locked,
+          allowedMainForms: allowed_main_forms,
+          limit,
+          strictOptions: { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain },
+          sessionContext,
+        })
+      : applySessionFreshMainSelection({
+          policyMain,
+          ranked,
+          parsedIntent: parsed,
+          categoryLocked: category_locked,
+          formLocked: form_locked,
+          allowedMainForms: allowed_main_forms,
+          limit,
+          strictOptions: { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain },
+          sessionContext,
+          conditionQuery,
+        });
+    policyMain = freshnessSelection.selected;
+
+    const top1GuardResult = applySunscreenTop1PrimaryGuard({
       policyMain,
       ranked,
       parsedIntent: parsed,
-      categoryLocked: category_locked,
-      formLocked: form_locked,
-      allowedMainForms: allowed_main_forms,
-      limit,
-      strictOptions: { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain },
-      sessionContext,
       conditionQuery,
+      strictExplicitForm: isExplicitStrictMain,
     });
-    policyMain = freshnessSelection.selected;
+    policyMain = top1GuardResult.selected;
 
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
     const mainPolicyPoolCount = Array.isArray(policyMain) ? policyMain.length : 0;
@@ -1379,7 +1587,7 @@ export const recommendationService = {
         freshnessSelection.repeat_excluded_count || 0
       } repeat_reintroduced_count=${freshnessSelection.repeat_reintroduced_count || 0} main_selection_source=${
         freshnessSelection.main_selection_source || 'fallback_with_seen'
-      } enable_condition_fresh_guard=${freshnessSelection.enable_condition_fresh_guard ? 1 : 0} fresh_promoted_count=${
+      } variety_intent=${parsed.variety_intent ? 1 : 0} variety_followup_applied=${isVarietyFollowUp ? 1 : 0} has_seen_main_history=${hasSeenMainHistory ? 1 : 0} enable_condition_fresh_guard=${freshnessSelection.enable_condition_fresh_guard ? 1 : 0} fresh_promoted_count=${
         freshnessSelection.fresh_promoted_count || 0
       } fresh_blocked_zero_condition_count=${freshnessSelection.fresh_blocked_zero_condition_count || 0} seen_retained_by_condition_count=${
         freshnessSelection.seen_retained_by_condition_count || 0
@@ -1393,6 +1601,15 @@ export const recommendationService = {
       } main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'} main_product_names=${
         mainRecommendations.map((x) => x.name || 'unknown').join(' | ') || 'none'
       }`
+    );
+    logger.info(
+      `[Top1 Guard] condition_query=${conditionQuery ? 1 : 0} has_reapply_intent=${top1GuardResult.has_reapply_intent ? 1 : 0} strict_explicit_form=${
+        isExplicitStrictMain ? 1 : 0
+      } strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} top1_primary_guard_enabled=${
+        top1GuardResult.top1_primary_guard_enabled ? 1 : 0
+      } top1_before_guard="${top1GuardResult.top1_before_guard || 'none'}" top1_after_guard="${
+        top1GuardResult.top1_after_guard || 'none'
+      }" top1_primary_replacement_reason=${top1GuardResult.top1_primary_replacement_reason || 'none'}`
     );
     const excludedFromMainByDefaultFormCount = isDefaultCategoryStrictMain
       ? Number(policyGate?.drop_stats?.DROP_FORM_MISMATCH || 0)
@@ -1467,7 +1684,14 @@ export const recommendationService = {
           .join(', ')}`
       );
     }
-    if (form_locked && Array.isArray(allowed_main_forms) && allowed_main_forms.length > 0 && hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
+    const allowSlot3NonCore =
+      isDefaultCategoryStrictMain && !isExplicitStrictMain && parsed.requested_category === 'sunscreen';
+    if (
+      form_locked &&
+      Array.isArray(allowed_main_forms) &&
+      allowed_main_forms.length > 0 &&
+      hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked, { allow_slot3_non_core: allowSlot3NonCore })
+    ) {
       trackFormLockViolation();
       logger.warn(
         `[Policy] form lock violation detected strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'default'} allowed=${(

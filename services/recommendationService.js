@@ -771,13 +771,28 @@ function applySessionFreshMainSelection({
   conditionQuery = false,
 }) {
   const conditionTieBand = Number(RECOMMENDATION_POLICY.formPolicy?.sameScoreBand || 3);
+  const CONDITION_FRESH_TIE_BAND = conditionTieBand;
   const strictExplicitForm = Boolean(strictOptions?.strict_explicit_form);
-  const enableConditionFreshGuard = Boolean(conditionQuery && !strictExplicitForm);
+  const strictDefaultCategoryForm = Boolean(strictOptions?.strict_default_category_form);
+  const enableConditionFreshGuard = Boolean(conditionQuery && !strictExplicitForm && !strictDefaultCategoryForm);
   const conditionScoreOf = (item) => Number(item?._score_breakdown?.condition_score || 0);
   const finalScoreOf = (item) =>
     Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
-
   const seenBases = new Set((sessionContext?.recent_main_base_names || []).map((x) => String(x || '').trim()).filter(Boolean));
+  const isSeenItem = (item) => seenBases.has(String(item?.base_name || '').trim());
+  const compareByConditionFresh = (a, b) => {
+    const aCondition = conditionScoreOf(a);
+    const bCondition = conditionScoreOf(b);
+    if (bCondition !== aCondition) return bCondition - aCondition;
+
+    const aSeen = isSeenItem(a);
+    const bSeen = isSeenItem(b);
+    const inTieBand = Math.abs(aCondition - bCondition) <= CONDITION_FRESH_TIE_BAND;
+    if (inTieBand && aSeen !== bSeen) return aSeen ? 1 : -1;
+
+    return finalScoreOf(b) - finalScoreOf(a);
+  };
+
   const sameCategoryContext =
     Boolean(parsedIntent?.requested_category) &&
     Boolean(sessionContext?.recent_main_category) &&
@@ -795,6 +810,11 @@ function applySessionFreshMainSelection({
       fresh_blocked_zero_condition_count: 0,
       seen_retained_by_condition_count: 0,
       dry_hydration_balance_applied: 0,
+      sorted_main_candidate_names_before_cut: [],
+      sorted_main_candidate_condition_scores: [],
+      sorted_main_candidate_seen_flags: [],
+      fresh_tie_promoted_names: [],
+      lower_condition_selected_reason: 'guard_inactive_or_no_seen_context',
     };
   }
 
@@ -811,12 +831,14 @@ function applySessionFreshMainSelection({
   );
   const freshPool = (freshPolicy.selected || [])
     .slice()
-    .sort((a, b) => conditionScoreOf(b) - conditionScoreOf(a) || finalScoreOf(b) - finalScoreOf(a));
+    .sort(compareByConditionFresh);
   const selected = (policyMain || []).slice(0, targetMainCount);
   const selectedIds = new Set(selected.map((item) => String(item?.id || '')));
   let freshPromoted = 0;
   let freshBlockedZeroCondition = 0;
   let seenRetainedByCondition = 0;
+  const freshTiePromotedNames = [];
+  const lowerConditionSelectedReason = [];
 
   for (let i = 0; i < selected.length; i += 1) {
     const current = selected[i];
@@ -835,8 +857,11 @@ function applySessionFreshMainSelection({
       seenRetainedByCondition += 1;
       continue;
     }
-    if (freshCondition + conditionTieBand < seenCondition) {
+    if (freshCondition + CONDITION_FRESH_TIE_BAND < seenCondition) {
       seenRetainedByCondition += 1;
+      lowerConditionSelectedReason.push(
+        `retain_seen:${String(current?.name || 'unknown')} over fresh:${String(candidateIn?.name || 'unknown')} due_to_condition_gap`
+      );
       continue;
     }
 
@@ -845,6 +870,9 @@ function applySessionFreshMainSelection({
     selectedIds.add(String(candidateIn?.id || ''));
     freshPool.splice(candidateInIdx, 1);
     freshPromoted += 1;
+    if (Math.abs(freshCondition - seenCondition) <= CONDITION_FRESH_TIE_BAND && freshCondition > 0) {
+      freshTiePromotedNames.push(String(candidateIn?.name || 'unknown'));
+    }
   }
 
   const needsMoistureBalance = Boolean(
@@ -857,18 +885,23 @@ function applySessionFreshMainSelection({
     if (!hasCreamOrLotion) {
       const creamLotionCandidate = (ranked || [])
         .filter((item) => ['cream', 'lotion'].includes(String(item?.form || '')))
-        .sort((a, b) => conditionScoreOf(b) - conditionScoreOf(a) || finalScoreOf(b) - finalScoreOf(a))[0];
+        .sort(compareByConditionFresh)[0];
       if (creamLotionCandidate) {
         const replaceIdx = selected.findIndex((item) => ['stick', 'spray'].includes(String(item?.form || '')));
         if (replaceIdx >= 0) {
+          const replaced = selected[replaceIdx];
           selected[replaceIdx] = creamLotionCandidate;
           dryHydrationBalanceApplied = 1;
+          lowerConditionSelectedReason.push(
+            `dry_balance_replace:${String(replaced?.name || 'unknown')}->${String(creamLotionCandidate?.name || 'unknown')}`
+          );
         }
       }
     }
   }
 
-  selected.sort((a, b) => conditionScoreOf(b) - conditionScoreOf(a) || finalScoreOf(b) - finalScoreOf(a));
+  const sortedBeforeCut = selected.slice().sort(compareByConditionFresh);
+  selected.splice(0, selected.length, ...sortedBeforeCut.slice(0, targetMainCount));
 
   const selectedBases = new Set(selected.map((item) => String(item?.base_name || '').trim()).filter(Boolean));
   let reintroduced = 0;
@@ -896,6 +929,11 @@ function applySessionFreshMainSelection({
     fresh_blocked_zero_condition_count: freshBlockedZeroCondition,
     seen_retained_by_condition_count: seenRetainedByCondition,
     dry_hydration_balance_applied: dryHydrationBalanceApplied,
+    sorted_main_candidate_names_before_cut: sortedBeforeCut.map((x) => String(x?.name || 'unknown')),
+    sorted_main_candidate_condition_scores: sortedBeforeCut.map((x) => conditionScoreOf(x)),
+    sorted_main_candidate_seen_flags: sortedBeforeCut.map((x) => (isSeenItem(x) ? 1 : 0)),
+    fresh_tie_promoted_names: freshTiePromotedNames,
+    lower_condition_selected_reason: lowerConditionSelectedReason.join('|') || 'none',
   };
 }
 
@@ -1276,6 +1314,11 @@ export const recommendationService = {
         freshnessSelection.seen_retained_by_condition_count || 0
       } dry_hydration_balance_applied=${freshnessSelection.dry_hydration_balance_applied ? 1 : 0} strict_explicit_form=${
         isExplicitStrictMain ? 1 : 0
+      } sorted_main_candidate_names_before_cut=${(freshnessSelection.sorted_main_candidate_names_before_cut || []).join('|') || 'none'} sorted_main_candidate_condition_scores=${
+        (freshnessSelection.sorted_main_candidate_condition_scores || []).join('|') || 'none'
+      } sorted_main_candidate_seen_flags=${(freshnessSelection.sorted_main_candidate_seen_flags || []).join('|') || 'none'} fresh_tie_promoted_names=${
+        (freshnessSelection.fresh_tie_promoted_names || []).join('|') || 'none'
+      } lower_condition_selected_reason=${freshnessSelection.lower_condition_selected_reason || 'none'
       } main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'} main_product_names=${
         mainRecommendations.map((x) => x.name || 'unknown').join(' | ') || 'none'
       }`

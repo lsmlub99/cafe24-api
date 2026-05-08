@@ -816,9 +816,13 @@ function enforceMainPolicyOnRanked(
 }
 
 function hasConditionQuerySignals(parsedIntent = {}) {
+  const concerns = Array.isArray(parsedIntent?.concern) ? parsedIntent.concern : [];
+  const isOnlyBaselineConcern = hasOnlyPlainCategoryBaselineConcerns(parsedIntent?.requested_category, concerns);
+  const hasNonBaselineConcern = concerns.length > 0 && !isOnlyBaselineConcern;
+
   return Boolean(
     parsedIntent?.skin_type ||
-      (Array.isArray(parsedIntent?.concern) && parsedIntent.concern.length > 0) ||
+      hasNonBaselineConcern ||
       (Array.isArray(parsedIntent?.fit_issue) && parsedIntent.fit_issue.length > 0) ||
       (Array.isArray(parsedIntent?.situation) && parsedIntent.situation.length > 0) ||
       (Array.isArray(parsedIntent?.preference) && parsedIntent.preference.length > 0)
@@ -1295,11 +1299,28 @@ export const recommendationService = {
 
   async scoreAndFilterProducts(cachedProducts, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
     trackRequest();
+    const perfStart = Date.now();
+    const stageMs = {
+      intent_parse_ms: 0,
+      product_pool_ms: 0,
+      semantic_ms: 0,
+      rank_ms: 0,
+      main_policy_ms: 0,
+      response_build_ms: 0,
+    };
+    const logRecommendationTiming = (extra = {}) => {
+      const total_elapsed_ms = Date.now() - perfStart;
+      logger.info(
+        `[Recommendation Timing] query="${String(args.query || args.q || '').replace(/\s+/g, ' ').trim()}" requested_category=${extra.requested_category || 'none'} requested_form=${extra.requested_form || 'none'} is_plain_category_request=${extra.is_plain_category_request ? 1 : 0} condition_query=${extra.condition_query ? 1 : 0} intent_parse_ms=${stageMs.intent_parse_ms} product_pool_ms=${stageMs.product_pool_ms} semantic_ms=${stageMs.semantic_ms} rank_ms=${stageMs.rank_ms} main_policy_ms=${stageMs.main_policy_ms} response_build_ms=${stageMs.response_build_ms} total_elapsed_ms=${total_elapsed_ms}`
+      );
+    };
 
     if (!Array.isArray(cachedProducts) || !cachedProducts.length) {
       trackNoResult();
       trackNoFallbackForRequest();
       trackNoExplanationMismatchForRequest();
+      stageMs.response_build_ms = Date.now() - perfStart;
+      logRecommendationTiming();
       return {
         requested_category: null,
         main_recommendations: [],
@@ -1313,6 +1334,7 @@ export const recommendationService = {
       };
     }
 
+    const intentStartedAt = Date.now();
     const normalized = cachedProducts.map((p) => {
       const item = normalizeCafe24Product(p, RECOMMENDATION_TAXONOMY);
       return { ...item, category_key: inferProductCategory(item) };
@@ -1342,6 +1364,7 @@ export const recommendationService = {
         sort_intent: parsed.sort_intent === 'popular' ? 'condition_based' : parsed.sort_intent,
       };
     }
+    stageMs.intent_parse_ms += Date.now() - intentStartedAt;
     logger.info(
       `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'}`
     );
@@ -1364,6 +1387,7 @@ export const recommendationService = {
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
       : parsed;
 
+    const productPoolStartedAt = Date.now();
     const strictPrimary = this.get_primary_candidates(normalized, retrievalIntent, {
       relaxForm: false,
       includePromo: false,
@@ -1391,6 +1415,7 @@ export const recommendationService = {
     }
     parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
     const rawCategoryPoolCount = Array.isArray(candidates) ? candidates.length : 0;
+    stageMs.product_pool_ms += Date.now() - productPoolStartedAt;
 
     let usedFallback = false;
     const fallbackSteps = [];
@@ -1398,6 +1423,7 @@ export const recommendationService = {
     let semanticDiagnostics = createSemanticDiagnostics();
 
     const runSemantic = async (candidatePool, intent) => {
+      const semanticStartedAt = Date.now();
       const semanticResult = await applySemanticSignals(candidatePool, intent, {
         openai,
         enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
@@ -1419,14 +1445,28 @@ export const recommendationService = {
       logger.info(
         `[SemanticDiag] enabled=${semanticDiagnostics.semantic_enabled ? 1 : 0} model=${semanticDiagnostics.embedding_model || 'none'} candidates=${semanticDiagnostics.semantic_candidates_count || 0} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0} nonzero_ratio=${semanticDiagnostics.semantic_nonzero_ratio || 0} query_source=${semanticDiagnostics.semantic_query_source || 'unknown'} query_tokens=${semanticDiagnostics.semantic_query_token_count || 0} skip_reason=${semanticDiagnostics.semantic_skip_reason ?? 'null'} success=${semanticSuccess ? 1 : 0}`
       );
+      stageMs.semantic_ms += Date.now() - semanticStartedAt;
       return Array.isArray(semanticResult?.candidates) ? semanticResult.candidates : candidatePool;
+    };
+
+    const runRank = async (candidatePool, intent, categoryLockState) => {
+      const rankStartedAt = Date.now();
+      const rankResult = await this.rank_primary_recommendations(
+        candidatePool,
+        intent,
+        Math.max(limit * 3, 8),
+        categoryLockState
+      );
+      stageMs.rank_ms += Date.now() - rankStartedAt;
+      return rankResult;
     };
 
     let semanticCandidates = await runSemantic(candidates, parsed);
     const semanticPoolCount = Array.isArray(semanticCandidates) ? semanticCandidates.length : 0;
 
-    let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+    let ranked = await runRank(semanticCandidates, parsed, category_locked);
     const rankedPoolCount = Array.isArray(ranked) ? ranked.length : 0;
+    const mainPolicyStartedAt = Date.now();
     let policyGate = enforceMainPolicyOnRanked(
       ranked,
       parsed,
@@ -1461,7 +1501,7 @@ export const recommendationService = {
       fallbackSteps.push('popular_same_category');
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       semanticCandidates = await runSemantic(candidates, relaxed);
-      ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
+      ranked = await runRank(semanticCandidates, relaxed, category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
@@ -1496,7 +1536,7 @@ export const recommendationService = {
       }
       parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
-      ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+      ranked = await runRank(semanticCandidates, parsed, category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
@@ -1554,17 +1594,21 @@ export const recommendationService = {
       strictExplicitForm: isExplicitStrictMain,
     });
     policyMain = top1GuardResult.selected;
+    stageMs.main_policy_ms += Date.now() - mainPolicyStartedAt;
 
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
     const mainPolicyPoolCount = Array.isArray(policyMain) ? policyMain.length : 0;
     const mainBaseNameSet = new Set(mainRecommendations.map((x) => String(x.base_name || '').trim()).filter(Boolean));
-    const generalRecommendations = (ranked || [])
+    let generalRecommendations = (ranked || [])
       .filter((p) => {
         const base = String(p?.base_name || '').trim();
         return base ? !mainBaseNameSet.has(base) : true;
       })
       .slice(0, Math.max(limit * 3, 8))
       .map((p, idx) => toRecommendationItem(p, idx, parsed));
+    if (parsed.requested_category && generalRecommendations.length === 0) {
+      generalRecommendations = (ranked || []).slice(0, Math.max(1, limit)).map((p, idx) => toRecommendationItem(p, idx, parsed));
+    }
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
     logger.info(
       `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
@@ -1618,25 +1662,63 @@ export const recommendationService = {
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
       trackNoResult();
-      fallbackSteps.push('secondary_only');
+      fallbackSteps.push('deterministic_main_from_ranked');
       trackFallback({
         timestamp: new Date().toISOString(),
         requested_category: parsed.requested_category || null,
         requested_form: parsed.requested_form || null,
         fit_issue: parsed.fit_issue || [],
         negative_scope: parsed.negative_scope || null,
-        fallback_step: fallbackSteps[fallbackSteps.length - 1] || 'secondary_only',
+        fallback_step: fallbackSteps[fallbackSteps.length - 1] || 'deterministic_main_from_ranked',
         reason_code: 'FALLBACK_SAFE_BASELINE',
         query_hash: queryHash,
       });
 
-      const secondaryOnly = this.get_secondary_recommendations(
+      trackNoExplanationMismatchForRequest();
+      const deterministicPoolRaw = (ranked || []).filter((item) => !item?.is_promo);
+      const deterministicPool =
+        deterministicPoolRaw.length > 0
+          ? deterministicPoolRaw
+          : this.get_primary_candidates(
+              normalized,
+              { ...parsed, requested_form: null, explicit_form_request: false },
+              { relaxForm: true, includePromo: false }
+            ).candidates;
+      const deterministicMain = dedupeByBase(deterministicPool)
+        .slice(0, Math.max(1, limit))
+        .map((item, idx) => toRecommendationItem(item, idx, parsed));
+      const deterministicSecondary = this.get_secondary_recommendations(
         normalized,
         parsed,
-        [],
+        deterministicMain,
         RECOMMENDATION_POLICY.limits.defaultSecondary
       );
-      trackNoExplanationMismatchForRequest();
+      const deterministicGeneral = (deterministicPool || [])
+        .filter((item) => {
+          const base = String(item?.base_name || '').trim();
+          return base ? !deterministicMain.some((main) => String(main.base_name || '').trim() === base) : true;
+        })
+        .slice(0, Math.max(limit * 3, 8))
+        .map((item, idx) => toRecommendationItem(item, idx, parsed));
+      const responseBuildStartedAt = Date.now();
+      const fallbackResponse = this.build_recommendation_response(
+        parsed,
+        deterministicMain,
+        deterministicSecondary,
+        deterministicGeneral,
+        promotions,
+        category_locked,
+        form_locked,
+        allowed_main_forms
+      );
+      stageMs.response_build_ms += Date.now() - responseBuildStartedAt;
+      logRecommendationTiming({
+        requested_category: parsed.requested_category,
+        requested_form: parsed.requested_form,
+        is_plain_category_request: isPlainCategoryRequest,
+        condition_query: conditionQuery,
+      });
+      return fallbackResponse;
       return {
         requested_category: parsed.requested_category,
         main_recommendations: [],
@@ -1733,7 +1815,8 @@ export const recommendationService = {
       mainRecommendations,
     });
 
-    return this.build_recommendation_response(
+    const responseBuildStartedAt = Date.now();
+    const response = this.build_recommendation_response(
       parsed,
       mainRecommendations,
       secondary,
@@ -1743,5 +1826,13 @@ export const recommendationService = {
       form_locked,
       allowed_main_forms
     );
+    stageMs.response_build_ms += Date.now() - responseBuildStartedAt;
+    logRecommendationTiming({
+      requested_category: parsed.requested_category,
+      requested_form: parsed.requested_form,
+      is_plain_category_request: isPlainCategoryRequest,
+      condition_query: conditionQuery,
+    });
+    return response;
   },
 };

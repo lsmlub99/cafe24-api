@@ -336,6 +336,7 @@ function buildMcpRecommendationResponse(
   parsedIntent,
   mainRecs,
   secondaryRecs,
+  generalRecs,
   promotions,
   categoryLocked,
   formLocked,
@@ -361,7 +362,7 @@ function buildMcpRecommendationResponse(
     },
 
     // Backward compatibility
-    recommendations: mainRecs,
+    recommendations: Array.isArray(generalRecs) ? generalRecs : [],
     reference_recommendations: secondaryRecs,
     promotions: promotions || [],
     summary: {
@@ -1021,6 +1022,7 @@ export const recommendationService = {
     parsedIntent,
     mainRecs = [],
     secondaryRecs = [],
+    generalRecs = [],
     promotions = [],
     categoryLocked = false,
     formLocked = false,
@@ -1030,6 +1032,7 @@ export const recommendationService = {
       parsedIntent,
       mainRecs,
       secondaryRecs,
+      generalRecs,
       promotions,
       categoryLocked,
       formLocked,
@@ -1133,7 +1136,6 @@ export const recommendationService = {
       form_locked = true;
       allowed_main_forms = parsed.requested_form ? [parsed.requested_form] : [];
     } else if (isDefaultCategoryStrictMain) {
-      candidates = applyCategoryDefaultMainFormGate(candidates, true, defaultMainFormsByCategory);
       form_locked = true;
       allowed_main_forms = defaultMainFormsByCategory;
     } else if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
@@ -1143,8 +1145,8 @@ export const recommendationService = {
       form_locked = false;
       allowed_main_forms = [];
     }
-    candidates = applyCategoryDefaultMainFormGate(candidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
     parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
+    const rawCategoryPoolCount = Array.isArray(candidates) ? candidates.length : 0;
 
     let usedFallback = false;
     const fallbackSteps = [];
@@ -1177,9 +1179,10 @@ export const recommendationService = {
     };
 
     let semanticCandidates = await runSemantic(candidates, parsed);
-    semanticCandidates = applyCategoryDefaultMainFormGate(semanticCandidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
+    const semanticPoolCount = Array.isArray(semanticCandidates) ? semanticCandidates.length : 0;
 
     let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+    const rankedPoolCount = Array.isArray(ranked) ? ranked.length : 0;
     let policyGate = enforceMainPolicyOnRanked(
       ranked,
       parsed,
@@ -1214,7 +1217,6 @@ export const recommendationService = {
       fallbackSteps.push('popular_same_category');
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       semanticCandidates = await runSemantic(candidates, relaxed);
-      semanticCandidates = applyCategoryDefaultMainFormGate(semanticCandidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
       ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
@@ -1238,7 +1240,6 @@ export const recommendationService = {
       fallbackSteps.push('relax_form');
       const fallbackPrimary = this.get_primary_candidates(normalized, parsed, { relaxForm: true, includePromo: false });
       candidates = fallbackPrimary.candidates;
-      candidates = applyCategoryDefaultMainFormGate(candidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
       category_locked = strictPrimary.category_locked;
       form_locked = strictPrimary.form_locked;
       allowed_main_forms = strictPrimary.allowed_main_forms || [];
@@ -1251,7 +1252,6 @@ export const recommendationService = {
       }
       parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
-      semanticCandidates = applyCategoryDefaultMainFormGate(semanticCandidates, isDefaultCategoryStrictMain, defaultMainFormsByCategory);
       ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
@@ -1286,6 +1286,15 @@ export const recommendationService = {
     policyMain = freshnessSelection.selected;
 
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
+    const mainPolicyPoolCount = Array.isArray(policyMain) ? policyMain.length : 0;
+    const mainBaseNameSet = new Set(mainRecommendations.map((x) => String(x.base_name || '').trim()).filter(Boolean));
+    const generalRecommendations = (ranked || [])
+      .filter((p) => {
+        const base = String(p?.base_name || '').trim();
+        return base ? !mainBaseNameSet.has(base) : true;
+      })
+      .slice(0, Math.max(limit * 3, 8))
+      .map((p, idx) => toRecommendationItem(p, idx, parsed));
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
     logger.info(
       `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
@@ -1323,6 +1332,9 @@ export const recommendationService = {
         mainRecommendations.map((x) => x.name || 'unknown').join(' | ') || 'none'
       }`
     );
+    const excludedFromMainByDefaultFormCount = isDefaultCategoryStrictMain
+      ? Number(policyGate?.drop_stats?.DROP_FORM_MISMATCH || 0)
+      : 0;
 
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
@@ -1411,9 +1423,18 @@ export const recommendationService = {
 
     const secondary = this.get_secondary_recommendations(
       normalized,
-      { ...parsed, allowed_main_forms },
+      parsed,
       mainRecommendations,
       RECOMMENDATION_POLICY.limits.defaultSecondary
+    );
+    logger.info(
+      `[Main Slot Policy] strict_default_category_form_applied_stage=main_only raw_category_pool_count=${rawCategoryPoolCount} semantic_pool_count=${semanticPoolCount} ranked_pool_count=${rankedPoolCount} main_policy_pool_count=${mainPolicyPoolCount} excluded_from_main_by_default_form_count=${excludedFromMainByDefaultFormCount} main_forms=${mainRecommendations
+        .map((x) => x.form || 'unknown')
+        .join(',') || 'none'} secondary_forms=${secondary.map((x) => x.form || 'unknown').join(',') || 'none'} reference_forms=${secondary
+        .map((x) => x.form || 'unknown')
+        .join(',') || 'none'} promotion_forms=${promotions.map((x) => x.form || 'unknown').join(',') || 'none'} recommendations_forms=${generalRecommendations
+        .map((x) => x.form || 'unknown')
+        .join(',') || 'none'}`
     );
     if (parsed.requested_category === 'bb') {
       const secondaryBbLikeCount = (secondary || []).filter((item) => isBbLikeCandidateStrict(item, parsed)).length;
@@ -1430,6 +1451,7 @@ export const recommendationService = {
       parsed,
       mainRecommendations,
       secondary,
+      generalRecommendations,
       promotions,
       category_locked,
       form_locked,

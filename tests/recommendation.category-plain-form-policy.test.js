@@ -61,12 +61,14 @@ function getMainForms(response) {
 test('A. plain sunscreen query keeps default strict form policy', async () => {
   const res = await runQuery('선크림 추천해주세요');
   const forms = getMainForms(res);
+  const recommendationForms = (res.recommendations || []).map((item) => item.form);
 
   assert.equal(res.requested_category, 'sunscreen');
   assert.equal(res.applied_policy.requested_form, null);
   assert.deepStrictEqual(res.applied_policy.allowed_main_forms, ['cream', 'lotion']);
   assert.equal(forms.every((form) => ['cream', 'lotion'].includes(form)), true);
   assert.equal(forms.some((form) => ['serum', 'stick', 'spray'].includes(form)), false);
+  assert.equal(recommendationForms.some((form) => ['serum', 'stick', 'spray'].includes(form)), true);
 });
 
 test('B. dry sunscreen query is non-plain and does not force default form lock', async () => {
@@ -111,4 +113,3 @@ test('F. tone-up sunscreen is not plain, so default strict form lock is off', as
   assert.equal(res.applied_policy.requested_form, null);
   assert.deepStrictEqual(res.applied_policy.allowed_main_forms || [], []);
 });
-

@@ -155,7 +155,6 @@ function buildMcpToolResult({
   requestedCategory = null,
   canonicalMain = [],
   canonicalSecondary = [],
-  generalRecommendations = [],
   reasoningTags = [],
   appliedPolicy = {},
   promotions = [],
@@ -167,7 +166,6 @@ function buildMcpToolResult({
     requestedCategory,
     canonicalMain,
     canonicalSecondary,
-    generalRecommendations,
     reasoningTags,
     appliedPolicy,
     promotions,
@@ -690,9 +688,9 @@ async function executeTool(args = {}) {
     requested_category: requestedCategory = null,
     main_recommendations: mainRecommendations = [],
     secondary_recommendations: secondaryRecommendations = [],
-    recommendations: generalRecommendations = [],
     reasoning_tags: reasoningTags = [],
     applied_policy: appliedPolicy = {},
+    recommendations = [],
     promotions = [],
     summary = {},
     reference_recommendations: referenceRecommendations = [],
@@ -701,8 +699,8 @@ async function executeTool(args = {}) {
   const canonicalMain =
     Array.isArray(mainRecommendations) && mainRecommendations.length > 0
       ? mainRecommendations
-      : Array.isArray(generalRecommendations)
-      ? generalRecommendations
+      : Array.isArray(recommendations)
+      ? recommendations
       : [];
   const canonicalSecondary =
     Array.isArray(secondaryRecommendations) && secondaryRecommendations.length > 0
@@ -735,7 +733,6 @@ async function executeTool(args = {}) {
     requestedCategory,
     canonicalMain,
     canonicalSecondary,
-    generalRecommendations,
     reasoningTags,
     appliedPolicy,
     promotions,
@@ -756,34 +753,6 @@ async function executeTool(args = {}) {
   );
   logger.info(
     `[MCP Shape] structuredContent_keys=${structuredContentKeys.join(',')} structuredContent_has_recommendations=${structuredContentHasRecommendations} structuredContent_has_summary=${structuredContentHasSummary} meta_widgetData_has_recommendations=${metaWidgetDataHasRecommendations}`
-  );
-  const policyMainNames = canonicalMain.map((x) => String(x?.name || '').trim()).filter(Boolean);
-  const structuredMainNames = (toolResult?.structuredContent?.main_recommendations || []).map((x) => String(x?.name || '').trim());
-  const structuredRecommendationsNames = (toolResult?.structuredContent?.recommendations || []).map((x) => String(x?.name || '').trim());
-  const widgetRecommendationsNames = (toolResult?._meta?.widgetData?.recommendations || []).map((x) => String(x?.name || '').trim());
-  const structuredMainLen = Array.isArray(toolResult?.structuredContent?.main_recommendations)
-    ? toolResult.structuredContent.main_recommendations.length
-    : 0;
-  const structuredRecommendationsLen = Array.isArray(toolResult?.structuredContent?.recommendations)
-    ? toolResult.structuredContent.recommendations.length
-    : 0;
-  const widgetMainLen = Array.isArray(toolResult?._meta?.widgetData?.main_recommendations)
-    ? toolResult._meta.widgetData.main_recommendations.length
-    : 0;
-  const widgetRecommendationsLen = Array.isArray(toolResult?._meta?.widgetData?.recommendations)
-    ? toolResult._meta.widgetData.recommendations.length
-    : 0;
-  const bodyRankNames = canonicalMain.map((x) => String(x?.name || '').trim()).filter(Boolean);
-  logger.info(
-    `[MCP Payload Size] structured_main_len=${structuredMainLen} structured_recommendations_len=${structuredRecommendationsLen} meta_widget_main_len=${widgetMainLen} meta_widget_recommendations_len=${widgetRecommendationsLen}`
-  );
-  if (structuredMainLen === 0 && structuredRecommendationsLen === 0 && widgetMainLen === 0 && widgetRecommendationsLen === 0) {
-    logger.error(
-      `[Recommendation Empty Response] requested_category=${requestedCategory || 'none'} query="${String(args?.query || args?.q || '').replace(/\s+/g, ' ').trim()}"`
-    );
-  }
-  logger.info(
-    `[MCP Output Path] policy_main_product_names=${policyMainNames.join(' | ') || 'none'} structured_main_product_names=${structuredMainNames.join(' | ') || 'none'} structured_recommendations_product_names=${structuredRecommendationsNames.join(' | ') || 'none'} meta_widget_recommendations_product_names=${widgetRecommendationsNames.join(' | ') || 'none'} body_rank_product_names=${bodyRankNames.join(' | ') || 'none'}`
   );
   return toolResult;
 }
@@ -920,37 +889,6 @@ async function handleMcpMessage(req, res) {
     sendError(id, -32601, `Method not found: ${method}`);
   } catch (error) {
     logger.error('[MCP Error]', error);
-    if (method === 'tools/call') {
-      const failureText = '현재 제품 추천 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
-      const fallbackResult = {
-        content: [{ type: 'text', text: failureText }],
-        structuredContent: {
-          status: 'error',
-          display_mode: 'widget',
-          body_template_version: 'fixed_v1',
-        },
-        _meta: {
-          ui: { resourceUri: WIDGET_HTTP_URI },
-          'openai/outputTemplate': WIDGET_HTTP_URI,
-          'openai/widgetAccessible': true,
-          widgetData: {
-            requested_category: null,
-            main_recommendations: [],
-            secondary_recommendations: [],
-            recommendations: [],
-            promotions: [],
-            reference_recommendations: [],
-            summary: {
-              message: failureText,
-              strategy: '',
-              conclusion: '',
-            },
-          },
-        },
-      };
-      sendToClient({ jsonrpc: '2.0', id, result: fallbackResult });
-      return;
-    }
     sendError(id, -32000, error.message);
   }
 }

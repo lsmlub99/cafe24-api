@@ -32,14 +32,6 @@ import { applySemanticSignals } from './recommendation/semanticRetriever.js';
 let openaiClient = null;
 let openaiLoadAttempted = false;
 
-const PLAIN_CATEGORY_ALLOWED_BASELINE_CONCERNS = {
-  sunscreen: new Set(['uv_protection']),
-};
-
-const DEFAULT_CATEGORY_MAIN_FORM_POLICY = {
-  sunscreen: ['cream', 'lotion'],
-};
-
 async function getOpenAIClient() {
   if (openaiClient) return openaiClient;
   if (openaiLoadAttempted) return null;
@@ -97,24 +89,6 @@ function isSemanticActivationSuccess(diag = {}) {
   const count = Number(diag.semantic_nonzero_count || 0);
   const ratio = Number(diag.semantic_nonzero_ratio || 0);
   return count >= 3 || ratio >= 0.2;
-}
-
-function hasOnlyPlainCategoryBaselineConcerns(category, concerns = []) {
-  if (!Array.isArray(concerns)) return true;
-  const baselineSet = PLAIN_CATEGORY_ALLOWED_BASELINE_CONCERNS[category];
-  if (!baselineSet) return concerns.length === 0;
-  return concerns.every((concern) => baselineSet.has(concern));
-}
-
-function resolveDefaultCategoryMainForms(category) {
-  return Array.isArray(DEFAULT_CATEGORY_MAIN_FORM_POLICY[category]) ? DEFAULT_CATEGORY_MAIN_FORM_POLICY[category] : [];
-}
-
-function applyCategoryDefaultMainFormGate(candidates = [], enabled = false, allowedForms = []) {
-  if (!enabled) return Array.isArray(candidates) ? candidates : [];
-  if (!Array.isArray(candidates) || !candidates.length) return [];
-  if (!Array.isArray(allowedForms) || !allowedForms.length) return [];
-  return candidates.filter((item) => item?.form && allowedForms.includes(item.form));
 }
 
 function buildReasoningTags(parsedIntent) {
@@ -336,7 +310,6 @@ function buildMcpRecommendationResponse(
   parsedIntent,
   mainRecs,
   secondaryRecs,
-  generalRecs,
   promotions,
   categoryLocked,
   formLocked,
@@ -362,7 +335,7 @@ function buildMcpRecommendationResponse(
     },
 
     // Backward compatibility
-    recommendations: Array.isArray(generalRecs) ? generalRecs : [],
+    recommendations: mainRecs,
     reference_recommendations: secondaryRecs,
     promotions: promotions || [],
     summary: {
@@ -471,13 +444,9 @@ function hasCategoryLockViolation(mainRecommendations, parsedIntent, categoryLoc
   return mainRecommendations.some((item) => item?.category_key && item.category_key !== parsedIntent.requested_category);
 }
 
-function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked, options = {}) {
+function hasFormLockViolation(mainRecommendations, allowedMainForms, formLocked) {
   if (!formLocked || !Array.isArray(allowedMainForms) || !allowedMainForms.length) return false;
-  const allowSlot3NonCore = Boolean(options?.allow_slot3_non_core);
-  return mainRecommendations.some((item, idx) => {
-    if (allowSlot3NonCore && idx >= 2) return false;
-    return item?.form && !allowedMainForms.includes(item.form);
-  });
+  return mainRecommendations.some((item) => item?.form && !allowedMainForms.includes(item.form));
 }
 
 function hasExplanationMismatch(mainRecommendations = []) {
@@ -670,22 +639,12 @@ function enforceMainPolicyOnRanked(
   const finalLimit = Math.max(1, limit);
   const isBbRequest = parsedIntent.requested_category === 'bb';
   const strictExplicitForm = Boolean(options?.strict_explicit_form);
-  const strictDefaultCategoryForm = Boolean(options?.strict_default_category_form);
-  const mainOverlay = {
-    default_main_core_forms: Array.isArray(allowedMainForms) ? [...allowedMainForms] : [],
-    default_main_core_count: 0,
-    default_main_exploration_slot_enabled: 0,
-    exploration_slot_candidate_count: 0,
-    exploration_slot_product: null,
-    exploration_slot_excluded_reasons: [],
-  };
   if (!isBbRequest && !(formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0)) {
     return {
       selected: deduped.slice(0, finalLimit),
       drop_stats: drop,
       pre_policy_count: (ranked || []).length,
       pass_count: passed.length,
-      main_overlay: mainOverlay,
       bb_policy: {
         bb_like_candidate_count: 0,
         main_bb_like_count: 0,
@@ -695,57 +654,6 @@ function enforceMainPolicyOnRanked(
   }
 
   const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
-  if (strictDefaultCategoryForm && !strictExplicitForm && !isBbRequest) {
-    const coreForms = Array.isArray(allowedMainForms) ? allowedMainForms : [];
-    const coreCandidates = deduped.filter(isMatch);
-    const selected = [];
-    const selectedBaseNames = new Set();
-
-    const coreTargetCount = Math.min(finalLimit, 2);
-    for (const item of coreCandidates) {
-      if (selected.length >= coreTargetCount) break;
-      const base = String(item?.base_name || '').trim();
-      if (!base || selectedBaseNames.has(base)) continue;
-      selected.push(item);
-      selectedBaseNames.add(base);
-    }
-
-    mainOverlay.default_main_core_count = selected.length;
-    mainOverlay.default_main_exploration_slot_enabled = finalLimit >= 3 ? 1 : 0;
-
-    const explorationCandidates = deduped.filter((item) => {
-      const base = String(item?.base_name || '').trim();
-      return Boolean(base) && !selectedBaseNames.has(base);
-    });
-    mainOverlay.exploration_slot_candidate_count = explorationCandidates.length;
-
-    if (selected.length < finalLimit) {
-      for (const item of explorationCandidates) {
-        if (selected.length >= finalLimit) break;
-        const base = String(item?.base_name || '').trim();
-        if (!base || selectedBaseNames.has(base)) continue;
-        selected.push(item);
-        selectedBaseNames.add(base);
-      }
-    }
-
-    const slot3 = selected[2];
-    if (slot3) mainOverlay.exploration_slot_product = String(slot3?.name || null);
-    if (!slot3 && finalLimit >= 3) mainOverlay.exploration_slot_excluded_reasons.push('no_valid_exploration_candidate');
-
-    return {
-      selected,
-      drop_stats: drop,
-      pre_policy_count: (ranked || []).length,
-      pass_count: passed.length,
-      main_overlay: mainOverlay,
-      bb_policy: {
-        bb_like_candidate_count: 0,
-        main_bb_like_count: 0,
-        non_bb_dropped_from_main: 0,
-      },
-    };
-  }
   if (strictExplicitForm && !isBbRequest) {
     const strictOnly = deduped.filter(isMatch).slice(0, finalLimit);
     return {
@@ -753,7 +661,6 @@ function enforceMainPolicyOnRanked(
       drop_stats: drop,
       pre_policy_count: (ranked || []).length,
       pass_count: passed.length,
-      main_overlay: mainOverlay,
       bb_policy: {
         bb_like_candidate_count: 0,
         main_bb_like_count: 0,
@@ -806,382 +713,11 @@ function enforceMainPolicyOnRanked(
     drop_stats: drop,
     pre_policy_count: (ranked || []).length,
     pass_count: passed.length,
-    main_overlay: mainOverlay,
     bb_policy: {
       bb_like_candidate_count: Number(bbPolicy.bb_like_candidate_count || 0),
       main_bb_like_count: Number(bbPolicy.main_bb_like_count || 0),
       non_bb_dropped_from_main: Number(bbPolicy.non_bb_dropped_from_main || 0),
     },
-  };
-}
-
-function hasConditionQuerySignals(parsedIntent = {}) {
-  const concerns = Array.isArray(parsedIntent?.concern) ? parsedIntent.concern : [];
-  const isOnlyBaselineConcern = hasOnlyPlainCategoryBaselineConcerns(parsedIntent?.requested_category, concerns);
-  const hasNonBaselineConcern = concerns.length > 0 && !isOnlyBaselineConcern;
-
-  return Boolean(
-    parsedIntent?.skin_type ||
-      hasNonBaselineConcern ||
-      (Array.isArray(parsedIntent?.fit_issue) && parsedIntent.fit_issue.length > 0) ||
-      (Array.isArray(parsedIntent?.situation) && parsedIntent.situation.length > 0) ||
-      (Array.isArray(parsedIntent?.preference) && parsedIntent.preference.length > 0)
-  );
-}
-
-function applyVarietyMainSelection({
-  ranked = [],
-  parsedIntent = {},
-  categoryLocked = false,
-  formLocked = false,
-  allowedMainForms = [],
-  limit = RECOMMENDATION_POLICY.limits.defaultMain,
-  strictOptions = {},
-  sessionContext = {},
-}) {
-  const seenBases = new Set((sessionContext?.recent_main_base_names || []).map((x) => String(x || '').trim()).filter(Boolean));
-  const scoreOf = (item) =>
-    Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
-  const isSeen = (item) => seenBases.has(String(item?.base_name || '').trim());
-
-  const freshRanked = (ranked || []).filter((item) => !isSeen(item));
-  const freshPolicy = enforceMainPolicyOnRanked(
-    freshRanked,
-    parsedIntent,
-    categoryLocked,
-    formLocked,
-    allowedMainForms,
-    limit,
-    strictOptions
-  );
-  let selected = (freshPolicy.selected || []).slice(0, Math.max(1, limit));
-  let mainSelectionSource = 'fresh_only';
-
-  if (selected.length < Math.max(1, limit)) {
-    const fallbackPolicy = enforceMainPolicyOnRanked(
-      ranked,
-      parsedIntent,
-      categoryLocked,
-      formLocked,
-      allowedMainForms,
-      limit,
-      strictOptions
-    );
-    const selectedBaseNames = new Set(selected.map((x) => String(x?.base_name || '').trim()).filter(Boolean));
-    for (const item of fallbackPolicy.selected || []) {
-      if (selected.length >= Math.max(1, limit)) break;
-      const base = String(item?.base_name || '').trim();
-      if (!base || selectedBaseNames.has(base)) continue;
-      selected.push(item);
-      selectedBaseNames.add(base);
-    }
-    mainSelectionSource = 'fallback_with_seen';
-  }
-
-  selected = selected
-    .slice()
-    .sort((a, b) => {
-      const aSeen = isSeen(a);
-      const bSeen = isSeen(b);
-      if (aSeen !== bSeen) return aSeen ? 1 : -1;
-      return scoreOf(b) - scoreOf(a);
-    })
-    .slice(0, Math.max(1, limit));
-
-  const reintroduced = selected.filter((item) => isSeen(item)).length;
-  return {
-    selected,
-    repeat_excluded_count: Math.max(0, seenBases.size - reintroduced),
-    repeat_reintroduced_count: reintroduced,
-    main_selection_source: mainSelectionSource,
-    session_seen_bases: [...seenBases],
-    enable_condition_fresh_guard: false,
-    fresh_promoted_count: selected.filter((item) => !isSeen(item)).length,
-    fresh_blocked_zero_condition_count: 0,
-    seen_retained_by_condition_count: 0,
-    dry_hydration_balance_applied: 0,
-    sorted_main_candidate_names_before_cut: selected.map((x) => String(x?.name || 'unknown')),
-    sorted_main_candidate_condition_scores: selected.map((x) => Number(x?._score_breakdown?.condition_score || 0)),
-    sorted_main_candidate_seen_flags: selected.map((x) => (isSeen(x) ? 1 : 0)),
-    fresh_tie_promoted_names: [],
-    lower_condition_selected_reason: 'variety_intent_fresh_first',
-  };
-}
-
-function applySunscreenTop1PrimaryGuard({
-  policyMain = [],
-  ranked = [],
-  parsedIntent = {},
-  conditionQuery = false,
-  strictExplicitForm = false,
-}) {
-  const hasReapplyIntent = Boolean(parsedIntent?.has_reapply_intent);
-  const enabled = Boolean(
-    conditionQuery &&
-      !strictExplicitForm &&
-      parsedIntent?.requested_category === 'sunscreen' &&
-      !hasReapplyIntent
-  );
-  const selected = Array.isArray(policyMain) ? policyMain.slice() : [];
-  const top1Before = String(selected?.[0]?.name || '').trim() || 'none';
-  let replacementReason = 'guard_not_applied';
-  if (!enabled || !selected.length) {
-    return {
-      selected,
-      top1_primary_guard_enabled: enabled,
-      has_reapply_intent: hasReapplyIntent,
-      top1_before_guard: top1Before,
-      top1_after_guard: top1Before,
-      top1_primary_replacement_reason: replacementReason,
-    };
-  }
-
-  const PRIMARY_FORMS = new Set(['cream', 'lotion', 'serum']);
-  const top1Form = String(selected[0]?.form || '').toLowerCase();
-  if (PRIMARY_FORMS.has(top1Form)) {
-    replacementReason = 'top1_already_primary_use_form';
-    return {
-      selected,
-      top1_primary_guard_enabled: enabled,
-      has_reapply_intent: hasReapplyIntent,
-      top1_before_guard: top1Before,
-      top1_after_guard: top1Before,
-      top1_primary_replacement_reason: replacementReason,
-    };
-  }
-
-  const scoreOf = (item) =>
-    Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
-  const condOf = (item) => Number(item?._score_breakdown?.condition_score || 0);
-  const selectedIds = new Set(selected.map((x) => String(x?.id || '')));
-  const primaryCandidate = (ranked || [])
-    .filter((item) => {
-      const form = String(item?.form || '').toLowerCase();
-      return PRIMARY_FORMS.has(form) && !item?.is_promo;
-    })
-    .sort((a, b) => {
-      const condGap = condOf(b) - condOf(a);
-      if (condGap !== 0) return condGap;
-      return scoreOf(b) - scoreOf(a);
-    })[0];
-
-  if (!primaryCandidate) {
-    replacementReason = 'no_primary_candidate_found';
-    return {
-      selected,
-      top1_primary_guard_enabled: enabled,
-      has_reapply_intent: hasReapplyIntent,
-      top1_before_guard: top1Before,
-      top1_after_guard: top1Before,
-      top1_primary_replacement_reason: replacementReason,
-    };
-  }
-
-  if (!selectedIds.has(String(primaryCandidate?.id || ''))) {
-    // replace the weakest non-primary item first, fallback to top1 replacement
-    const replaceIdx = selected.findIndex((item) => !PRIMARY_FORMS.has(String(item?.form || '').toLowerCase()));
-    if (replaceIdx >= 0) selected[replaceIdx] = primaryCandidate;
-    else selected[0] = primaryCandidate;
-  }
-  // always make sure top1 is primary by re-sorting selected with primary preference for first slot
-  selected.sort((a, b) => {
-    const aPrimary = PRIMARY_FORMS.has(String(a?.form || '').toLowerCase());
-    const bPrimary = PRIMARY_FORMS.has(String(b?.form || '').toLowerCase());
-    if (aPrimary !== bPrimary) return aPrimary ? -1 : 1;
-    const condGap = condOf(b) - condOf(a);
-    if (condGap !== 0) return condGap;
-    return scoreOf(b) - scoreOf(a);
-  });
-
-  const top1After = String(selected?.[0]?.name || '').trim() || 'none';
-  replacementReason =
-    top1After !== top1Before ? 'replaced_non_primary_top1_for_condition_query' : 'primary_candidate_added_no_top1_change';
-  return {
-    selected,
-    top1_primary_guard_enabled: enabled,
-    has_reapply_intent: hasReapplyIntent,
-    top1_before_guard: top1Before,
-    top1_after_guard: top1After,
-    top1_primary_replacement_reason: replacementReason,
-  };
-}
-
-function applySessionFreshMainSelection({
-  policyMain = [],
-  ranked = [],
-  parsedIntent = {},
-  categoryLocked = false,
-  formLocked = false,
-  allowedMainForms = [],
-  limit = RECOMMENDATION_POLICY.limits.defaultMain,
-  strictOptions = {},
-  sessionContext = {},
-  conditionQuery = false,
-}) {
-  const conditionTieBand = Number(RECOMMENDATION_POLICY.formPolicy?.sameScoreBand || 3);
-  const CONDITION_FRESH_TIE_BAND = conditionTieBand;
-  const strictExplicitForm = Boolean(strictOptions?.strict_explicit_form);
-  const strictDefaultCategoryForm = Boolean(strictOptions?.strict_default_category_form);
-  const enableConditionFreshGuard = Boolean(conditionQuery && !strictExplicitForm && !strictDefaultCategoryForm);
-  const conditionScoreOf = (item) => Number(item?._score_breakdown?.condition_score || 0);
-  const finalScoreOf = (item) =>
-    Number(item?._final_score ?? item?._base_score ?? item?._score_breakdown?.base_score ?? 0);
-  const seenBases = new Set((sessionContext?.recent_main_base_names || []).map((x) => String(x || '').trim()).filter(Boolean));
-  const isSeenItem = (item) => seenBases.has(String(item?.base_name || '').trim());
-  const compareByConditionFresh = (a, b) => {
-    const aCondition = conditionScoreOf(a);
-    const bCondition = conditionScoreOf(b);
-    if (bCondition !== aCondition) return bCondition - aCondition;
-
-    const aSeen = isSeenItem(a);
-    const bSeen = isSeenItem(b);
-    const inTieBand = Math.abs(aCondition - bCondition) <= CONDITION_FRESH_TIE_BAND;
-    if (inTieBand && aSeen !== bSeen) return aSeen ? 1 : -1;
-
-    return finalScoreOf(b) - finalScoreOf(a);
-  };
-
-  const sameCategoryContext =
-    Boolean(parsedIntent?.requested_category) &&
-    Boolean(sessionContext?.recent_main_category) &&
-    String(parsedIntent.requested_category) === String(sessionContext.recent_main_category);
-  const shouldApply = Boolean(enableConditionFreshGuard && sameCategoryContext && seenBases.size > 0);
-  if (!shouldApply) {
-    return {
-      selected: policyMain,
-      repeat_excluded_count: 0,
-      repeat_reintroduced_count: 0,
-      main_selection_source: strictExplicitForm ? 'explicit_strict' : 'fallback_with_seen',
-      session_seen_bases: [...seenBases],
-      enable_condition_fresh_guard: enableConditionFreshGuard,
-      fresh_promoted_count: 0,
-      fresh_blocked_zero_condition_count: 0,
-      seen_retained_by_condition_count: 0,
-      dry_hydration_balance_applied: 0,
-      sorted_main_candidate_names_before_cut: [],
-      sorted_main_candidate_condition_scores: [],
-      sorted_main_candidate_seen_flags: [],
-      fresh_tie_promoted_names: [],
-      lower_condition_selected_reason: 'guard_inactive_or_no_seen_context',
-    };
-  }
-
-  const targetMainCount = Math.max(1, Math.min(limit, Array.isArray(policyMain) && policyMain.length > 0 ? policyMain.length : limit));
-  const freshRanked = (ranked || []).filter((item) => !seenBases.has(String(item?.base_name || '').trim()));
-  const freshPolicy = enforceMainPolicyOnRanked(
-    freshRanked,
-    parsedIntent,
-    categoryLocked,
-    formLocked,
-    allowedMainForms,
-    limit,
-    strictOptions
-  );
-  const freshPool = (freshPolicy.selected || [])
-    .slice()
-    .sort(compareByConditionFresh);
-  const selected = (policyMain || []).slice(0, targetMainCount);
-  const selectedIds = new Set(selected.map((item) => String(item?.id || '')));
-  let freshPromoted = 0;
-  let freshBlockedZeroCondition = 0;
-  let seenRetainedByCondition = 0;
-  const freshTiePromotedNames = [];
-  const lowerConditionSelectedReason = [];
-
-  for (let i = 0; i < selected.length; i += 1) {
-    const current = selected[i];
-    if (!current) continue;
-    const isSeenCurrent = seenBases.has(String(current?.base_name || '').trim());
-    if (!isSeenCurrent) continue;
-
-    const candidateInIdx = freshPool.findIndex((item) => !selectedIds.has(String(item?.id || '')));
-    if (candidateInIdx < 0) continue;
-    const candidateIn = freshPool[candidateInIdx];
-    const seenCondition = conditionScoreOf(current);
-    const freshCondition = conditionScoreOf(candidateIn);
-
-    if (seenCondition > 0 && freshCondition <= 0) {
-      freshBlockedZeroCondition += 1;
-      seenRetainedByCondition += 1;
-      continue;
-    }
-    if (freshCondition + CONDITION_FRESH_TIE_BAND < seenCondition) {
-      seenRetainedByCondition += 1;
-      lowerConditionSelectedReason.push(
-        `retain_seen:${String(current?.name || 'unknown')} over fresh:${String(candidateIn?.name || 'unknown')} due_to_condition_gap`
-      );
-      continue;
-    }
-
-    selected[i] = candidateIn;
-    selectedIds.delete(String(current?.id || ''));
-    selectedIds.add(String(candidateIn?.id || ''));
-    freshPool.splice(candidateInIdx, 1);
-    freshPromoted += 1;
-    if (Math.abs(freshCondition - seenCondition) <= CONDITION_FRESH_TIE_BAND && freshCondition > 0) {
-      freshTiePromotedNames.push(String(candidateIn?.name || 'unknown'));
-    }
-  }
-
-  const needsMoistureBalance = Boolean(
-    parsedIntent?.skin_type === 'dry' ||
-      (Array.isArray(parsedIntent?.concern) && (parsedIntent.concern.includes('hydration') || parsedIntent.concern.includes('soothing')))
-  );
-  let dryHydrationBalanceApplied = 0;
-  if (needsMoistureBalance) {
-    const hasCreamOrLotion = selected.some((item) => ['cream', 'lotion'].includes(String(item?.form || '')));
-    if (!hasCreamOrLotion) {
-      const creamLotionCandidate = (ranked || [])
-        .filter((item) => ['cream', 'lotion'].includes(String(item?.form || '')))
-        .sort(compareByConditionFresh)[0];
-      if (creamLotionCandidate) {
-        const replaceIdx = selected.findIndex((item) => ['stick', 'spray'].includes(String(item?.form || '')));
-        if (replaceIdx >= 0) {
-          const replaced = selected[replaceIdx];
-          selected[replaceIdx] = creamLotionCandidate;
-          dryHydrationBalanceApplied = 1;
-          lowerConditionSelectedReason.push(
-            `dry_balance_replace:${String(replaced?.name || 'unknown')}->${String(creamLotionCandidate?.name || 'unknown')}`
-          );
-        }
-      }
-    }
-  }
-
-  const sortedBeforeCut = selected.slice().sort(compareByConditionFresh);
-  selected.splice(0, selected.length, ...sortedBeforeCut.slice(0, targetMainCount));
-
-  const selectedBases = new Set(selected.map((item) => String(item?.base_name || '').trim()).filter(Boolean));
-  let reintroduced = 0;
-  for (const base of selectedBases) {
-    if (seenBases.has(base)) reintroduced += 1;
-  }
-  const excludedCount = (policyMain || []).filter((item) => {
-    const base = String(item?.base_name || '').trim();
-    return base && seenBases.has(base) && !selectedBases.has(base);
-  }).length;
-  const mainSelectionSource =
-    freshPromoted > 0 && reintroduced === 0
-      ? 'fresh_only'
-      : seenRetainedByCondition > 0
-      ? 'condition_priority_with_seen'
-      : 'fallback_with_seen';
-  return {
-    selected,
-    repeat_excluded_count: excludedCount,
-    repeat_reintroduced_count: reintroduced,
-    main_selection_source: mainSelectionSource,
-    session_seen_bases: [...seenBases],
-    enable_condition_fresh_guard: enableConditionFreshGuard,
-    fresh_promoted_count: freshPromoted,
-    fresh_blocked_zero_condition_count: freshBlockedZeroCondition,
-    seen_retained_by_condition_count: seenRetainedByCondition,
-    dry_hydration_balance_applied: dryHydrationBalanceApplied,
-    sorted_main_candidate_names_before_cut: sortedBeforeCut.map((x) => String(x?.name || 'unknown')),
-    sorted_main_candidate_condition_scores: sortedBeforeCut.map((x) => conditionScoreOf(x)),
-    sorted_main_candidate_seen_flags: sortedBeforeCut.map((x) => (isSeenItem(x) ? 1 : 0)),
-    fresh_tie_promoted_names: freshTiePromotedNames,
-    lower_condition_selected_reason: lowerConditionSelectedReason.join('|') || 'none',
   };
 }
 
@@ -1269,7 +805,6 @@ export const recommendationService = {
     parsedIntent,
     mainRecs = [],
     secondaryRecs = [],
-    generalRecs = [],
     promotions = [],
     categoryLocked = false,
     formLocked = false,
@@ -1279,7 +814,6 @@ export const recommendationService = {
       parsedIntent,
       mainRecs,
       secondaryRecs,
-      generalRecs,
       promotions,
       categoryLocked,
       formLocked,
@@ -1299,28 +833,11 @@ export const recommendationService = {
 
   async scoreAndFilterProducts(cachedProducts, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
     trackRequest();
-    const perfStart = Date.now();
-    const stageMs = {
-      intent_parse_ms: 0,
-      product_pool_ms: 0,
-      semantic_ms: 0,
-      rank_ms: 0,
-      main_policy_ms: 0,
-      response_build_ms: 0,
-    };
-    const logRecommendationTiming = (extra = {}) => {
-      const total_elapsed_ms = Date.now() - perfStart;
-      logger.info(
-        `[Recommendation Timing] query="${String(args.query || args.q || '').replace(/\s+/g, ' ').trim()}" requested_category=${extra.requested_category || 'none'} requested_form=${extra.requested_form || 'none'} is_plain_category_request=${extra.is_plain_category_request ? 1 : 0} condition_query=${extra.condition_query ? 1 : 0} intent_parse_ms=${stageMs.intent_parse_ms} product_pool_ms=${stageMs.product_pool_ms} semantic_ms=${stageMs.semantic_ms} rank_ms=${stageMs.rank_ms} main_policy_ms=${stageMs.main_policy_ms} response_build_ms=${stageMs.response_build_ms} total_elapsed_ms=${total_elapsed_ms}`
-      );
-    };
 
     if (!Array.isArray(cachedProducts) || !cachedProducts.length) {
       trackNoResult();
       trackNoFallbackForRequest();
       trackNoExplanationMismatchForRequest();
-      stageMs.response_build_ms = Date.now() - perfStart;
-      logRecommendationTiming();
       return {
         requested_category: null,
         main_recommendations: [],
@@ -1334,7 +851,6 @@ export const recommendationService = {
       };
     }
 
-    const intentStartedAt = Date.now();
     const normalized = cachedProducts.map((p) => {
       const item = normalizeCafe24Product(p, RECOMMENDATION_TAXONOMY);
       return { ...item, category_key: inferProductCategory(item) };
@@ -1356,38 +872,17 @@ export const recommendationService = {
         requested_category: 'bb',
       };
     }
-    if (!parsed.requested_category && sessionContext?.recent_main_category && hasConditionQuerySignals(parsed)) {
-      parsed = {
-        ...parsed,
-        requested_category: sessionContext.recent_main_category,
-        requested_category_ids: [],
-        sort_intent: parsed.sort_intent === 'popular' ? 'condition_based' : parsed.sort_intent,
-      };
-    }
-    stageMs.intent_parse_ms += Date.now() - intentStartedAt;
     logger.info(
       `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'}`
     );
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
     const isExplicitStrictMain = Boolean(parsed.explicit_form_request && parsed.requested_form);
-    const isPlainCategoryRequest =
-      Boolean(parsed.requested_category) &&
-      !parsed.requested_form &&
-      !parsed.variety_intent &&
-      hasOnlyPlainCategoryBaselineConcerns(parsed.requested_category, parsed.concern || []) &&
-      !parsed.skin_type &&
-      (!Array.isArray(parsed.fit_issue) || parsed.fit_issue.length === 0) &&
-      (!Array.isArray(parsed.situation) || parsed.situation.length === 0) &&
-      (!Array.isArray(parsed.preference) || parsed.preference.length === 0);
-    const defaultMainFormsByCategory = resolveDefaultCategoryMainForms(parsed.requested_category);
-    const isDefaultCategoryStrictMain = Boolean(!isExplicitStrictMain && isPlainCategoryRequest && defaultMainFormsByCategory.length > 0);
     const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
     const retrievalIntent = shouldUnlockCategoryForMain
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
       : parsed;
 
-    const productPoolStartedAt = Date.now();
     const strictPrimary = this.get_primary_candidates(normalized, retrievalIntent, {
       relaxForm: false,
       includePromo: false,
@@ -1403,19 +898,10 @@ export const recommendationService = {
       candidates = Array.isArray(strictPrimary.candidates) ? strictPrimary.candidates : [];
       form_locked = true;
       allowed_main_forms = parsed.requested_form ? [parsed.requested_form] : [];
-    } else if (isDefaultCategoryStrictMain) {
-      form_locked = true;
-      allowed_main_forms = defaultMainFormsByCategory;
     } else if (shouldRelaxFormAtStart && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > candidates.length) {
       candidates = strictPrimary.candidates;
     }
-    if (!isExplicitStrictMain && !isDefaultCategoryStrictMain) {
-      form_locked = false;
-      allowed_main_forms = [];
-    }
     parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
-    const rawCategoryPoolCount = Array.isArray(candidates) ? candidates.length : 0;
-    stageMs.product_pool_ms += Date.now() - productPoolStartedAt;
 
     let usedFallback = false;
     const fallbackSteps = [];
@@ -1423,7 +909,6 @@ export const recommendationService = {
     let semanticDiagnostics = createSemanticDiagnostics();
 
     const runSemantic = async (candidatePool, intent) => {
-      const semanticStartedAt = Date.now();
       const semanticResult = await applySemanticSignals(candidatePool, intent, {
         openai,
         enabled: Boolean(config.SEMANTIC_RETRIEVAL_ENABLED && RECOMMENDATION_POLICY.semantic?.enabled),
@@ -1445,28 +930,12 @@ export const recommendationService = {
       logger.info(
         `[SemanticDiag] enabled=${semanticDiagnostics.semantic_enabled ? 1 : 0} model=${semanticDiagnostics.embedding_model || 'none'} candidates=${semanticDiagnostics.semantic_candidates_count || 0} nonzero=${semanticDiagnostics.semantic_nonzero_count || 0} nonzero_ratio=${semanticDiagnostics.semantic_nonzero_ratio || 0} query_source=${semanticDiagnostics.semantic_query_source || 'unknown'} query_tokens=${semanticDiagnostics.semantic_query_token_count || 0} skip_reason=${semanticDiagnostics.semantic_skip_reason ?? 'null'} success=${semanticSuccess ? 1 : 0}`
       );
-      stageMs.semantic_ms += Date.now() - semanticStartedAt;
       return Array.isArray(semanticResult?.candidates) ? semanticResult.candidates : candidatePool;
     };
 
-    const runRank = async (candidatePool, intent, categoryLockState) => {
-      const rankStartedAt = Date.now();
-      const rankResult = await this.rank_primary_recommendations(
-        candidatePool,
-        intent,
-        Math.max(limit * 3, 8),
-        categoryLockState
-      );
-      stageMs.rank_ms += Date.now() - rankStartedAt;
-      return rankResult;
-    };
-
     let semanticCandidates = await runSemantic(candidates, parsed);
-    const semanticPoolCount = Array.isArray(semanticCandidates) ? semanticCandidates.length : 0;
 
-    let ranked = await runRank(semanticCandidates, parsed, category_locked);
-    const rankedPoolCount = Array.isArray(ranked) ? ranked.length : 0;
-    const mainPolicyStartedAt = Date.now();
+    let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
     let policyGate = enforceMainPolicyOnRanked(
       ranked,
       parsed,
@@ -1474,7 +943,7 @@ export const recommendationService = {
       form_locked,
       allowed_main_forms,
       limit,
-      { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain }
+      { strict_explicit_form: isExplicitStrictMain }
     );
     let policyMain = policyGate.selected;
     logger.info(
@@ -1501,7 +970,7 @@ export const recommendationService = {
       fallbackSteps.push('popular_same_category');
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       semanticCandidates = await runSemantic(candidates, relaxed);
-      ranked = await runRank(semanticCandidates, relaxed, category_locked);
+      ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
@@ -1509,7 +978,7 @@ export const recommendationService = {
         form_locked,
         allowed_main_forms,
         limit,
-        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain }
+        { strict_explicit_form: isExplicitStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -1527,16 +996,9 @@ export const recommendationService = {
       category_locked = strictPrimary.category_locked;
       form_locked = strictPrimary.form_locked;
       allowed_main_forms = strictPrimary.allowed_main_forms || [];
-      if (isDefaultCategoryStrictMain) {
-        form_locked = true;
-        allowed_main_forms = defaultMainFormsByCategory;
-      } else if (!isExplicitStrictMain) {
-        form_locked = false;
-        allowed_main_forms = [];
-      }
       parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
-      ranked = await runRank(semanticCandidates, parsed, category_locked);
+      ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
       policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
@@ -1544,7 +1006,7 @@ export const recommendationService = {
         form_locked,
         allowed_main_forms,
         limit,
-        { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain }
+        { strict_explicit_form: isExplicitStrictMain }
       );
       policyMain = policyGate.selected;
       logger.info(
@@ -1554,171 +1016,36 @@ export const recommendationService = {
       );
     }
 
-    const conditionQuery = hasConditionQuerySignals(parsed);
-    const hasSeenMainHistory = Array.isArray(sessionContext?.recent_main_base_names) && sessionContext.recent_main_base_names.length > 0;
-    const isVarietyFollowUp =
-      parsed.requested_category === 'sunscreen' &&
-      Boolean(parsed.variety_intent) &&
-      !isExplicitStrictMain &&
-      hasSeenMainHistory;
-    const freshnessSelection = isVarietyFollowUp
-      ? applyVarietyMainSelection({
-          ranked,
-          parsedIntent: parsed,
-          categoryLocked: category_locked,
-          formLocked: form_locked,
-          allowedMainForms: allowed_main_forms,
-          limit,
-          strictOptions: { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain },
-          sessionContext,
-        })
-      : applySessionFreshMainSelection({
-          policyMain,
-          ranked,
-          parsedIntent: parsed,
-          categoryLocked: category_locked,
-          formLocked: form_locked,
-          allowedMainForms: allowed_main_forms,
-          limit,
-          strictOptions: { strict_explicit_form: isExplicitStrictMain, strict_default_category_form: isDefaultCategoryStrictMain },
-          sessionContext,
-          conditionQuery,
-        });
-    policyMain = freshnessSelection.selected;
-
-    const top1GuardResult = applySunscreenTop1PrimaryGuard({
-      policyMain,
-      ranked,
-      parsedIntent: parsed,
-      conditionQuery,
-      strictExplicitForm: isExplicitStrictMain,
-    });
-    policyMain = top1GuardResult.selected;
-    stageMs.main_policy_ms += Date.now() - mainPolicyStartedAt;
-
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
-    const mainPolicyPoolCount = Array.isArray(policyMain) ? policyMain.length : 0;
-    const mainBaseNameSet = new Set(mainRecommendations.map((x) => String(x.base_name || '').trim()).filter(Boolean));
-    let generalRecommendations = (ranked || [])
-      .filter((p) => {
-        const base = String(p?.base_name || '').trim();
-        return base ? !mainBaseNameSet.has(base) : true;
-      })
-      .slice(0, Math.max(limit * 3, 8))
-      .map((p, idx) => toRecommendationItem(p, idx, parsed));
-    if (parsed.requested_category && generalRecommendations.length === 0) {
-      generalRecommendations = (ranked || []).slice(0, Math.max(1, limit)).map((p, idx) => toRecommendationItem(p, idx, parsed));
-    }
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
     logger.info(
-      `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
+      `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
         allowed_main_forms || []
       ).join(',')} main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',')}`
     );
-    logger.info(
-      `[Form Plain Debug] query="${(parsed.query || '').replace(/\s+/g, ' ').trim()}" requested_category=${parsed.requested_category || 'none'} requested_form=${
-        parsed.requested_form || 'none'
-      } concerns=${(parsed.concern || []).join('|') || 'none'} skin_type=${parsed.skin_type || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} situation=${(
-        parsed.situation || []
-      ).join('|') || 'none'} preference=${(parsed.preference || []).join('|') || 'none'} is_plain_category_request=${
-        isPlainCategoryRequest ? 1 : 0
-      } strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} allowed_main_forms=${(allowed_main_forms || []).join(',') || 'none'} main_forms=${
-        mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'
-      }`
-    );
-    logger.info(
-      `[Main Diversity] condition_query=${conditionQuery ? 1 : 0} session_seen_bases=${(freshnessSelection.session_seen_bases || []).join('|') || 'none'} repeat_excluded_count=${
-        freshnessSelection.repeat_excluded_count || 0
-      } repeat_reintroduced_count=${freshnessSelection.repeat_reintroduced_count || 0} main_selection_source=${
-        freshnessSelection.main_selection_source || 'fallback_with_seen'
-      } variety_intent=${parsed.variety_intent ? 1 : 0} variety_followup_applied=${isVarietyFollowUp ? 1 : 0} has_seen_main_history=${hasSeenMainHistory ? 1 : 0} enable_condition_fresh_guard=${freshnessSelection.enable_condition_fresh_guard ? 1 : 0} fresh_promoted_count=${
-        freshnessSelection.fresh_promoted_count || 0
-      } fresh_blocked_zero_condition_count=${freshnessSelection.fresh_blocked_zero_condition_count || 0} seen_retained_by_condition_count=${
-        freshnessSelection.seen_retained_by_condition_count || 0
-      } dry_hydration_balance_applied=${freshnessSelection.dry_hydration_balance_applied ? 1 : 0} strict_explicit_form=${
-        isExplicitStrictMain ? 1 : 0
-      } sorted_main_candidate_names_before_cut=${(freshnessSelection.sorted_main_candidate_names_before_cut || []).join('|') || 'none'} sorted_main_candidate_condition_scores=${
-        (freshnessSelection.sorted_main_candidate_condition_scores || []).join('|') || 'none'
-      } sorted_main_candidate_seen_flags=${(freshnessSelection.sorted_main_candidate_seen_flags || []).join('|') || 'none'} fresh_tie_promoted_names=${
-        (freshnessSelection.fresh_tie_promoted_names || []).join('|') || 'none'
-      } lower_condition_selected_reason=${freshnessSelection.lower_condition_selected_reason || 'none'
-      } main_forms=${mainRecommendations.map((x) => x.form || 'unknown').join(',') || 'none'} main_product_names=${
-        mainRecommendations.map((x) => x.name || 'unknown').join(' | ') || 'none'
-      }`
-    );
-    logger.info(
-      `[Top1 Guard] condition_query=${conditionQuery ? 1 : 0} has_reapply_intent=${top1GuardResult.has_reapply_intent ? 1 : 0} strict_explicit_form=${
-        isExplicitStrictMain ? 1 : 0
-      } strict_default_category_form=${isDefaultCategoryStrictMain ? 1 : 0} top1_primary_guard_enabled=${
-        top1GuardResult.top1_primary_guard_enabled ? 1 : 0
-      } top1_before_guard="${top1GuardResult.top1_before_guard || 'none'}" top1_after_guard="${
-        top1GuardResult.top1_after_guard || 'none'
-      }" top1_primary_replacement_reason=${top1GuardResult.top1_primary_replacement_reason || 'none'}`
-    );
-    const excludedFromMainByDefaultFormCount = isDefaultCategoryStrictMain
-      ? Number(policyGate?.drop_stats?.DROP_FORM_MISMATCH || 0)
-      : 0;
 
     if (!mainRecommendations.length && category_locked) {
       usedFallback = true;
       trackNoResult();
-      fallbackSteps.push('deterministic_main_from_ranked');
+      fallbackSteps.push('secondary_only');
       trackFallback({
         timestamp: new Date().toISOString(),
         requested_category: parsed.requested_category || null,
         requested_form: parsed.requested_form || null,
         fit_issue: parsed.fit_issue || [],
         negative_scope: parsed.negative_scope || null,
-        fallback_step: fallbackSteps[fallbackSteps.length - 1] || 'deterministic_main_from_ranked',
+        fallback_step: fallbackSteps[fallbackSteps.length - 1] || 'secondary_only',
         reason_code: 'FALLBACK_SAFE_BASELINE',
         query_hash: queryHash,
       });
 
-      trackNoExplanationMismatchForRequest();
-      const deterministicPoolRaw = (ranked || []).filter((item) => !item?.is_promo);
-      const deterministicPool =
-        deterministicPoolRaw.length > 0
-          ? deterministicPoolRaw
-          : this.get_primary_candidates(
-              normalized,
-              { ...parsed, requested_form: null, explicit_form_request: false },
-              { relaxForm: true, includePromo: false }
-            ).candidates;
-      const deterministicMain = dedupeByBase(deterministicPool)
-        .slice(0, Math.max(1, limit))
-        .map((item, idx) => toRecommendationItem(item, idx, parsed));
-      const deterministicSecondary = this.get_secondary_recommendations(
+      const secondaryOnly = this.get_secondary_recommendations(
         normalized,
         parsed,
-        deterministicMain,
+        [],
         RECOMMENDATION_POLICY.limits.defaultSecondary
       );
-      const deterministicGeneral = (deterministicPool || [])
-        .filter((item) => {
-          const base = String(item?.base_name || '').trim();
-          return base ? !deterministicMain.some((main) => String(main.base_name || '').trim() === base) : true;
-        })
-        .slice(0, Math.max(limit * 3, 8))
-        .map((item, idx) => toRecommendationItem(item, idx, parsed));
-      const responseBuildStartedAt = Date.now();
-      const fallbackResponse = this.build_recommendation_response(
-        parsed,
-        deterministicMain,
-        deterministicSecondary,
-        deterministicGeneral,
-        promotions,
-        category_locked,
-        form_locked,
-        allowed_main_forms
-      );
-      stageMs.response_build_ms += Date.now() - responseBuildStartedAt;
-      logRecommendationTiming({
-        requested_category: parsed.requested_category,
-        requested_form: parsed.requested_form,
-        is_plain_category_request: isPlainCategoryRequest,
-        condition_query: conditionQuery,
-      });
-      return fallbackResponse;
+      trackNoExplanationMismatchForRequest();
       return {
         requested_category: parsed.requested_category,
         main_recommendations: [],
@@ -1766,14 +1093,7 @@ export const recommendationService = {
           .join(', ')}`
       );
     }
-    const allowSlot3NonCore =
-      isDefaultCategoryStrictMain && !isExplicitStrictMain && parsed.requested_category === 'sunscreen';
-    if (
-      form_locked &&
-      Array.isArray(allowed_main_forms) &&
-      allowed_main_forms.length > 0 &&
-      hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked, { allow_slot3_non_core: allowSlot3NonCore })
-    ) {
+    if (hasFormLockViolation(mainRecommendations, allowed_main_forms, form_locked)) {
       trackFormLockViolation();
       logger.warn(
         `[Policy] form lock violation detected strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'default'} allowed=${(
@@ -1791,18 +1111,9 @@ export const recommendationService = {
 
     const secondary = this.get_secondary_recommendations(
       normalized,
-      parsed,
+      { ...parsed, allowed_main_forms },
       mainRecommendations,
       RECOMMENDATION_POLICY.limits.defaultSecondary
-    );
-    logger.info(
-      `[Main Slot Policy] strict_default_category_form_applied_stage=main_only raw_category_pool_count=${rawCategoryPoolCount} semantic_pool_count=${semanticPoolCount} ranked_pool_count=${rankedPoolCount} main_policy_pool_count=${mainPolicyPoolCount} excluded_from_main_by_default_form_count=${excludedFromMainByDefaultFormCount} default_main_core_forms=${(policyGate?.main_overlay?.default_main_core_forms || []).join(',') || 'none'} default_main_core_count=${Number(policyGate?.main_overlay?.default_main_core_count || 0)} default_main_exploration_slot_enabled=${Number(policyGate?.main_overlay?.default_main_exploration_slot_enabled || 0)} exploration_slot_candidate_count=${Number(policyGate?.main_overlay?.exploration_slot_candidate_count || 0)} exploration_slot_product=${policyGate?.main_overlay?.exploration_slot_product || 'none'} exploration_slot_excluded_reasons=${(policyGate?.main_overlay?.exploration_slot_excluded_reasons || []).join('|') || 'none'} main_forms=${mainRecommendations
-        .map((x) => x.form || 'unknown')
-        .join(',') || 'none'} secondary_forms=${secondary.map((x) => x.form || 'unknown').join(',') || 'none'} reference_forms=${secondary
-        .map((x) => x.form || 'unknown')
-        .join(',') || 'none'} promotion_forms=${promotions.map((x) => x.form || 'unknown').join(',') || 'none'} recommendations_forms=${generalRecommendations
-        .map((x) => x.form || 'unknown')
-        .join(',') || 'none'}`
     );
     if (parsed.requested_category === 'bb') {
       const secondaryBbLikeCount = (secondary || []).filter((item) => isBbLikeCandidateStrict(item, parsed)).length;
@@ -1815,24 +1126,14 @@ export const recommendationService = {
       mainRecommendations,
     });
 
-    const responseBuildStartedAt = Date.now();
-    const response = this.build_recommendation_response(
+    return this.build_recommendation_response(
       parsed,
       mainRecommendations,
       secondary,
-      generalRecommendations,
       promotions,
       category_locked,
       form_locked,
       allowed_main_forms
     );
-    stageMs.response_build_ms += Date.now() - responseBuildStartedAt;
-    logRecommendationTiming({
-      requested_category: parsed.requested_category,
-      requested_form: parsed.requested_form,
-      is_plain_category_request: isPlainCategoryRequest,
-      condition_query: conditionQuery,
-    });
-    return response;
   },
 };

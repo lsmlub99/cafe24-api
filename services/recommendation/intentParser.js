@@ -1,6 +1,6 @@
 import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower } from './shared.js';
 
-const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)?/g;
+const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)/g;
 
 const NEGATIVE_SCOPE_CATEGORY_WORDS = ['카테고리', '전체가', '아예'];
 const NEGATIVE_SCOPE_PRODUCT_WORDS = ['이거', '지금', '방금', '이 제품'];
@@ -12,37 +12,21 @@ const CATEGORY_EXIT_WORDS = [
   '선케어 말고 다른',
   '전혀 다른 카테고리',
 ];
-const VARIETY_WORDS = [
-  '다른',
-  '다른건',
-  '다른 거',
-  '또 다른',
-  '새로운',
-  '말고',
-  '다른 선크림',
-  '다른 선케어',
-  '또 뭐',
-  '또 있',
-  '없나요',
-  '없어?',
-  'other option',
-];
-const REAPPLY_INTENT_WORDS = ['휴대용', '수정용', '덧바르기', '외출 중', '가지고 다니기', '재도포'];
+const VARIETY_WORDS = ['다른', '다른건', '다른 거', '말고', '또 뭐', '또 있', '없나요', '없어?', 'other option'];
 
 const CONCERN_NORMALIZATION = [
-  { key: 'sebum_control', words: ['유분', '번들', '지성', '기름', '피지', '보송'] },
+  { key: 'sebum_control', words: ['유분', '번들', '피지', '기름짐', '번들거'] },
   { key: 'hydration', words: ['건조', '당김', '수분 부족', '속건조', '보습'] },
-  { key: 'soothing', words: ['따가', '자극', '붉', '붉어', '눈시림', '민감', '진정'] },
-  { key: 'tone_up', words: ['톤업', '톤 보정', '커버', '피부 보정'] },
-  { key: 'uv_protection', words: ['자외선', 'uv', '선케어', '선크림', '썬크림'] },
+  { key: 'soothing', words: ['따가', '자극', '화끈', '붉어', '눈시림', '민감'] },
+  { key: 'tone_up', words: ['톤업', '잡티', '커버', '톤 보정'] },
   { key: 'not_fit', words: ['안 맞', '별로', '불편', '실패', '못 쓰겠'] },
 ];
 
 const FIT_ISSUE_NORMALIZATION = [
-  { key: 'irritation', words: ['따가', '자극', '붉어'] },
+  { key: 'irritation', words: ['따가', '자극', '화끈', '붉어'] },
   { key: 'pilling', words: ['밀림', '밀려', '뭉침', '겉돌'] },
   { key: 'eye_sting', words: ['눈시림', '눈 따가'] },
-  { key: 'breakout', words: ['트러블', '여드름', '뾰루지'] },
+  { key: 'breakout', words: ['트러블', '좁쌀', '여드름'] },
   { key: 'heavy_feel', words: ['답답', '무거'] },
   { key: 'oily_residue', words: ['번들', '유분', '기름짐'] },
 ];
@@ -54,7 +38,7 @@ function detectExplicitSunForm(text = '') {
   if (includesAny(src, ['선스틱', '썬스틱', 'sunstick', 'sun stick'])) return 'stick';
   if (includesAny(src, ['선스프레이', '썬스프레이', 'sunspray', 'sun spray'])) return 'spray';
   if (includesAny(src, ['선쿠션', '썬쿠션', 'sun cushion'])) return 'cushion';
-  // Generic sunscreen should remain category intent, not explicit cream form.
+  // Keep generic sunscreen queries as category intent, not explicit cream-form intent.
   if (includesAny(src, ['크림형 선크림', '크림 타입 선크림', '선크림 크림형', 'sun cream type', 'cream type sunscreen'])) return 'cream';
   return null;
 }
@@ -62,8 +46,11 @@ function detectExplicitSunForm(text = '') {
 function detectExplicitCategoryOverride(text = '') {
   const src = lower(text);
   if (!src) return null;
-  const bbTokens = ['비비크림', '비비 크림', 'bb크림', 'bb 크림', 'bbcream', 'bb cream'];
-  if (bbTokens.some((token) => src.includes(lower(token)))) return 'bb';
+
+  // Explicit BB cream intent must win over generic "cream" match.
+  const bbCategoryTokens = ['비비크림', '비비 크림', 'bb크림', 'bb 크림', 'bbcream', 'bb cream'];
+  if (bbCategoryTokens.some((token) => src.includes(lower(token)))) return 'bb';
+
   return null;
 }
 
@@ -74,6 +61,7 @@ function parsePriceIntent(text = '') {
   while ((m = PRICE_REGEX.exec(src)) !== null) matched = m;
   PRICE_REGEX.lastIndex = 0;
   if (!matched) return null;
+
   const amount = Number.parseInt(matched[1], 10);
   const unit = matched[2] || '';
   if (!Number.isFinite(amount)) return null;
@@ -139,14 +127,15 @@ export function parseUserIntent(args = {}, taxonomy) {
   const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
   const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);
   const explicitSunForm = detectExplicitSunForm(fullSignalText);
-  const formFromArgs = findFirstAliasKey(args.form || '', taxonomy.forms);
-  const formFromText = findFirstAliasKey(formText, taxonomy.forms);
-  let requestedForm = explicitSunForm || formFromArgs || formFromText || null;
+  const requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
   const skinTypeFromField = findFirstAliasKey(args.skin_type || '', taxonomy.skinTypes);
   const skinTypeFromQuery = findFirstAliasKey(q, taxonomy.skinTypes);
   const skinType = skinTypeFromField || skinTypeFromQuery || null;
 
-  const aliasConcern = uniq([...findAllAliasKeys(concernsText, taxonomy.concerns), ...findAllAliasKeys(q, taxonomy.concerns)]);
+  const aliasConcern = uniq([
+    ...findAllAliasKeys(concernsText, taxonomy.concerns),
+    ...findAllAliasKeys(q, taxonomy.concerns),
+  ]);
   const normalizedSignals = normalizeSemanticSignals(fullSignalText);
   const concern = uniq([...aliasConcern, ...normalizedSignals.concern]);
   const fitIssue = uniq(normalizedSignals.fit_issue);
@@ -156,13 +145,8 @@ export function parseUserIntent(args = {}, taxonomy) {
   const noveltyRequest = includesAny(q, taxonomy.noveltyKeywords || []);
   const popularityIntent = includesAny(q, taxonomy.popularityKeywords || []);
   const varietyIntent = includesAny(q, VARIETY_WORDS);
-  const reapplyIntent = includesAny(q, REAPPLY_INTENT_WORDS);
   const priceIntent = parsePriceIntent(q);
-  const explicitFormRequest = Boolean(explicitSunForm || formFromArgs);
-
-  if (!explicitFormRequest && requestedCategory === 'sunscreen' && requestedForm === 'cream') {
-    requestedForm = null;
-  }
+  const explicitFormRequest = Boolean(requestedForm);
   const negativeScope = detectNegativeScope(fullSignalText, requestedCategory);
   const allowCategorySwitch = includesAny(fullSignalText, CATEGORY_EXIT_WORDS);
   const sensitivitySignal = detectSensitivitySignal(fullSignalText, concern, fitIssue);
@@ -181,7 +165,6 @@ export function parseUserIntent(args = {}, taxonomy) {
     novelty_request: noveltyRequest,
     popularity_intent: popularityIntent,
     variety_intent: varietyIntent,
-    has_reapply_intent: reapplyIntent,
     price_intent: priceIntent,
     sensitivity_signal: sensitivitySignal,
     fit_issue: fitIssue,
@@ -196,9 +179,6 @@ export function parseUserIntent(args = {}, taxonomy) {
     !parsed.concern.includes('soothing')
   ) {
     parsed.concern.push('soothing');
-  }
-  if (requestedCategory === 'sunscreen' && !parsed.concern.includes('uv_protection')) {
-    parsed.concern.push('uv_protection');
   }
 
   parsed.sort_intent = detectSortIntent(parsed, q, taxonomy, contextText);

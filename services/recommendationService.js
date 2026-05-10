@@ -1,7 +1,7 @@
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { RECOMMENDATION_POLICY, RECOMMENDATION_TAXONOMY } from '../config/recommendationPolicy.js';
-import { parseUserIntent } from './recommendation/intentParser.js';
+import { parseUserIntent, extractProductKeywordConstraints } from './recommendation/intentParser.js';
 import { normalizeIntentWithLLM } from './recommendation/intentNormalizer.js';
 import { normalizeCafe24Product } from './recommendation/productNormalizer.js';
 import {
@@ -108,6 +108,32 @@ function buildReasoningTags(parsedIntent) {
   if (parsedIntent.novelty_request) tags.push('novelty:new_arrival');
   tags.push(`sort:${parsedIntent.sort_intent}`);
   return tags;
+}
+
+function hasExplicitCreamFormPhrase(query = '') {
+  const src = String(query || '').toLowerCase();
+  if (!src) return false;
+  return includesAny(src, [
+    '크림 타입',
+    '크림형',
+    '크림 제형',
+    '선케어 크림',
+    'cream type',
+    'cream-form',
+    'cream form',
+  ]);
+}
+
+function reinforceKeywordConstraints(parsedIntent = {}, args = {}) {
+  const rawQuery = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
+  const extracted = extractProductKeywordConstraints(rawQuery);
+  const merged = [
+    ...new Set([...(parsedIntent.product_keyword_constraints || []), ...extracted].map((x) => String(x || '').trim()).filter(Boolean)),
+  ];
+  return {
+    ...parsedIntent,
+    product_keyword_constraints: merged,
+  };
 }
 
 function normalizeKeywordConstraintText(text = '') {
@@ -933,6 +959,20 @@ export const recommendationService = {
       parsed = {
         ...parsed,
         requested_category: 'bb',
+      };
+    }
+    parsed = reinforceKeywordConstraints(parsed, args);
+
+    const rawQueryText = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
+    const shouldClearGenericCreamForm =
+      parsed.requested_category === 'sunscreen' &&
+      parsed.requested_form === 'cream' &&
+      !hasExplicitCreamFormPhrase(rawQueryText);
+    if (shouldClearGenericCreamForm) {
+      parsed = {
+        ...parsed,
+        requested_form: null,
+        explicit_form_request: false,
       };
     }
     logger.info(

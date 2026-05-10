@@ -39,6 +39,20 @@ function sanitizeEnum(value, allowed) {
   return allowed.includes(v) ? v : null;
 }
 
+function hasExplicitCreamFormPhrase(text = '') {
+  const src = String(text || '').toLowerCase();
+  if (!src) return false;
+  return [
+    '크림 타입',
+    '크림형',
+    '크림 제형',
+    '선케어 크림',
+    'cream type',
+    'cream-form',
+    'cream form',
+  ].some((token) => src.includes(token));
+}
+
 function sanitizeStringArray(input) {
   if (!Array.isArray(input)) return [];
   const out = [];
@@ -156,6 +170,15 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
       allow_category_switch: Boolean(parsed.allow_category_switch),
       variety_intent: Boolean(parsed.variety_intent),
     };
+
+    const rawQueryText = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
+    if (
+      normalized.requested_category === 'sunscreen' &&
+      normalized.requested_form === 'cream' &&
+      !hasExplicitCreamFormPhrase(rawQueryText)
+    ) {
+      normalized.requested_form = null;
+    }
 
     return {
       intent: mergeIntent(parsedIntent, normalized),

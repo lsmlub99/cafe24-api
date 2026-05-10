@@ -1,46 +1,46 @@
 import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower } from './shared.js';
 
-const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)/g;
+const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)?/g;
 
 const NEGATIVE_SCOPE_CATEGORY_WORDS = ['카테고리', '전체가', '아예'];
-const NEGATIVE_SCOPE_PRODUCT_WORDS = ['이거', '지금', '방금', '이 제품'];
+const NEGATIVE_SCOPE_PRODUCT_WORDS = ['그거', '지금', '방금', '제품'];
 const CATEGORY_EXIT_WORDS = [
   '아예 다른 카테고리',
   '카테고리 바꿔',
   '카테고리 변경',
   '선크림 말고 다른',
-  '선케어 말고 다른',
-  '전혀 다른 카테고리',
+  '선세럼 말고 다른',
+  '이번엔 다른 카테고리',
 ];
-const VARIETY_WORDS = ['다른', '다른건', '다른 거', '말고', '또 뭐', '또 있', '없나요', '없어?', 'other option'];
+const VARIETY_WORDS = ['다른', '다른거', '다른 건', '또 다른', '새로운', '말고', '없나요', '없어?', 'other option'];
+
+const PRODUCT_KEYWORD_DICTIONARY = [
+  { canonical: '어드밴스드 클리어', variants: ['어드밴스드 클리어', 'advanced clear'] },
+  { canonical: '더마 릴리프', variants: ['더마 릴리프', 'derma relief'] },
+  { canonical: '레이저 UV', variants: ['레이저 uv', 'laser uv'] },
+  { canonical: '아쿠아티카', variants: ['아쿠아티카', 'aquatica'] },
+  { canonical: '에어리 핏', variants: ['에어리 핏', 'airy fit'] },
+  { canonical: '잡티 토닝', variants: ['잡티 토닝'] },
+  { canonical: '쿨링', variants: ['쿨링', 'cooling'] },
+  { canonical: '포어', variants: ['포어', 'pore'] },
+  { canonical: '시카', variants: ['시카', 'cica'] },
+];
 
 const CONCERN_NORMALIZATION = [
-  { key: 'sebum_control', words: ['유분', '번들', '피지', '기름짐', '번들거'] },
+  { key: 'sebum_control', words: ['유분', '번들', '피지', '기름', '모공'] },
   { key: 'hydration', words: ['건조', '당김', '수분 부족', '속건조', '보습'] },
-  { key: 'soothing', words: ['따가', '자극', '화끈', '붉어', '눈시림', '민감'] },
+  { key: 'soothing', words: ['열감', '따가', '예민', '붉어', '트러블', '민감'] },
   { key: 'tone_up', words: ['톤업', '잡티', '커버', '톤 보정'] },
-  { key: 'not_fit', words: ['안 맞', '별로', '불편', '실패', '못 쓰겠'] },
+  { key: 'not_fit', words: ['안 맞', '별로', '불편', '실패', '못하겠'] },
 ];
 
 const FIT_ISSUE_NORMALIZATION = [
-  { key: 'irritation', words: ['따가', '자극', '화끈', '붉어'] },
-  { key: 'pilling', words: ['밀림', '밀려', '뭉침', '겉돌'] },
+  { key: 'irritation', words: ['열감', '따가', '예민', '붉어'] },
+  { key: 'pilling', words: ['밀림', '밀려', '뭉침', '겉돎'] },
   { key: 'eye_sting', words: ['눈시림', '눈 따가'] },
-  { key: 'breakout', words: ['트러블', '좁쌀', '여드름'] },
+  { key: 'breakout', words: ['트러블', '여드름', '좁쌀'] },
   { key: 'heavy_feel', words: ['답답', '무거'] },
   { key: 'oily_residue', words: ['번들', '유분', '기름짐'] },
-];
-
-const PRODUCT_KEYWORD_DICTIONARY = [
-  { canonical: '\uC5B4\uB4DC\uBC24\uC2A4\uB4DC \uD074\uB9AC\uC5B4', variants: ['\uC5B4\uB4DC\uBC24\uC2A4\uB4DC \uD074\uB9AC\uC5B4', 'advanced clear'] },
-  { canonical: '\uB354\uB9C8 \uB9B4\uB9AC\uD504', variants: ['\uB354\uB9C8 \uB9B4\uB9AC\uD504', 'derma relief'] },
-  { canonical: '\uB808\uC774\uC800 UV', variants: ['\uB808\uC774\uC800 uv', 'laser uv'] },
-  { canonical: '\uC544\uCFE0\uC544\uD2F0\uCE74', variants: ['\uC544\uCFE0\uC544\uD2F0\uCE74', 'aquatica'] },
-  { canonical: '\uC5D0\uC5B4\uB9AC \uD54F', variants: ['\uC5D0\uC5B4\uB9AC \uD54F', 'airy fit'] },
-  { canonical: '\uC7A1\uD2F0 \uD1A0\uB2DD', variants: ['\uC7A1\uD2F0 \uD1A0\uB2DD'] },
-  { canonical: '\uCFFC\uB9C1', variants: ['\uCFFC\uB9C1', 'cooling'] },
-  { canonical: '\uD3EC\uC5B4', variants: ['\uD3EC\uC5B4', 'pore'] },
-  { canonical: '\uC2DC\uCE74', variants: ['\uC2DC\uCE74', 'cica'] },
 ];
 
 function normalizeKeywordText(text = '') {
@@ -49,7 +49,7 @@ function normalizeKeywordText(text = '') {
     .trim();
 }
 
-function extractProductKeywordConstraints(text = '') {
+export function extractProductKeywordConstraints(text = '') {
   const source = normalizeKeywordText(text);
   if (!source) return [];
 
@@ -70,6 +70,20 @@ function extractProductKeywordConstraints(text = '') {
   return out;
 }
 
+function hasExplicitCreamFormPhrase(text = '') {
+  const src = lower(text);
+  if (!src) return false;
+  return includesAny(src, [
+    '크림 타입',
+    '크림형',
+    '크림 제형',
+    '선케어 크림',
+    'cream type',
+    'cream-form',
+    'cream form',
+  ]);
+}
+
 function detectExplicitSunForm(text = '') {
   const src = lower(text);
   if (!src) return null;
@@ -77,19 +91,15 @@ function detectExplicitSunForm(text = '') {
   if (includesAny(src, ['선스틱', '썬스틱', 'sunstick', 'sun stick'])) return 'stick';
   if (includesAny(src, ['선스프레이', '썬스프레이', 'sunspray', 'sun spray'])) return 'spray';
   if (includesAny(src, ['선쿠션', '썬쿠션', 'sun cushion'])) return 'cushion';
-  // Keep generic sunscreen queries as category intent, not explicit cream-form intent.
-  if (includesAny(src, ['크림형 선크림', '크림 타입 선크림', '선크림 크림형', 'sun cream type', 'cream type sunscreen'])) return 'cream';
+  if (hasExplicitCreamFormPhrase(src)) return 'cream';
   return null;
 }
 
 function detectExplicitCategoryOverride(text = '') {
   const src = lower(text);
   if (!src) return null;
-
-  // Explicit BB cream intent must win over generic "cream" match.
-  const bbCategoryTokens = ['비비크림', '비비 크림', 'bb크림', 'bb 크림', 'bbcream', 'bb cream'];
+  const bbCategoryTokens = ['비비크림', '비비 크림', 'bb크림', 'bb cream', 'bbcream'];
   if (bbCategoryTokens.some((token) => src.includes(lower(token)))) return 'bb';
-
   return null;
 }
 
@@ -104,7 +114,7 @@ function parsePriceIntent(text = '') {
   const amount = Number.parseInt(matched[1], 10);
   const unit = matched[2] || '';
   if (!Number.isFinite(amount)) return null;
-  return unit.includes('만')
+  return unit.includes('만원')
     ? { max_price_krw: amount * 10000, raw: matched[0] }
     : { max_price_krw: amount, raw: matched[0] };
 }
@@ -123,7 +133,7 @@ function normalizeSemanticSignals(text = '') {
 
   return {
     concern: uniq(concern),
-    fit_issue: uniq(fit_issue.length ? fit_issue : src.trim() ? [] : []),
+    fit_issue: uniq(fit_issue),
   };
 }
 
@@ -152,7 +162,7 @@ function detectSortIntent(parsedIntent, query, taxonomy, contextText = '') {
 function detectSensitivitySignal(query = '', concern = [], fitIssue = []) {
   if (concern.includes('soothing')) return 'irritation';
   if (fitIssue.includes('irritation') || fitIssue.includes('eye_sting') || fitIssue.includes('breakout')) return 'irritation';
-  if (includesAny(query, ['민감', '자극', '따가'])) return 'irritation';
+  if (includesAny(query, ['민감', '따가', '열감'])) return 'irritation';
   return null;
 }
 
@@ -167,7 +177,11 @@ export function parseUserIntent(args = {}, taxonomy) {
   const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
   const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);
   const explicitSunForm = detectExplicitSunForm(fullSignalText);
-  const requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
+  let requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
+  if (requestedCategory === 'sunscreen' && requestedForm === 'cream' && !hasExplicitCreamFormPhrase(fullSignalText)) {
+    requestedForm = null;
+  }
+
   const skinTypeFromField = findFirstAliasKey(args.skin_type || '', taxonomy.skinTypes);
   const skinTypeFromQuery = findFirstAliasKey(q, taxonomy.skinTypes);
   const skinType = skinTypeFromField || skinTypeFromQuery || null;
@@ -225,3 +239,4 @@ export function parseUserIntent(args = {}, taxonomy) {
   parsed.sort_intent = detectSortIntent(parsed, q, taxonomy, contextText);
   return parsed;
 }
+

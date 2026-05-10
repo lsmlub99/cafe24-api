@@ -10,6 +10,17 @@ const ALLOWED = {
   preference: ['lightweight', 'moisturizing', 'low_white_cast'],
   fit_issue: ['irritation', 'pilling', 'eye_sting', 'breakout', 'heavy_feel', 'oily_residue', 'unknown'],
   negative_scope: ['product', 'form', 'category'],
+  product_keyword_constraints: [
+    '\uC544\uCFE0\uC544\uD2F0\uCE74',
+    '\uB354\uB9C8 \uB9B4\uB9AC\uD504',
+    '\uC5B4\uB4DC\uBC24\uC2A4\uB4DC \uD074\uB9AC\uC5B4',
+    '\uB808\uC774\uC800 UV',
+    '\uC5D0\uC5B4\uB9AC \uD54F',
+    '\uC7A1\uD2F0 \uD1A0\uB2DD',
+    '\uCFFC\uB9C1',
+    '\uD3EC\uC5B4',
+    '\uC2DC\uCE74',
+  ],
 };
 
 function sanitizeArray(input, allowed) {
@@ -28,11 +39,24 @@ function sanitizeEnum(value, allowed) {
   return allowed.includes(v) ? v : null;
 }
 
+function sanitizeStringArray(input) {
+  if (!Array.isArray(input)) return [];
+  const out = [];
+  for (const item of input) {
+    const v = String(item || '').trim();
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
 function mergeIntent(base = {}, normalized = {}) {
   const mergedConcern = [...new Set([...(base.concern || []), ...(normalized.concern || [])])];
   const mergedSituation = [...new Set([...(base.situation || []), ...(normalized.situation || [])])];
   const mergedPreference = [...new Set([...(base.preference || []), ...(normalized.preference || [])])];
   const mergedFitIssue = [...new Set([...(base.fit_issue || []), ...(normalized.fit_issue || [])])];
+  const mergedProductKeywordConstraints = [
+    ...new Set([...(base.product_keyword_constraints || []), ...(normalized.product_keyword_constraints || [])]),
+  ];
 
   return {
     ...base,
@@ -53,6 +77,7 @@ function mergeIntent(base = {}, normalized = {}) {
     situation: mergedSituation,
     preference: mergedPreference,
     fit_issue: mergedFitIssue,
+    product_keyword_constraints: mergedProductKeywordConstraints,
     variety_intent: Boolean(base.variety_intent || normalized.variety_intent),
   };
 }
@@ -64,7 +89,7 @@ function buildSystemPrompt() {
     '사용자 부정/불만 표현(안 맞음, 답답, 밀림, 눈시림, 트러블)을 fit_issue로 정규화한다.',
     '값은 허용된 enum만 사용한다.',
     'JSON schema:',
-    '{"requested_category":"sunscreen|toner|serum|cream|cushion|bb|cleansing|mask|inner|null","requested_form":"cream|lotion|serum|stick|spray|cushion|toner|mist|other|null","sort_intent":"popular|condition_based|new_arrival|null","novelty_request":false,"popularity_intent":false,"skin_type":"dry|oily|combination|sensitive|null","concern":[],"situation":[],"preference":[],"fit_issue":[],"negative_scope":"product|form|category|null","allow_category_switch":false,"variety_intent":false}',
+    '{"requested_category":"sunscreen|toner|serum|cream|cushion|bb|cleansing|mask|inner|null","requested_form":"cream|lotion|serum|stick|spray|cushion|toner|mist|other|null","sort_intent":"popular|condition_based|new_arrival|null","novelty_request":false,"popularity_intent":false,"skin_type":"dry|oily|combination|sensitive|null","concern":[],"situation":[],"preference":[],"fit_issue":[],"negative_scope":"product|form|category|null","allow_category_switch":false,"variety_intent":false,"product_keyword_constraints":[]}',
   ].join(' ');
 }
 
@@ -87,6 +112,7 @@ function buildUserPrompt(args = {}, parsedIntent = {}) {
       situation: parsedIntent.situation || [],
       preference: parsedIntent.preference || [],
       fit_issue: parsedIntent.fit_issue || [],
+      product_keyword_constraints: parsedIntent.product_keyword_constraints || [],
       negative_scope: parsedIntent.negative_scope || null,
       allow_category_switch: Boolean(parsedIntent.allow_category_switch),
       variety_intent: Boolean(parsedIntent.variety_intent),
@@ -123,6 +149,9 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
       situation: sanitizeArray(parsed.situation, ALLOWED.situation),
       preference: sanitizeArray(parsed.preference, ALLOWED.preference),
       fit_issue: sanitizeArray(parsed.fit_issue, ALLOWED.fit_issue),
+      product_keyword_constraints: sanitizeStringArray(parsed.product_keyword_constraints).filter((x) =>
+        ALLOWED.product_keyword_constraints.includes(x)
+      ),
       negative_scope: sanitizeEnum(parsed.negative_scope, ALLOWED.negative_scope),
       allow_category_switch: Boolean(parsed.allow_category_switch),
       variety_intent: Boolean(parsed.variety_intent),

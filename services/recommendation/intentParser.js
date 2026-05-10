@@ -31,6 +31,45 @@ const FIT_ISSUE_NORMALIZATION = [
   { key: 'oily_residue', words: ['번들', '유분', '기름짐'] },
 ];
 
+const PRODUCT_KEYWORD_DICTIONARY = [
+  { canonical: '\uC5B4\uB4DC\uBC24\uC2A4\uB4DC \uD074\uB9AC\uC5B4', variants: ['\uC5B4\uB4DC\uBC24\uC2A4\uB4DC \uD074\uB9AC\uC5B4', 'advanced clear'] },
+  { canonical: '\uB354\uB9C8 \uB9B4\uB9AC\uD504', variants: ['\uB354\uB9C8 \uB9B4\uB9AC\uD504', 'derma relief'] },
+  { canonical: '\uB808\uC774\uC800 UV', variants: ['\uB808\uC774\uC800 uv', 'laser uv'] },
+  { canonical: '\uC544\uCFE0\uC544\uD2F0\uCE74', variants: ['\uC544\uCFE0\uC544\uD2F0\uCE74', 'aquatica'] },
+  { canonical: '\uC5D0\uC5B4\uB9AC \uD54F', variants: ['\uC5D0\uC5B4\uB9AC \uD54F', 'airy fit'] },
+  { canonical: '\uC7A1\uD2F0 \uD1A0\uB2DD', variants: ['\uC7A1\uD2F0 \uD1A0\uB2DD'] },
+  { canonical: '\uCFFC\uB9C1', variants: ['\uCFFC\uB9C1', 'cooling'] },
+  { canonical: '\uD3EC\uC5B4', variants: ['\uD3EC\uC5B4', 'pore'] },
+  { canonical: '\uC2DC\uCE74', variants: ['\uC2DC\uCE74', 'cica'] },
+];
+
+function normalizeKeywordText(text = '') {
+  return lower(String(text || ''))
+    .replace(/[\s_-]+/g, '')
+    .trim();
+}
+
+function extractProductKeywordConstraints(text = '') {
+  const source = normalizeKeywordText(text);
+  if (!source) return [];
+
+  const sorted = [...PRODUCT_KEYWORD_DICTIONARY].sort((a, b) => {
+    const aLen = Math.max(...a.variants.map((v) => normalizeKeywordText(v).length));
+    const bLen = Math.max(...b.variants.map((v) => normalizeKeywordText(v).length));
+    return bLen - aLen;
+  });
+
+  const out = [];
+  for (const entry of sorted) {
+    const matched = entry.variants.some((variant) => {
+      const token = normalizeKeywordText(variant);
+      return token && source.includes(token);
+    });
+    if (matched && !out.includes(entry.canonical)) out.push(entry.canonical);
+  }
+  return out;
+}
+
 function detectExplicitSunForm(text = '') {
   const src = lower(text);
   if (!src) return null;
@@ -123,6 +162,7 @@ export function parseUserIntent(args = {}, taxonomy) {
   const categoryText = `${args.category || ''} ${q}`.trim();
   const formText = `${args.form || ''} ${args.category || ''} ${q}`.trim();
   const fullSignalText = `${q} ${concernsText} ${args.category || ''}`.trim();
+  const productKeywordConstraints = extractProductKeywordConstraints(fullSignalText);
 
   const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
   const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);
@@ -168,6 +208,7 @@ export function parseUserIntent(args = {}, taxonomy) {
     price_intent: priceIntent,
     sensitivity_signal: sensitivitySignal,
     fit_issue: fitIssue,
+    product_keyword_constraints: productKeywordConstraints,
     negative_scope: negativeScope,
     allow_category_switch: allowCategorySwitch,
     sort_intent: 'popular',

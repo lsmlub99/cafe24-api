@@ -95,6 +95,7 @@ function buildReasoningTags(parsedIntent) {
   const tags = [];
   if (parsedIntent.requested_category) tags.push(`category:${parsedIntent.requested_category}`);
   if (parsedIntent.requested_form) tags.push(`form:${parsedIntent.requested_form}`);
+  for (const k of parsedIntent.product_keyword_constraints || []) tags.push(`product_keyword:${k}`);
   if (parsedIntent.skin_type) tags.push(`skin_type:${parsedIntent.skin_type}`);
   for (const c of parsedIntent.concern || []) tags.push(`concern:${c}`);
   for (const s of parsedIntent.situation || []) tags.push(`situation:${s}`);
@@ -107,6 +108,68 @@ function buildReasoningTags(parsedIntent) {
   if (parsedIntent.novelty_request) tags.push('novelty:new_arrival');
   tags.push(`sort:${parsedIntent.sort_intent}`);
   return tags;
+}
+
+function normalizeKeywordConstraintText(text = '') {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+    .trim();
+}
+
+function buildKeywordSearchText(item = {}) {
+  return [
+    item?.name || '',
+    item?.base_name || '',
+    item?.search_preview || '',
+    item?.summary_description || '',
+  ].join(' ');
+}
+
+function isKeywordMatchedCandidate(item = {}, constraints = []) {
+  if (!Array.isArray(constraints) || !constraints.length) return false;
+  const haystack = normalizeKeywordConstraintText(buildKeywordSearchText(item));
+  if (!haystack) return false;
+  return constraints.some((keyword) => {
+    const token = normalizeKeywordConstraintText(keyword);
+    return token && haystack.includes(token);
+  });
+}
+
+function applyProductKeywordConstraintOverlay(ranked = [], constraints = []) {
+  const safeRanked = Array.isArray(ranked) ? ranked : [];
+  const safeConstraints = [...new Set((Array.isArray(constraints) ? constraints : []).map((x) => String(x || '').trim()).filter(Boolean))];
+  if (!safeRanked.length || !safeConstraints.length) {
+    return {
+      ranked: safeRanked,
+      matchedCount: 0,
+      applied: false,
+      fallbackUsed: safeConstraints.length > 0,
+      matchedNames: [],
+      constraints: safeConstraints,
+    };
+  }
+
+  const matched = [];
+  const nonMatched = [];
+  for (const item of safeRanked) {
+    if (isKeywordMatchedCandidate(item, safeConstraints)) matched.push(item);
+    else nonMatched.push(item);
+  }
+
+  return {
+    ranked: [...matched, ...nonMatched],
+    matchedCount: matched.length,
+    applied: matched.length > 0,
+    fallbackUsed: matched.length === 0,
+    matchedNames: matched.map((x) => x?.name).filter(Boolean),
+    constraints: safeConstraints,
+  };
+}
+
+function getKeywordMatchedMainNames(main = [], constraints = []) {
+  if (!Array.isArray(main) || !main.length || !Array.isArray(constraints) || !constraints.length) return [];
+  return main.filter((item) => isKeywordMatchedCandidate(item, constraints)).map((item) => item?.name).filter(Boolean);
 }
 
 function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
@@ -873,7 +936,7 @@ export const recommendationService = {
       };
     }
     logger.info(
-      `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'}`
+      `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'} product_keyword_constraints=${(parsed.product_keyword_constraints || []).join('|') || 'none'}`
     );
 
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
@@ -907,6 +970,16 @@ export const recommendationService = {
     const fallbackSteps = [];
     const queryHash = hashQuery(parsed.query || args.query || args.q || '');
     let semanticDiagnostics = createSemanticDiagnostics();
+    const keywordConstraints = Array.isArray(parsed.product_keyword_constraints)
+      ? parsed.product_keyword_constraints.filter(Boolean)
+      : [];
+    let keywordOverlayDiagnostics = {
+      matchedCount: 0,
+      applied: false,
+      fallbackUsed: keywordConstraints.length > 0,
+      matchedNames: [],
+      constraints: keywordConstraints,
+    };
 
     const runSemantic = async (candidatePool, intent) => {
       const semanticResult = await applySemanticSignals(candidatePool, intent, {
@@ -936,6 +1009,8 @@ export const recommendationService = {
     let semanticCandidates = await runSemantic(candidates, parsed);
 
     let ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+    keywordOverlayDiagnostics = applyProductKeywordConstraintOverlay(ranked, keywordConstraints);
+    ranked = keywordOverlayDiagnostics.ranked;
     let policyGate = enforceMainPolicyOnRanked(
       ranked,
       parsed,
@@ -971,6 +1046,8 @@ export const recommendationService = {
       const relaxed = { ...parsed, concern: [], situation: [], preference: [], sort_intent: 'popular' };
       semanticCandidates = await runSemantic(candidates, relaxed);
       ranked = await this.rank_primary_recommendations(semanticCandidates, relaxed, Math.max(limit * 3, 8), category_locked);
+      keywordOverlayDiagnostics = applyProductKeywordConstraintOverlay(ranked, keywordConstraints);
+      ranked = keywordOverlayDiagnostics.ranked;
       policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
@@ -999,6 +1076,8 @@ export const recommendationService = {
       parsed.allowed_main_forms = Array.isArray(allowed_main_forms) ? allowed_main_forms : [];
       semanticCandidates = await runSemantic(candidates, parsed);
       ranked = await this.rank_primary_recommendations(semanticCandidates, parsed, Math.max(limit * 3, 8), category_locked);
+      keywordOverlayDiagnostics = applyProductKeywordConstraintOverlay(ranked, keywordConstraints);
+      ranked = keywordOverlayDiagnostics.ranked;
       policyGate = enforceMainPolicyOnRanked(
         ranked,
         parsed,
@@ -1018,6 +1097,12 @@ export const recommendationService = {
 
     const mainRecommendations = policyMain.map((p, idx) => toRecommendationItem(p, idx, parsed));
     const promotions = collectPromotions(normalized, parsed, mainRecommendations, 4);
+    const keywordMatchedMainNames = getKeywordMatchedMainNames(policyMain, keywordConstraints);
+    logger.info(
+      `[Keyword Constraint] product_keyword_constraints=${keywordConstraints.join('|') || 'none'} keyword_match_candidate_count=${Number(
+        keywordOverlayDiagnostics.matchedCount || 0
+      )} keyword_matched_main_names=${keywordMatchedMainNames.join(' | ') || 'none'} keyword_constraint_applied=${keywordOverlayDiagnostics.applied ? 1 : 0} keyword_constraint_fallback_used=${keywordOverlayDiagnostics.fallbackUsed ? 1 : 0}`
+    );
     logger.info(
       `[Form Policy] strict_explicit_form=${isExplicitStrictMain ? 1 : 0} requested_form=${parsed.requested_form || 'none'} allowed_main_forms=${(
         allowed_main_forms || []

@@ -327,6 +327,7 @@ function toPromotionItem(product) {
 async function stage2Rerank(candidates, parsedIntent, policy) {
   if (!config.OPENAI_API_KEY) return candidates;
   if (!Array.isArray(candidates) || candidates.length < 2) return candidates;
+  if (parsedIntent.variety_intent) return candidates;
 
   const openai = await getOpenAIClient();
   if (!openai) return candidates;

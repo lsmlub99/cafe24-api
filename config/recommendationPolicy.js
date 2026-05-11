@@ -25,7 +25,7 @@ export const RECOMMENDATION_POLICY = {
     noveltyWeight: 0.7,
     conditionPriorityBonus: 24,
     conditionStrongMatchThreshold: 22,
-    formMismatchPenalty: -14,
+    formMismatchPenalty: -28,
     sameLinePenalty: 8,
     sameFormPenalty: 5,
     reactiveToneUpPenalty: -22,

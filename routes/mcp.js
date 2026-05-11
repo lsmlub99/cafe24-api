@@ -285,6 +285,15 @@ function resolveConclusionDisplayNameV14(item = {}, categoryHint = '') {
   return shortName;
 }
 
+const FORM_BODY_REASON = {
+  cream: '크림 타입으로 밀착력이 좋고 데일리 기초에 잘 맞아요.',
+  serum: '세럼 타입으로 가볍고 산뜻하게 발려요.',
+  stick: '스틱 타입으로 외출 중 덧바름이 간편해요.',
+  spray: '스프레이 타입으로 빠르게 재도포할 수 있어요.',
+  cushion: '쿠션 타입으로 톤 보정과 선케어를 함께 해요.',
+  lotion: '로션 타입으로 가볍게 흡수되고 부담이 적어요.',
+};
+
 function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
   if (!Array.isArray(mainRecommendations) || mainRecommendations.length === 0) {
     return '조건에 맞는 추천 결과를 찾지 못했어요. 피부 타입이나 원하는 사용감을 알려주시면 다시 맞춰드릴게요.';
@@ -330,7 +339,11 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
         : '매일 부담 없이 꾸준히 쓰기 좋은 제품이 필요할 때';
 
     lines.push(`${rank}순위 ${name}`);
-    lines.push(`- 추천 이유: ${why || '요청 조건에 맞는 사용감 중심으로 선별된 후보예요.'}`);
+    const bodyReason =
+      why && why.length > 15 && !why.includes('후보') && !why.includes('매칭 점수')
+        ? why
+        : FORM_BODY_REASON[form] || '요청 조건에 맞는 사용감으로 선별됐어요.';
+    lines.push(`- 추천 이유: ${bodyReason}`);
     lines.push(`- 상황 적합: ${situation}`);
     if (tip) lines.push(`- 사용 팁: ${tip}`);
     if (idx < ranked.length - 1) lines.push('');

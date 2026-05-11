@@ -323,7 +323,7 @@ function buildCardSlots(item = {}, rank = 1) {
 function buildCardCopyFromSlots(slots = {}, item = {}) {
   const signals = collectSignals(item);
   const rawCore = `${slots.rankRole} · ${slots.primaryBenefit}`;
-  const supportReason = `${slots.usageContext} ${slots.secondaryBenefit} 편이에요.`;
+  const supportReason = `${slots.usageContext} ${slots.secondaryBenefit}이에요.`;
   const usageTip = clampText(item.usage_tip || '기초 마지막에 얇게 2~3회 나눠 바르세요.', 28);
 
   let safetyLine = '';
@@ -339,7 +339,7 @@ function buildCardCopyFromSlots(slots = {}, item = {}) {
 
   return {
     coreReason: removeForbiddenCopy(rawCore) || '무난하게 쓰기 좋은 데일리형',
-    supportReason: clampText(`${supportReason} ${safetyLine}`, 28) || '데일리로 쓰기 편한 사용감이에요.',
+    supportReason: clampText(supportReason, 36) || '데일리로 쓰기 편한 사용감이에요.',
     usageTip,
   };
 }

@@ -392,6 +392,33 @@ function buildSelectionGuide(recommendations = []) {
   return lines;
 }
 
+function buildPersonalizedCardReason(item, widgetData, rank) {
+  const tags = Array.isArray(widgetData?.reasoning_tags) ? widgetData.reasoning_tags : [];
+  const form = detectForm(item);
+
+  let concernText = '데일리 사용 조건';
+  if (tags.includes('skin_type:sensitive') || tags.includes('concern:soothing')) concernText = '민감한 피부 고민';
+  else if (tags.includes('concern:sebum_control') || tags.includes('skin_type:oily') || tags.includes('skin_type:combination')) concernText = '번들거림 고민';
+  else if (tags.includes('concern:hydration') || tags.includes('skin_type:dry')) concernText = '수분 부족 고민';
+  else if (tags.includes('concern:tone_up')) concernText = '톤 보정 니즈';
+  else if (tags.includes('situation:outdoor')) concernText = '야외 활동 조건';
+
+  const FORM_FEATURE = {
+    cream: '크림 타입의 밀착 보습감이',
+    serum: '세럼 타입의 가벼운 발림감이',
+    stick: '스틱 타입의 간편한 휴대성이',
+    spray: '스프레이 타입의 빠른 재도포가',
+    cushion: '쿠션 타입의 균일한 밀착감이',
+    lotion: '로션 타입의 산뜻한 흡수감이',
+  };
+  const featureText = FORM_FEATURE[form] || '균형 잡힌 사용감이';
+
+  return {
+    sentence1: `${concernText} 때문에 추천했어요.`,
+    sentence2: `${featureText} 도움이 될 거예요.`,
+  };
+}
+
 function buildGuideContextLine(widgetData = {}) {
   const tags = Array.isArray(widgetData.reasoning_tags) ? widgetData.reasoning_tags : [];
   const hasOily = tags.includes('skin_type:oily') || tags.includes('skin_type:combination');
@@ -935,64 +962,153 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
-          {widgetData.recommendations.map((product, idx) => {
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+          {Array.from({ length: 3 }, (_, idx) => {
+            const product = widgetData.recommendations[idx] || null;
             const rank = idx + 1;
-            const cardCopy = cardCopies[idx];
-            const isTop = rank === 1;
-            const trustLine = isTop
-              ? '무난하게 시작하기 좋은 선택이에요.'
-              : rank === 2
-              ? '1위와 비교해보기 좋은 대안이에요.'
-              : '취향이나 상황에 맞춰 고르기 좋아요.';
-            const buyButtonLabel = variants.buyButton === 'B' ? '이걸로 시작하기' : '지금 구매하기';
+            const RANK_BADGE = {
+              1: { bg: '#7B2FBE', label: 'AI 추천 1위' },
+              2: { bg: '#1A73E8', label: 'AI 추천 2위' },
+              3: { bg: '#34A853', label: 'AI 추천 3위' },
+            };
+            const badge = RANK_BADGE[rank];
 
-            return (
+            if (!product) {
+              return (
                 <div
-                  key={`${product.buy_url || product.name}-${idx}`}
+                  key={`placeholder-${idx}`}
                   style={{
-                    minWidth: '260px',
-                    maxWidth: '300px',
-                    border: '1px solid #eee',
+                    border: '1px dashed #ddd',
                     borderRadius: '12px',
-                    padding: '14px',
-                    background: '#fff',
+                    padding: '16px',
+                    background: '#fafafa',
                     display: 'flex',
-                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minHeight: '320px',
+                    color: '#bbb',
+                    fontSize: '14px',
+                    textAlign: 'center',
                   }}
                 >
-                <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#B31312', marginBottom: '8px' }}>{isTop ? '🏅 BEST' : `${rank}위`}</div>
-                <img src={product.image} alt={product.name} style={{ width: '100%', height: '150px', objectFit: 'contain', marginBottom: '12px' }} />
-                <div style={{ fontWeight: 'bold', fontSize: '1.02rem', marginBottom: '6px', minHeight: '54px', ...clampMultilineStyle(2) }}>{product.name}</div>
-                <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '12px' }}>{product.price ? `${product.price}원` : ''}</div>
+                  추천 상품 준비 중
+                </div>
+              );
+            }
 
-                <div style={{ minHeight: '132px' }}>
-                  <CardText label="핵심 포인트" text={cardCopy?.coreReason} maxLines={2} />
-                  <CardText label="추천 이유" text={cardCopy?.supportReason} maxLines={2} />
-                  <CardText label="사용 팁" text={cardCopy?.usageTip} maxLines={2} />
+            const { sentence1, sentence2 } = buildPersonalizedCardReason(product, widgetData, rank);
+            const hasPrice = Boolean(product.price);
+            const priceDisplay = hasPrice
+              ? `${typeof product.price === 'number' ? product.price.toLocaleString() : product.price}원`
+              : null;
+            const buyButtonLabel = variants.buyButton === 'B' ? '이걸로 시작하기' : '구매하기';
+
+            return (
+              <div
+                key={`${product.buy_url || product.name}-${idx}`}
+                style={{
+                  border: '1px solid #eee',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  background: '#fff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'inline-block',
+                    alignSelf: 'flex-start',
+                    background: badge.bg,
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    marginBottom: '10px',
+                  }}
+                >
+                  {badge.label}
                 </div>
 
-                <div style={{ fontSize: '0.8rem', color: '#666', marginBottom: '8px' }}>{trustLine}</div>
+                <div
+                  style={{
+                    width: '100%',
+                    paddingBottom: '100%',
+                    position: 'relative',
+                    marginBottom: '12px',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    background: '#f5f5f5',
+                  }}
+                >
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+
+                {product.brand && (
+                  <div style={{ fontSize: '14px', color: '#999', marginBottom: '4px', lineHeight: '1.4' }}>{product.brand}</div>
+                )}
+
+                <div
+                  style={{
+                    fontWeight: 'bold',
+                    fontSize: '16px',
+                    lineHeight: '1.5',
+                    marginBottom: '8px',
+                    ...clampMultilineStyle(2),
+                  }}
+                >
+                  {product.name}
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  {hasPrice ? (
+                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#111' }}>{priceDisplay}</span>
+                  ) : (
+                    <span style={{ fontSize: '14px', color: '#999' }}>가격 문의</span>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    background: '#F8F8F8',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    marginBottom: '12px',
+                    fontSize: '14px',
+                    lineHeight: '1.6',
+                    color: '#555',
+                    flexGrow: 1,
+                  }}
+                >
+                  <div>{sentence1}</div>
+                  <div>{sentence2}</div>
+                </div>
 
                 <button
                   type="button"
-                  onClick={() => openBuyLink(product.buy_url, rank, product)}
+                  onClick={() => hasPrice && openBuyLink(product.buy_url, rank, product)}
+                  disabled={!hasPrice}
                   style={{
                     display: 'block',
                     width: '100%',
                     textAlign: 'center',
-                    background: '#B31312',
+                    background: hasPrice ? '#B31312' : '#ccc',
                     color: '#fff',
-                    padding: '10px',
+                    padding: '12px',
                     borderRadius: '8px',
-                    fontSize: '0.9rem',
+                    fontSize: '14px',
                     border: 'none',
-                    cursor: 'pointer',
+                    cursor: hasPrice ? 'pointer' : 'not-allowed',
                     fontWeight: 'bold',
-                    marginTop: 'auto',
+                    minHeight: '44px',
                   }}
                 >
-                  {buyButtonLabel}
+                  {hasPrice ? buyButtonLabel : '가격 문의'}
                 </button>
               </div>
             );

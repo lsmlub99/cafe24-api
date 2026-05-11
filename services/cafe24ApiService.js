@@ -13,8 +13,9 @@ let syncInFlight = null;
 const ingredientDetailCache = new Map();
 
 // Known category IDs that name-based lookup misses (store-specific, checked via cate_no= in URL)
+// 29=유형별>선케어, 93=쇼핑>선케어 — products may be split across both
 const CATEGORY_ID_SEEDS = {
-  선케어: [29],
+  선케어: [29, 93],
 };
 
 const CATEGORY_TARGETS = {

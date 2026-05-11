@@ -376,7 +376,7 @@ async function syncAllProductsCore(accessToken) {
     const targetIds = [...new Set(Object.values(currentMap).flat())];
 
     const fields =
-      'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,description,product_tag,sold_out,selling,display';
+      'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,description,product_tag,sold_out,selling,display,categories';
     let allFetched = [];
     let offset = 0;
     const pageSize = 100;
@@ -407,34 +407,51 @@ async function syncAllProductsCore(accessToken) {
       logs.push(`Ingredient path candidates: ${JSON.stringify(detectedIngredient.candidates)}`);
     }
 
+    // Build productToCategories from the categories field returned per-product (includes all categories, not just representative)
     const productToCategories = {};
-    for (const catId of targetIds) {
-      try {
-        let catOffset = 0;
-        let catTotal = 0;
-        while (true) {
-          const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${catId}/products?limit=100&offset=${catOffset}&fields=product_no`;
-          const result = await requestWithToken(catUrl, targetToken);
-          targetToken = result.accessToken;
-          const items = result.data.products || [];
-
-          if (catOffset === 0 && logs.length === 2) logs.push(`Sample (Cat ${catId}): ${JSON.stringify(items.slice(0, 1))}`);
-
-          items.forEach((cp) => {
-            const pNo = String(cp.product_no);
+    for (const p of allFetched) {
+      const pNo = String(p.product_no);
+      if (Array.isArray(p.categories)) {
+        for (const cat of p.categories) {
+          const catId = Number(cat.category_no);
+          if (Number.isFinite(catId) && targetIds.includes(catId)) {
             if (!productToCategories[pNo]) productToCategories[pNo] = [];
-            productToCategories[pNo].push(Number(catId));
-          });
-
-          catTotal += items.length;
-          if (items.length < 100) break;
-          catOffset += 100;
+            if (!productToCategories[pNo].includes(catId)) productToCategories[pNo].push(catId);
+          }
         }
-        logs.push(`Cat ${catId} found ${catTotal} items`);
-      } catch (err) {
-        logs.push(`Cat ${catId} ERR: ${err.message}`);
       }
     }
+
+    // Log per-category counts
+    const catCounts = {};
+    for (const ids of Object.values(productToCategories)) {
+      for (const id of ids) {
+        catCounts[id] = (catCounts[id] || 0) + 1;
+      }
+    }
+    for (const catId of targetIds) {
+      logs.push(`Cat ${catId} found ${catCounts[catId] || 0} items`);
+    }
+
+    // Fallback: for any targetId that got 0 products, try the old products?category= endpoint
+    const zeroCats = targetIds.filter((id) => !catCounts[id]);
+    for (const catId of zeroCats) {
+      try {
+        const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?category=${catId}&limit=100&fields=product_no`;
+        const result = await requestWithToken(catUrl, targetToken);
+        targetToken = result.accessToken;
+        const items = result.data.products || [];
+        items.forEach((cp) => {
+          const pNo = String(cp.product_no);
+          if (!productToCategories[pNo]) productToCategories[pNo] = [];
+          if (!productToCategories[pNo].includes(Number(catId))) productToCategories[pNo].push(Number(catId));
+        });
+        logs.push(`Cat ${catId} fallback found ${items.length} items`);
+      } catch (err) {
+        logs.push(`Cat ${catId} fallback ERR: ${err.message}`);
+      }
+    }
+
     lastSyncLogs = logs;
 
     const allFetchedWithCats = allFetched.map((p) => ({

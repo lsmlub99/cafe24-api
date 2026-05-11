@@ -410,19 +410,27 @@ async function syncAllProductsCore(accessToken) {
     const productToCategories = {};
     for (const catId of targetIds) {
       try {
-        const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?category=${catId}&limit=100&fields=product_no`;
-        const result = await requestWithToken(catUrl, targetToken);
-        targetToken = result.accessToken;
-        const items = result.data.products || [];
+        let catOffset = 0;
+        let catTotal = 0;
+        while (true) {
+          const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories/${catId}/products?limit=100&offset=${catOffset}&fields=product_no`;
+          const result = await requestWithToken(catUrl, targetToken);
+          targetToken = result.accessToken;
+          const items = result.data.products || [];
 
-        if (logs.length === 2) logs.push(`Sample (Cat ${catId}): ${JSON.stringify(items.slice(0, 1))}`);
-        logs.push(`Cat ${catId} found ${items.length} items`);
+          if (catOffset === 0 && logs.length === 2) logs.push(`Sample (Cat ${catId}): ${JSON.stringify(items.slice(0, 1))}`);
 
-        items.forEach((cp) => {
-          const pNo = String(cp.product_no);
-          if (!productToCategories[pNo]) productToCategories[pNo] = [];
-          productToCategories[pNo].push(Number(catId));
-        });
+          items.forEach((cp) => {
+            const pNo = String(cp.product_no);
+            if (!productToCategories[pNo]) productToCategories[pNo] = [];
+            productToCategories[pNo].push(Number(catId));
+          });
+
+          catTotal += items.length;
+          if (items.length < 100) break;
+          catOffset += 100;
+        }
+        logs.push(`Cat ${catId} found ${catTotal} items`);
       } catch (err) {
         logs.push(`Cat ${catId} ERR: ${err.message}`);
       }

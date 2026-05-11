@@ -376,20 +376,21 @@ async function executeTool(args = {}) {
   // Supplement with keyword search when category pool is small (catches event/bundle products in untracked categories)
   if (rawProducts.length < 20 && categoryNos.length > 0) {
     const supplements = cafe24ApiService.getKeywordSupplementForLookup(lookupKeywords);
+    logger.info(`[Tool Exec] Supplement check: rawLen=${rawProducts.length} catNos=${JSON.stringify(categoryNos)} lookupKws=${JSON.stringify(lookupKeywords)} supplements=${JSON.stringify(supplements)}`);
     if (supplements.length > 0) {
       const seen = new Set(rawProducts.map((p) => String(p.product_no)));
       const supplementCats = categoryNos.map((id) => ({ category_no: id }));
       for (const kw of supplements) {
-        for (const p of cafe24ApiService.getProductsFromCache({ keyword: kw })) {
-          if (!seen.has(String(p.product_no))) {
-            seen.add(String(p.product_no));
-            // Inject category membership so recommendation service doesn't drop these via category filter
-            const existingCats = Array.isArray(p.categories) ? p.categories : [];
-            rawProducts.push({ ...p, categories: [...existingCats, ...supplementCats] });
-          }
+        const found = cafe24ApiService.getProductsFromCache({ keyword: kw });
+        const newOnes = found.filter((p) => !seen.has(String(p.product_no)));
+        logger.info(`[Tool Exec] Supplement kw='${kw}' found=${found.length} new=${newOnes.length}${newOnes.length > 0 ? ' e.g.' + newOnes[0].product_name : ''}`);
+        for (const p of newOnes) {
+          seen.add(String(p.product_no));
+          const existingCats = Array.isArray(p.categories) ? p.categories : [];
+          rawProducts.push({ ...p, categories: [...existingCats, ...supplementCats] });
         }
       }
-      if (rawProducts.length > 5) logger.info(`[Tool Exec] Keyword supplement added products, total=${rawProducts.length}`);
+      logger.info(`[Tool Exec] Supplement result: total rawProducts=${rawProducts.length}`);
     }
   }
 

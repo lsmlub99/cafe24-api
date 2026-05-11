@@ -407,6 +407,10 @@ async function syncAllProductsCore(accessToken) {
       logs.push(`Ingredient path candidates: ${JSON.stringify(detectedIngredient.candidates)}`);
     }
 
+    // Diagnose: check if categories field is returned by product list API
+    const sampleCats = allFetched[0]?.categories;
+    logger.info(`[Sync] Sample product[0] categories field: ${JSON.stringify(sampleCats)}`);
+
     // Build productToCategories from the categories field returned per-product (includes all categories, not just representative)
     const productToCategories = {};
     for (const p of allFetched) {
@@ -429,12 +433,15 @@ async function syncAllProductsCore(accessToken) {
         catCounts[id] = (catCounts[id] || 0) + 1;
       }
     }
+    const catCountStr = targetIds.map((id) => `cat${id}=${catCounts[id] || 0}`).join(' ');
+    logger.info(`[Sync] Category counts from product.categories field: ${catCountStr}`);
     for (const catId of targetIds) {
       logs.push(`Cat ${catId} found ${catCounts[catId] || 0} items`);
     }
 
     // Fallback: for any targetId that got 0 products, try the old products?category= endpoint
     const zeroCats = targetIds.filter((id) => !catCounts[id]);
+    if (zeroCats.length > 0) logger.info(`[Sync] Fallback to products?category= for: ${zeroCats.join(',')}`);
     for (const catId of zeroCats) {
       try {
         const catUrl = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/products?category=${catId}&limit=100&fields=product_no`;
@@ -450,6 +457,15 @@ async function syncAllProductsCore(accessToken) {
       } catch (err) {
         logs.push(`Cat ${catId} fallback ERR: ${err.message}`);
       }
+    }
+
+    // Diagnose active product counts by keyword
+    const activeProducts = allFetched.filter((p) => p.display === 'T' && p.selling === 'T');
+    logger.info(`[Sync] Active (display=T selling=T) products: ${activeProducts.length} / ${allFetched.length}`);
+    const sunKeywords = ['썬스크린', '선크림', '썬크림', '선스크린'];
+    for (const kw of sunKeywords) {
+      const matched = activeProducts.filter((p) => String(p.product_name || '').toLowerCase().includes(kw));
+      if (matched.length > 0) logger.info(`[Sync] Active products with name containing '${kw}': ${matched.length} (e.g. ${matched[0].product_name})`);
     }
 
     lastSyncLogs = logs;

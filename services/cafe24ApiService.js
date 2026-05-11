@@ -40,6 +40,12 @@ const CATEGORY_TARGETS = {
   행사: ['히든특가', '첫구매혜택', '특가', '세일', '앰버십'],
 };
 
+// Keyword supplements: when category filter returns few products, also search by these name keywords
+// to catch products in event/promo categories not tracked by CATEGORY_TARGETS
+const CATEGORY_KEYWORD_SUPPLEMENT = {
+  선케어: ['선크림', '썬크림', '썬스크린', '선스크린', '선케어'],
+};
+
 // Maps CATEGORY_TARGETS key → intent concern key
 const CATEGORY_CONCERN_MAP = {
   고민별_수분: 'hydration',
@@ -633,10 +639,20 @@ async function inspectProductDetailFields(productNo) {
   };
 }
 
+function getKeywordSupplementForLookup(lookupKeywords = []) {
+  for (const kw of lookupKeywords) {
+    for (const [key, supplements] of Object.entries(CATEGORY_KEYWORD_SUPPLEMENT)) {
+      if (String(kw).includes(key) || key.includes(String(kw))) return supplements;
+    }
+  }
+  return [];
+}
+
 export const cafe24ApiService = {
   syncAllProducts,
   getProductsFromCache,
   getDynamicCategoryNos,
+  getKeywordSupplementForLookup,
   enrichProductsWithIngredientText,
   inspectProductDetailFields,
   get allProductsCache() {

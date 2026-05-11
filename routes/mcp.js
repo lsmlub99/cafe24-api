@@ -373,6 +373,23 @@ async function executeTool(args = {}) {
     rawProducts = cafe24ApiService.getProductsFromCache({});
   }
 
+  // Supplement with keyword search when category pool is small (catches event/bundle products in untracked categories)
+  if (rawProducts.length < 20 && categoryNos.length > 0) {
+    const supplements = cafe24ApiService.getKeywordSupplementForLookup(lookupKeywords);
+    if (supplements.length > 0) {
+      const seen = new Set(rawProducts.map((p) => String(p.product_no)));
+      for (const kw of supplements) {
+        for (const p of cafe24ApiService.getProductsFromCache({ keyword: kw })) {
+          if (!seen.has(String(p.product_no))) {
+            seen.add(String(p.product_no));
+            rawProducts.push(p);
+          }
+        }
+      }
+      if (rawProducts.length > 5) logger.info(`[Tool Exec] Keyword supplement added products, total=${rawProducts.length}`);
+    }
+  }
+
   const enrichMaxFetch = computeEnrichMaxFetch(args);
   if (enrichMaxFetch > 0) logger.info(`[Tool Exec] Hybrid enrich enabled: maxFetch=${enrichMaxFetch}`);
   rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, enrichMaxFetch);

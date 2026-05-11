@@ -12,6 +12,11 @@ let ingredientDetectedPath = null;
 let syncInFlight = null;
 const ingredientDetailCache = new Map();
 
+// Known category IDs that name-based lookup misses (store-specific, checked via cate_no= in URL)
+const CATEGORY_ID_SEEDS = {
+  선케어: [29],
+};
+
 const CATEGORY_TARGETS = {
   선케어: ['선케어', '선크림'],
   비비크림: ['bb크림', '비비크림'],
@@ -266,8 +271,8 @@ async function fetchCategoryMap(accessToken) {
         ids = [...new Set(matched.map((c) => Number(c.category_no)))];
       }
 
-      // Merge override seeds (each seed also gets its descendants traversed)
-      for (const seedId of overrides[key] || []) {
+      // Merge built-in seeds + env override seeds (each seed also gets its descendants traversed)
+      for (const seedId of [...(CATEGORY_ID_SEEDS[key] || []), ...(overrides[key] || [])]) {
         const seedIds = hasParentField ? collectChildCategoryNos(seedId, cats) : [seedId];
         for (const id of seedIds) {
           if (!ids.includes(id)) ids.push(id);

@@ -685,10 +685,14 @@ function enforceMainPolicyOnRanked(
   };
 
   const passed = [];
+  const promoPool = [];
   for (const item of ranked || []) {
     if (!item) continue;
     if (item.is_promo) {
       drop.DROP_PROMO_MAIN += 1;
+      if (!categoryLocked || isCategoryMatchedByIntent(item, parsedIntent)) {
+        promoPool.push(item);
+      }
       continue;
     }
     if (categoryLocked && !isCategoryMatchedByIntent(item, parsedIntent)) {
@@ -697,6 +701,25 @@ function enforceMainPolicyOnRanked(
     }
     passed.push(item);
   }
+
+  // Fills remaining slots with promo products when non-promo options are scarce
+  const fillWithPromo = (selected, targetLimit) => {
+    if (selected.length >= Math.min(2, targetLimit)) return selected;
+    const usedBase = new Set(selected.map((i) => String(i.base_name || '').trim()));
+    const promoDedupSeen = new Set(usedBase);
+    const fills = [];
+    for (const p of promoPool) {
+      const key = String(p.base_name || '').trim();
+      if (!key || promoDedupSeen.has(key)) continue;
+      promoDedupSeen.add(key);
+      fills.push(p);
+      if (selected.length + fills.length >= targetLimit) break;
+    }
+    if (!fills.length) return selected;
+    const merged = [...selected, ...fills];
+    merged.sort((a, b) => scoreOf(b) - scoreOf(a));
+    return merged.slice(0, targetLimit);
+  };
 
   const seen = new Set();
   const deduped = [];
@@ -716,7 +739,7 @@ function enforceMainPolicyOnRanked(
   const strictExplicitForm = Boolean(options?.strict_explicit_form);
   if (!isBbRequest && !(formLocked && Array.isArray(allowedMainForms) && allowedMainForms.length > 0)) {
     return {
-      selected: deduped.slice(0, finalLimit),
+      selected: fillWithPromo(deduped.slice(0, finalLimit), finalLimit),
       drop_stats: drop,
       pre_policy_count: (ranked || []).length,
       pass_count: passed.length,
@@ -730,7 +753,7 @@ function enforceMainPolicyOnRanked(
 
   const isMatch = (item) => Boolean(item?.form && allowedMainForms.includes(item.form));
   if (strictExplicitForm && !isBbRequest) {
-    const strictOnly = deduped.filter(isMatch).slice(0, finalLimit);
+    const strictOnly = fillWithPromo(deduped.filter(isMatch).slice(0, finalLimit), finalLimit);
     return {
       selected: strictOnly,
       drop_stats: drop,
@@ -781,7 +804,8 @@ function enforceMainPolicyOnRanked(
   }
 
   selected.sort((a, b) => scoreOf(b) - scoreOf(a));
-  const bbPolicy = enforceBbMainMix(selected, deduped, parsedIntent, sameScoreBand);
+  const filledSelected = fillWithPromo(selected, finalLimit);
+  const bbPolicy = enforceBbMainMix(filledSelected, deduped, parsedIntent, sameScoreBand);
 
   return {
     selected: bbPolicy.selected,

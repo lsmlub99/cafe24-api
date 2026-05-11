@@ -84,7 +84,7 @@ export const RECOMMENDATION_TAXONOMY = {
     inner: ['이너뷰티', 'inner'],
   },
   forms: {
-    cream: ['크림', '선크림', '썬크림', '선스크린', '썬스크린', 'sun cream', 'sunscreen', 'cream'],
+    cream: ['크림', 'sun cream', 'sunscreen', 'cream'],
     lotion: ['로션', '선로션', 'sun lotion', 'lotion'],
     serum: ['세럼', '선세럼', '앰플', 'sun serum', 'serum', 'ampoule'],
     stick: ['스틱', '선스틱', '스틱밤', 'sun stick', 'stick'],

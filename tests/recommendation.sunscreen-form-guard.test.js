@@ -79,6 +79,6 @@ test('LLM이 sunscreen+cream을 반환해도 일반 선크림 질의면 cream fo
     },
   };
   const ruleParsed = parseUserIntent({ query: '선크림 추천' }, TAXONOMY);
-  const result = await normalizeIntentWithLLM(openai, { query: '선크림 추천' }, ruleParsed, 'mock-model');
+  const result = await normalizeIntentWithLLM(openai, { query: '선크림 추천' }, ruleParsed, TAXONOMY, 'mock-model');
   assert.equal(result.intent.requested_form, null);
 });

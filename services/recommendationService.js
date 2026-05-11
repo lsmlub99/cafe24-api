@@ -110,20 +110,6 @@ function buildReasoningTags(parsedIntent) {
   return tags;
 }
 
-function hasExplicitCreamFormPhrase(query = '') {
-  const src = String(query || '').toLowerCase();
-  if (!src) return false;
-  return includesAny(src, [
-    '크림 타입',
-    '크림형',
-    '크림 제형',
-    '선케어 크림',
-    'cream type',
-    'cream-form',
-    'cream form',
-  ]);
-}
-
 function reinforceKeywordConstraints(parsedIntent = {}, args = {}) {
   const rawQuery = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
   const extracted = extractProductKeywordConstraints(rawQuery);
@@ -952,6 +938,7 @@ export const recommendationService = {
       openai,
       args,
       ruleParsed,
+      RECOMMENDATION_TAXONOMY,
       config.INTENT_NORMALIZER_MODEL || config.RERANK_MODEL || RECOMMENDATION_POLICY.rerank.model
     );
     let parsed = applySessionContextToIntent(normalizedIntentResult.intent, sessionContext);
@@ -963,18 +950,6 @@ export const recommendationService = {
     }
     parsed = reinforceKeywordConstraints(parsed, args);
 
-    const rawQueryText = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
-    const shouldClearGenericCreamForm =
-      parsed.requested_category === 'sunscreen' &&
-      parsed.requested_form === 'cream' &&
-      !hasExplicitCreamFormPhrase(rawQueryText);
-    if (shouldClearGenericCreamForm) {
-      parsed = {
-        ...parsed,
-        requested_form: null,
-        explicit_form_request: false,
-      };
-    }
     logger.info(
       `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'} product_keyword_constraints=${(parsed.product_keyword_constraints || []).join('|') || 'none'}`
     );

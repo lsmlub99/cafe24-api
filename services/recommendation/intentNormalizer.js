@@ -96,15 +96,35 @@ function mergeIntent(base = {}, normalized = {}) {
   };
 }
 
-function buildSystemPrompt() {
-  return [
+function buildCategoryFormOverlapHint(taxonomy) {
+  if (!taxonomy?.categories || !taxonomy?.forms) return null;
+  const hints = [];
+  for (const [catKey, catAliases] of Object.entries(taxonomy.categories)) {
+    const catSet = new Set(catAliases.map((a) => String(a).toLowerCase()));
+    const overlaps = Object.values(taxonomy.forms)
+      .flat()
+      .filter((a) => catSet.has(String(a).toLowerCase()));
+    if (overlaps.length > 0) {
+      hints.push(`${overlaps.slice(0, 5).map((w) => `"${w}"`).join(', ')}은 requested_category=${catKey}이고 requested_form=null`);
+    }
+  }
+  return hints.length ? `주의: ${hints.join('. ')}.` : null;
+}
+
+function buildSystemPrompt(taxonomy = null) {
+  const lines = [
     '너는 뷰티 추천 질의를 구조화하는 intent normalizer다.',
     '반드시 JSON만 반환하고, 스키마 키 외 텍스트를 쓰지 마라.',
     '사용자 부정/불만 표현(안 맞음, 답답, 밀림, 눈시림, 트러블)을 fit_issue로 정규화한다.',
     '값은 허용된 enum만 사용한다.',
+  ];
+  const overlapHint = buildCategoryFormOverlapHint(taxonomy);
+  if (overlapHint) lines.push(overlapHint);
+  lines.push(
     'JSON schema:',
-    '{"requested_category":"sunscreen|toner|serum|cream|cushion|bb|cleansing|mask|inner|null","requested_form":"cream|lotion|serum|stick|spray|cushion|toner|mist|other|null","sort_intent":"popular|condition_based|new_arrival|null","novelty_request":false,"popularity_intent":false,"skin_type":"dry|oily|combination|sensitive|null","concern":[],"situation":[],"preference":[],"fit_issue":[],"negative_scope":"product|form|category|null","allow_category_switch":false,"variety_intent":false,"product_keyword_constraints":[]}',
-  ].join(' ');
+    '{"requested_category":"sunscreen|toner|serum|cream|cushion|bb|cleansing|mask|inner|null","requested_form":"cream|lotion|serum|stick|spray|cushion|toner|mist|other|null","sort_intent":"popular|condition_based|new_arrival|null","novelty_request":false,"popularity_intent":false,"skin_type":"dry|oily|combination|sensitive|null","concern":[],"situation":[],"preference":[],"fit_issue":[],"negative_scope":"product|form|category|null","allow_category_switch":false,"variety_intent":false,"product_keyword_constraints":[]}'
+  );
+  return lines.join(' ');
 }
 
 function buildUserPrompt(args = {}, parsedIntent = {}) {
@@ -134,7 +154,7 @@ function buildUserPrompt(args = {}, parsedIntent = {}) {
   });
 }
 
-export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {}, model = 'gpt-4o-mini') {
+export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {}, taxonomy = null, model = 'gpt-4o-mini') {
   if (!openai) return { intent: parsedIntent, source: 'rule' };
 
   try {
@@ -142,7 +162,7 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
       model,
       temperature: 0.1,
       input: [
-        { role: 'system', content: buildSystemPrompt() },
+        { role: 'system', content: buildSystemPrompt(taxonomy) },
         { role: 'user', content: buildUserPrompt(args, parsedIntent) },
       ],
     });
@@ -172,8 +192,9 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
     };
 
     const rawQueryText = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
+    const effectiveCategory = normalized.requested_category || parsedIntent.requested_category;
     if (
-      normalized.requested_category === 'sunscreen' &&
+      effectiveCategory === 'sunscreen' &&
       normalized.requested_form === 'cream' &&
       !hasExplicitCreamFormPhrase(rawQueryText)
     ) {

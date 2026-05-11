@@ -261,22 +261,25 @@ async function fetchCategoryMap(accessToken) {
         );
       }
 
+      const allSeeds = [...(CATEGORY_ID_SEEDS[key] || []), ...(overrides[key] || [])];
+
       let ids;
-      if (found && hasParentField) {
+      if (allSeeds.length > 0) {
+        // Seeds defined: skip name-based lookup entirely, use seeds + their descendants
+        ids = [];
+        for (const seedId of allSeeds) {
+          const seedIds = hasParentField ? collectChildCategoryNos(seedId, cats) : [seedId];
+          for (const id of seedIds) {
+            if (!ids.includes(id)) ids.push(id);
+          }
+        }
+      } else if (found && hasParentField) {
         ids = collectChildCategoryNos(found.category_no, cats);
       } else {
         const matched = cats.filter((c) =>
           keywords.some((k) => String(c.category_name || '').toLowerCase().includes(k.toLowerCase()))
         );
         ids = [...new Set(matched.map((c) => Number(c.category_no)))];
-      }
-
-      // Merge built-in seeds + env override seeds (each seed also gets its descendants traversed)
-      for (const seedId of [...(CATEGORY_ID_SEEDS[key] || []), ...(overrides[key] || [])]) {
-        const seedIds = hasParentField ? collectChildCategoryNos(seedId, cats) : [seedId];
-        for (const id of seedIds) {
-          if (!ids.includes(id)) ids.push(id);
-        }
       }
 
       if (ids.length > 0) newMap[key] = ids;

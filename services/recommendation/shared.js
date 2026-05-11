@@ -127,8 +127,12 @@ export function toBaseName(name = '') {
     .trim();
 }
 
+// Quantity bundle prefix like [1+1], [1+1+1], [2+1] — these are real products, not samples/gifts
+const BUNDLE_PREFIX_RE = /^\[(?:\d+\+)+\d+\]/;
+
 export function isPromoName(name = '') {
   const t = String(name || '');
+  if (BUNDLE_PREFIX_RE.test(t)) return false;
   const lowered = lower(t);
   if (PROMO_PATTERN.test(t)) return true;
   return PROMO_TOKENS.some((token) => lowered.includes(lower(token)));

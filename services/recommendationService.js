@@ -200,7 +200,7 @@ function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
     concern: [...mergedConcern],
     preference: [...mergedPreference],
     fit_issue: [...new Set([...(parsedIntent.fit_issue || []), ...(reactiveSignals.includes('irritation') ? ['irritation'] : [])])],
-    negative_scope: parsedIntent.negative_scope || (reactiveSignals.includes('not_fit') ? 'form' : null),
+    negative_scope: parsedIntent.negative_scope || (reactiveSignals.includes('not_fit') ? 'form' : null) || (parsedIntent.variety_intent ? 'form' : null),
     session_context: {
       reactive_signals: reactiveSignals,
       negative_preferences: negativePreferences,
@@ -228,12 +228,12 @@ function buildDetail(product, parsedIntent) {
   if ((parsedIntent.concern || []).includes('tone_up')) reasons.push('톤/잡티 보정 니즈를 함께 충족하기 좋은 타입입니다.');
 
   if ((parsedIntent.situation || []).includes('makeup_before')) {
-    tips.push('메이크업 전에는 소량씩 2~3회 레이어링하면 밀림을 줄이기 좋습니다.');
+    tips.push('메이크업 전 2~3회 얇게 레이어링하세요.');
   }
   if ((parsedIntent.situation || []).includes('outdoor')) {
-    tips.push('야외 활동 시 2~3시간 간격 재도포로 차단력을 안정적으로 유지해 주세요.');
+    tips.push('야외 2~3시간 간격으로 재도포해 주세요.');
   }
-  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아집니다.');
+  if (!tips.length) tips.push('기초 마지막에 얇게 2~3회 나눠 바르세요.');
 
   if (!reasons.length) {
     if (includesAny(source, ['가벼', '산뜻', '보송'])) reasons.push('가벼운 사용감 신호가 있어 데일리 사용에 무난한 후보입니다.');
@@ -274,12 +274,12 @@ function buildDetailFromReason(product, parsedIntent) {
 
   const tips = [];
   if ((parsedIntent.situation || []).includes('makeup_before')) {
-    tips.push('메이크업 전에는 한 번에 많이 바르기보다 2~3회 얇게 레이어링하면 밀림이 줄어요.');
+    tips.push('메이크업 전 2~3회 얇게 레이어링하세요.');
   }
   if ((parsedIntent.situation || []).includes('outdoor')) {
-    tips.push('야외 활동 시 2~3시간 간격으로 재도포해 차단력을 유지해주세요.');
+    tips.push('야외 2~3시간 간격으로 재도포해 주세요.');
   }
-  if (!tips.length) tips.push('기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아져요.');
+  if (!tips.length) tips.push('기초 마지막에 얇게 2~3회 나눠 바르세요.');
 
   return {
     reason_code: reasonCode || 'FALLBACK_SAFE_BASELINE',
@@ -304,8 +304,8 @@ function toRecommendationItem(product, idx, parsedIntent) {
     key_point: details.why_pick,
     reason_code: details.reason_code,
     reason_facts: details.reason_facts,
-    why_pick: details.why_pick || '요청 카테고리 기준으로 무난하게 시작하기 좋은 기본 후보예요.',
-    usage_tip: details.usage_tip || '기초 마지막 단계에서 얇게 2~3회 나눠 바르면 밀착감이 좋아져요.',
+    why_pick: details.why_pick || '카테고리 기준 추천 후보',
+    usage_tip: details.usage_tip || '기초 마지막에 얇게 2~3회 나눠 바르세요.',
     caution: details.caution,
     is_promo: !!product.is_promo,
     buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,

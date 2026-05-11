@@ -343,6 +343,8 @@ function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
     );
   }
   lines.push(`처음 고르신다면 ${String(ranked[0]?.name || '').trim()}부터 보셔도 좋고, 원하시면 피부 타입이나 사용감 기준으로 더 좁혀드릴게요.`);
+  lines.push('');
+  lines.push('다른 제품도 한번 알아볼까요?');
 
   return lines.join('\n');
 }

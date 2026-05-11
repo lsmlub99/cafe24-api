@@ -29,7 +29,7 @@ export const RECOMMENDATION_POLICY = {
     sameLinePenalty: 8,
     sameFormPenalty: 5,
     reactiveToneUpPenalty: -22,
-    repeatRecommendationPenalty: 28,
+    repeatRecommendationPenalty: 45,
     semanticWeight: 1.1,
   },
   semantic: {

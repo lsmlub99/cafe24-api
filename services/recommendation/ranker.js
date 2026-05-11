@@ -279,12 +279,14 @@ function getNegativeScopePenalty(product, intent) {
   const recentForms = intent.session_context?.recent_main_forms || [];
   const productBase = String(product.base_name || '').trim();
   const productForm = String(product.form || '').trim();
+  const varietyActive = Boolean(intent.variety_intent);
 
   if (scope === 'product') {
     return recentBases.includes(productBase) ? 26 : 0;
   }
   if (scope === 'form') {
-    return recentForms.includes(productForm) ? 18 : 0;
+    const penalty = varietyActive ? 30 : 18;
+    return recentForms.includes(productForm) ? penalty : 0;
   }
   if (scope === 'category') {
     return recentBases.includes(productBase) ? 14 : 0;

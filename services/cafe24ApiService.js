@@ -206,12 +206,29 @@ async function requestWithToken(url, accessToken) {
   return { data, accessToken: targetToken, status: res.status };
 }
 
+function parseCategoryNoOverrides() {
+  const raw = (config.CATEGORY_NO_OVERRIDES || '').trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    const result = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      result[key] = Array.isArray(val) ? val.map(Number).filter(Boolean) : [Number(val)].filter(Boolean);
+    }
+    return result;
+  } catch {
+    logger.warn('[Category] CATEGORY_NO_OVERRIDES is not valid JSON, ignoring');
+    return {};
+  }
+}
+
 async function fetchCategoryMap(accessToken) {
   try {
     const url = `https://${config.MALL_ID}.cafe24api.com/api/v2/admin/categories`;
     const { data } = await requestWithToken(url, accessToken);
     const cats = data.categories || [];
 
+    const overrides = parseCategoryNoOverrides();
     const newMap = {};
     for (const [key, keywords] of Object.entries(CATEGORY_TARGETS)) {
       let found = cats.find((c) => keywords.some((k) => c.category_name === k));
@@ -220,7 +237,10 @@ async function fetchCategoryMap(accessToken) {
           keywords.some((k) => String(c.category_name || '').toLowerCase().includes(k.toLowerCase()))
         );
       }
-      if (found) newMap[key] = found.category_no;
+      const autoIds = found ? [found.category_no] : [];
+      const overrideIds = overrides[key] || [];
+      const merged = [...new Set([...autoIds, ...overrideIds])];
+      if (merged.length > 0) newMap[key] = merged;
     }
 
     categoryMap = newMap;
@@ -287,7 +307,7 @@ async function syncAllProductsCore(accessToken) {
 
     logger.info('[Sync] Product sync start...');
     const currentMap = await fetchCategoryMap(targetToken);
-    const targetIds = Object.values(currentMap);
+    const targetIds = [...new Set(Object.values(currentMap).flat())];
 
     const fields =
       'product_no,product_name,price,retail_price,list_image,detail_image,tiny_image,summary_description,simple_description,description,product_tag,sold_out,selling,display';
@@ -404,7 +424,7 @@ function getDynamicCategoryNos(keywords = []) {
   const results = [];
   const lowerKeys = keywords.map((k) => String(k || '').toLowerCase());
 
-  for (const [mapName, id] of Object.entries(categoryMap)) {
+  for (const [mapName, ids] of Object.entries(categoryMap)) {
     if (
       lowerKeys.some(
         (k) =>
@@ -413,7 +433,10 @@ function getDynamicCategoryNos(keywords = []) {
           (k === '선크림' && mapName === '선케어')
       )
     ) {
-      results.push(id);
+      const idList = Array.isArray(ids) ? ids : [ids];
+      for (const id of idList) {
+        if (id && !results.includes(id)) results.push(id);
+      }
     }
   }
   return results;

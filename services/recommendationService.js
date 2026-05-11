@@ -552,7 +552,7 @@ function collectPromotions(normalizedProducts, parsedIntent, mainRecommendations
   const usedBase = new Set((mainRecommendations || []).map((item) => item.base_name));
 
   const promos = normalizedProducts
-    .filter((p) => p.is_promo)
+    .filter((p) => p.is_promo || p.is_event)
     .filter((p) => !usedBase.has(p.base_name))
     .filter((p) => !parsedIntent.requested_category || categoryMatches(p, parsedIntent))
     .sort((a, b) => b.price_value - a.price_value);

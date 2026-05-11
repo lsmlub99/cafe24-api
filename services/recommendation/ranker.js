@@ -105,9 +105,10 @@ export function getQualityScore(product, policy) {
   const review = Math.min(policy.scoring.reviewCap, Math.log10((product.review_count || 0) + 1) * 10);
   const rating = Math.min(policy.scoring.ratingCap, Math.max(0, (product.rating || 0) * 4));
   const sales = Math.min(policy.scoring.salesCap, Math.log10((product.sales_count || 0) + 1) * 10);
-  const bestTag = includesAny(`${product.name} ${product.text}`, ['best', '베스트', '인기', 'best seller'])
-    ? policy.scoring.bestTagBonus
-    : 0;
+  const bestTag =
+    product.is_best || includesAny(`${product.name} ${product.text}`, ['best', '베스트', '인기', 'best seller'])
+      ? policy.scoring.bestTagBonus
+      : 0;
 
   const direct = review + rating + sales + bestTag;
   if (direct > 0) return direct;
@@ -121,6 +122,7 @@ export function getQualityScore(product, policy) {
 }
 
 export function getNoveltyScore(product) {
+  if (product.is_new) return 35;
   const ageMs = Date.now() - (product.created_at_ms || 0);
   if (!Number.isFinite(ageMs) || ageMs <= 0) return 0;
   const day = 1000 * 60 * 60 * 24;
@@ -178,7 +180,10 @@ export function getConditionScore(product, intent, policy) {
       derivedConcernSignals.some((s) => lower(s).includes(lower(c)))
   ).length;
 
-  const structuredScore = textureMatches * 10 + finishMatches * 8 + useCaseMatches * 6 + concernMatchCount * 7;
+  const categoryConcernTags = product.category_concern_tags || [];
+  const categoryConcernBonus = concerns.filter((c) => categoryConcernTags.includes(c)).length * 10;
+
+  const structuredScore = textureMatches * 10 + finishMatches * 8 + useCaseMatches * 6 + concernMatchCount * 7 + categoryConcernBonus;
   const featureScore = getFeatureMatchScore(product, signals, intent);
   const keywordScore = scoreByKeywordHints(product, signals);
   return Math.min(policy.scoring.conditionCap, structuredScore + keywordScore + featureScore);

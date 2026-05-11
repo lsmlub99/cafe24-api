@@ -28,6 +28,23 @@ const CATEGORY_TARGETS = {
   치트: ['치트'],
   이너뷰티: ['이너뷰티'],
   선스틱: ['스틱', 'stick'],
+  신상품: ['신상품'],
+  베스트: ['베스트'],
+  고민별_수분: ['수분/보습'],
+  고민별_진정: ['민감/진정'],
+  고민별_톤업: ['미백/톤업'],
+  고민별_트러블: ['지성/트러블', '자성/트러블'],
+  고민별_영양: ['영양/탄력'],
+  고민별_잡티: ['기미/잡티'],
+  행사: ['히든특가', '첫구매혜택', '특가', '세일', '앰버십'],
+};
+
+// Maps CATEGORY_TARGETS key → intent concern key
+const CATEGORY_CONCERN_MAP = {
+  고민별_수분: 'hydration',
+  고민별_진정: 'soothing',
+  고민별_톤업: 'tone_up',
+  고민별_트러블: 'sebum_control',
 };
 
 const INGREDIENT_HINT_PATHS = [
@@ -413,12 +430,31 @@ async function syncAllProductsCore(accessToken) {
     const tagResults = aiTaggingService.tagAllProducts(allFetchedWithCats);
     const tagMap = new Map(tagResults.map((t) => [t.product_no, t]));
 
+    const newCatIds = new Set((categoryMap['신상품'] || []).map(Number));
+    const bestCatIds = new Set((categoryMap['베스트'] || []).map(Number));
+    const eventCatIds = new Set((categoryMap['행사'] || []).map(Number));
+    const concernCatSets = Object.fromEntries(
+      Object.entries(CATEGORY_CONCERN_MAP).map(([catKey, concern]) => [
+        concern,
+        new Set((categoryMap[catKey] || []).map(Number)),
+      ])
+    );
+
     allProductsCache = allFetchedWithCats.map((p) => {
       const tags = tagMap.get(p.product_no) || {};
       const ingredientText = pickIngredientTextFromProduct(p);
       const searchPreview = buildSearchPreview(p, tags);
       const searchFeatures = buildSearchFeatures(p, tags, ingredientText);
       ingredientDetailCache.set(String(p.product_no), ingredientText || '');
+
+      const catIds = (productToCategories[String(p.product_no)] || []).map(Number);
+      const is_new = catIds.some((id) => newCatIds.has(id));
+      const is_best = catIds.some((id) => bestCatIds.has(id));
+      const is_event = catIds.some((id) => eventCatIds.has(id));
+      const category_concern_tags = Object.entries(concernCatSets)
+        .filter(([, ids]) => catIds.some((id) => ids.has(id)))
+        .map(([concern]) => concern);
+
       return {
         ...p,
         product_id: p.product_no,
@@ -426,10 +462,14 @@ async function syncAllProductsCore(accessToken) {
         search_preview: searchPreview,
         search_features: searchFeatures,
         keywords: tags.all_tags || [],
+        is_new,
+        is_best,
+        is_event,
+        category_concern_tags,
         attributes: {
           category_tags: tags.category_tags || [],
           line_tags: tags.line_tags || [],
-          concern_tags: tags.concern_tags || [],
+          concern_tags: [...new Set([...(tags.concern_tags || []), ...category_concern_tags])],
           texture_tags: tags.texture_tags || [],
           role_tags: tags.role_tags || [],
         },

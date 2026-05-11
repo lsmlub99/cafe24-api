@@ -206,20 +206,20 @@ async function requestWithToken(url, accessToken) {
   return { data, accessToken: targetToken, status: res.status };
 }
 
-function parseCategoryNoOverrides() {
-  const raw = (config.CATEGORY_NO_OVERRIDES || '').trim();
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    const result = {};
-    for (const [key, val] of Object.entries(parsed)) {
-      result[key] = Array.isArray(val) ? val.map(Number).filter(Boolean) : [Number(val)].filter(Boolean);
+function collectChildCategoryNos(rootNo, allCats) {
+  const result = [Number(rootNo)];
+  const queue = [Number(rootNo)];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const c of allCats) {
+      const childId = Number(c.category_no);
+      if (Number(c.parent_category_no) === current && !result.includes(childId)) {
+        result.push(childId);
+        queue.push(childId);
+      }
     }
-    return result;
-  } catch {
-    logger.warn('[Category] CATEGORY_NO_OVERRIDES is not valid JSON, ignoring');
-    return {};
   }
+  return result;
 }
 
 async function fetchCategoryMap(accessToken) {
@@ -228,7 +228,9 @@ async function fetchCategoryMap(accessToken) {
     const { data } = await requestWithToken(url, accessToken);
     const cats = data.categories || [];
 
-    const overrides = parseCategoryNoOverrides();
+    // Check if parent_category_no is available for hierarchical traversal
+    const hasParentField = cats.length > 0 && 'parent_category_no' in cats[0];
+
     const newMap = {};
     for (const [key, keywords] of Object.entries(CATEGORY_TARGETS)) {
       let found = cats.find((c) => keywords.some((k) => c.category_name === k));
@@ -237,14 +239,24 @@ async function fetchCategoryMap(accessToken) {
           keywords.some((k) => String(c.category_name || '').toLowerCase().includes(k.toLowerCase()))
         );
       }
-      const autoIds = found ? [found.category_no] : [];
-      const overrideIds = overrides[key] || [];
-      const merged = [...new Set([...autoIds, ...overrideIds])];
-      if (merged.length > 0) newMap[key] = merged;
+
+      let ids;
+      if (found && hasParentField) {
+        // Method 1: hierarchical — root + all descendants
+        ids = collectChildCategoryNos(found.category_no, cats);
+      } else {
+        // Method 2: keyword fallback — all categories whose name contains any keyword
+        const matched = cats.filter((c) =>
+          keywords.some((k) => String(c.category_name || '').toLowerCase().includes(k.toLowerCase()))
+        );
+        ids = [...new Set(matched.map((c) => Number(c.category_no)))];
+      }
+
+      if (ids.length > 0) newMap[key] = ids;
     }
 
     categoryMap = newMap;
-    logger.info('[Sync] Category map loaded:', categoryMap);
+    logger.info(`[Sync] Category map loaded (mode=${hasParentField ? 'hierarchical' : 'keyword'}):`, categoryMap);
     return categoryMap;
   } catch (e) {
     logger.error('[Category Map Error]', e.message);

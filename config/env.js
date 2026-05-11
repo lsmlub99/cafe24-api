@@ -35,8 +35,6 @@ export const config = {
   LOG_TOKEN_EVENTS: toBool(process.env.LOG_TOKEN_EVENTS, false),
   ENRICH_MAX_FETCH_BASE: Math.max(0, toInt(process.env.ENRICH_MAX_FETCH_BASE, 0)),
   ENRICH_MAX_FETCH_INGREDIENT: Math.max(0, toInt(process.env.ENRICH_MAX_FETCH_INGREDIENT, 4)),
-  // JSON: {"선케어":[29,93]} — explicit category IDs that always included for a given category key
-  CATEGORY_NO_OVERRIDES: process.env.CATEGORY_NO_OVERRIDES || '',
 };
 
 const requiredKeys = [

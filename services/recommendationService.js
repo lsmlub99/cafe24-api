@@ -28,6 +28,7 @@ import {
 } from './recommendation/metrics.js';
 import { getSessionContext, updateSessionContext } from './recommendation/sessionContext.js';
 import { applySemanticSignals } from './recommendation/semanticRetriever.js';
+import { getCategoryIdsForTaxonomyKey } from './cafe24ApiService.js';
 
 let openaiClient = null;
 let openaiLoadAttempted = false;
@@ -835,7 +836,12 @@ export const recommendationService = {
   },
 
   get_primary_candidates(products = [], parsedIntent = {}, options = {}) {
-    return retrievePrimaryCandidates(products, parsedIntent, RECOMMENDATION_TAXONOMY, RECOMMENDATION_POLICY, options);
+    let intent = parsedIntent;
+    if (intent.requested_category && !(intent.requested_category_ids?.length)) {
+      const catIds = getCategoryIdsForTaxonomyKey(intent.requested_category);
+      if (catIds.length) intent = { ...intent, requested_category_ids: catIds };
+    }
+    return retrievePrimaryCandidates(products, intent, RECOMMENDATION_TAXONOMY, RECOMMENDATION_POLICY, options);
   },
 
   async rank_primary_recommendations(

@@ -506,6 +506,7 @@ async function syncAllProductsCore(accessToken) {
       return {
         ...p,
         product_id: p.product_no,
+        category_ids: catIds,
         ingredient_text: ingredientText || '',
         search_preview: searchPreview,
         search_features: searchFeatures,
@@ -570,6 +571,23 @@ function getDynamicCategoryNos(keywords = []) {
     }
   }
   return results;
+}
+
+export function getCategoryIdsForTaxonomyKey(taxonomyKey) {
+  const TAXONOMY_TO_MAP_KEY = {
+    sunscreen: '선케어',
+    toner: '토너',
+    serum: '앰플',
+    cream: '크림',
+    cushion: '쿠션',
+    bb: '비비크림',
+    cleansing: '클렌징',
+    mask: '마스크팩',
+    inner: '이너뷰티',
+  };
+  const mapKey = TAXONOMY_TO_MAP_KEY[taxonomyKey];
+  if (!mapKey) return [];
+  return (categoryMap[mapKey] || []).map(Number).filter(Number.isFinite);
 }
 
 function getProductsFromCache(filters = {}) {

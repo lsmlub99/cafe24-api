@@ -378,11 +378,14 @@ async function executeTool(args = {}) {
     const supplements = cafe24ApiService.getKeywordSupplementForLookup(lookupKeywords);
     if (supplements.length > 0) {
       const seen = new Set(rawProducts.map((p) => String(p.product_no)));
+      const supplementCats = categoryNos.map((id) => ({ category_no: id }));
       for (const kw of supplements) {
         for (const p of cafe24ApiService.getProductsFromCache({ keyword: kw })) {
           if (!seen.has(String(p.product_no))) {
             seen.add(String(p.product_no));
-            rawProducts.push(p);
+            // Inject category membership so recommendation service doesn't drop these via category filter
+            const existingCats = Array.isArray(p.categories) ? p.categories : [];
+            rawProducts.push({ ...p, categories: [...existingCats, ...supplementCats] });
           }
         }
       }

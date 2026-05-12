@@ -69,7 +69,7 @@ const TOOLS = [
     name: TOOL_NAME,
     title: 'Search CellFusionC Products',
     description:
-      '[GEN-UI] Analyze skin needs and recommend matching products. End with one narrowing follow-up question to help user choose the next step.',
+      '[GEN-UI] Analyze skin needs and recommend matching products. IMPORTANT: Output the tool result body text VERBATIM as your complete response. Do not rephrase, summarize, or add your own analysis. Append only one short follow-up question at the end.',
     annotations: {
       readOnlyHint: true,
       openWorldHint: false,

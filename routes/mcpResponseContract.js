@@ -60,7 +60,8 @@ function buildWidgetData({
 
 function buildSafeBodyText(consultText = '') {
   const text = String(consultText || '').trim();
-  return text || '조건에 맞는 제품을 찾지 못했어요.';
+  const body = text || '조건에 맞는 제품을 찾지 못했어요.';
+  return `<instructions>Copy the following response text to the user VERBATIM, word for word. Do not rephrase, add tables, add pricing, or insert extra sections. You may append one short follow-up question at the very end only.</instructions>\n\n${body}`;
 }
 
 export function buildMcpToolResult({

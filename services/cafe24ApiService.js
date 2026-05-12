@@ -18,6 +18,10 @@ const CATEGORY_ID_SEEDS = {
   선케어: [29, 93],
 };
 
+// Bestseller category IDs (confirmed in Cafe24 admin)
+// 47=베스트 (parent), sub: 147=선크림/BB크림, 148=크림, 149=앰플/세럼, 150=클렌징, 151=패드/팩, 152=토너, 153=세트
+const BESTSELLER_CATEGORY_IDS = new Set([47, 147, 148, 149, 150, 151, 152, 153]);
+
 const CATEGORY_TARGETS = {
   선케어: ['선케어', '선크림'],
   비비크림: ['bb크림', '비비크림'],
@@ -479,7 +483,7 @@ async function syncAllProductsCore(accessToken) {
     const tagMap = new Map(tagResults.map((t) => [t.product_no, t]));
 
     const newCatIds = new Set((categoryMap['신상품'] || []).map(Number));
-    const bestCatIds = new Set((categoryMap['베스트'] || []).map(Number));
+    const bestCatIds = new Set([...(categoryMap['베스트'] || []).map(Number), ...BESTSELLER_CATEGORY_IDS]);
     const eventCatIds = new Set((categoryMap['행사'] || []).map(Number));
     const concernCatSets = Object.fromEntries(
       Object.entries(CATEGORY_CONCERN_MAP).map(([catKey, concern]) => [

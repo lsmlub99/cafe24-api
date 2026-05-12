@@ -116,6 +116,11 @@ const PROMO_PATTERN = new RegExp(
   'i'
 );
 
+export function toDisplayName(name = '') {
+  const cleaned = String(name || '').replace(/^(\[[^\]]*\]\s*)+/, '').trim();
+  return cleaned || String(name || '').trim();
+}
+
 export function toBaseName(name = '') {
   return String(name || '')
     .replace(/\[[^\]]*]/g, ' ')

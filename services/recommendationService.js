@@ -313,7 +313,8 @@ function toRecommendationItem(product, idx, parsedIntent) {
   return {
     rank: idx + 1,
     rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
-    name: product.name,
+    name: product.display_name || product.name,
+    raw_name: product.name,
     base_name: product.base_name,
     form: product.form,
     category_key: product.category_key || inferProductCategory(product) || null,
@@ -333,7 +334,7 @@ function toRecommendationItem(product, idx, parsedIntent) {
 
 function toPromotionItem(product) {
   return {
-    name: product.name,
+    name: product.display_name || product.name,
     base_name: product.base_name,
     form: product.form,
     price: product.price,

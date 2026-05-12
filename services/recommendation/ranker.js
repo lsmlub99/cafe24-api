@@ -306,6 +306,9 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
 
   const hasConditionSignal =
     Boolean(intent.skin_type) || (intent.concern || []).length > 0 || (intent.preference || []).length > 0;
+  const bestsellerBoost = (intent.sort_intent === 'popular' && !hasConditionSignal && product.is_best)
+    ? (policy.scoring.bestsellerPopularBoost || 0)
+    : 0;
   const conditionPriorityBonus =
     hasConditionSignal && condition >= policy.scoring.conditionStrongMatchThreshold ? policy.scoring.conditionPriorityBonus : 0;
 
@@ -333,6 +336,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     promoPenalty +
     bundlePenalty +
     conditionPriorityBonus +
+    bestsellerBoost +
     formMatchBonus +
     formMismatchPenalty -
     reactivePenalty -
@@ -375,6 +379,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     bundle_penalty: bundlePenalty,
     category_gate: categoryGate,
     condition_priority_bonus: conditionPriorityBonus,
+    bestseller_boost: bestsellerBoost,
     form_mismatch_penalty: formMismatchPenalty,
     form_match_bonus: formMatchBonus,
     reactive_penalty: reactivePenalty,

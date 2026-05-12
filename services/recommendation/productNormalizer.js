@@ -1,4 +1,4 @@
-import { lower, parseDateMs, parsePrice, toBaseName, isPromoName, BUNDLE_PREFIX_RE } from './shared.js';
+import { lower, parseDateMs, parsePrice, toBaseName, toDisplayName, isPromoName, BUNDLE_PREFIX_RE } from './shared.js';
 import { extractFeatureVector } from './featureExtractor.js';
 
 export function extractCategoryIds(raw = {}) {
@@ -46,6 +46,7 @@ export function extractProductAttributes(raw = {}, name = '') {
       raw.simple_description || '',
       raw.search_preview || '',
       raw.search_features || '',
+      String(raw.product_tag || '').replace(/,/g, ' '),
       (raw.attributes?.category_tags || []).join(' '),
       (raw.attributes?.concern_tags || []).join(' '),
       (raw.attributes?.texture_tags || []).join(' '),
@@ -108,6 +109,7 @@ export function extractProductAttributes(raw = {}, name = '') {
 
 export function normalizeCafe24Product(raw = {}, taxonomy) {
   const name = raw.product_name || raw.name || '';
+  const displayName = toDisplayName(name);
   const categoryIds = extractCategoryIds(raw);
   const priceValue = parsePrice(raw.price || raw.retail_price || 0);
 
@@ -116,10 +118,11 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
   else if (image.startsWith('/')) image = `https://cellfusionc.co.kr${image}`;
   image = image.replace('http:', 'https:');
 
+  const productTagText = String(raw.product_tag || '').replace(/,/g, ' ');
   const text = lower(
-    `${name} ${raw.summary_description || ''} ${raw.simple_description || ''} ${raw.search_preview || ''} ${
+    `${displayName} ${raw.summary_description || ''} ${raw.simple_description || ''} ${raw.search_preview || ''} ${
       raw.search_features || ''
-    }`
+    } ${productTagText}`
   );
 
   const concernTags = Array.isArray(raw.attributes?.concern_tags) ? raw.attributes.concern_tags : [];
@@ -127,13 +130,15 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
   const textureTags = Array.isArray(raw.attributes?.texture_tags) ? raw.attributes.texture_tags : [];
   const categoryTags = Array.isArray(raw.attributes?.category_tags) ? raw.attributes.category_tags : [];
   const roleTags = Array.isArray(raw.attributes?.role_tags) ? raw.attributes.role_tags : [];
-  const derivedAttrs = extractProductAttributes(raw, name);
+  const derivedAttrs = extractProductAttributes(raw, displayName);
 
   const normalized = {
     id: String(raw.product_no || raw.product_id || raw.id || ''),
     name,
     base_name: toBaseName(name),
-    form: detectProductForm(name, text, taxonomy),
+    display_name: displayName,
+    product_tags: productTagText.split(/\s+/).map((s) => s.trim()).filter(Boolean),
+    form: detectProductForm(displayName, text, taxonomy),
     category_ids: categoryIds,
     summary_description: raw.summary_description || raw.simple_description || '',
     text,

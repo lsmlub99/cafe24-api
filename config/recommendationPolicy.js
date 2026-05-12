@@ -18,6 +18,7 @@ export const RECOMMENDATION_POLICY = {
     ratingCap: 20,
     salesCap: 25,
     bestTagBonus: 6,
+    bestsellerPopularBoost: 30,
     conditionHitWeight: 6,
     conditionCap: 48,
     conditionWeight: 1.35,

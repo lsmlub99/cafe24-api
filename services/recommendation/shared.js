@@ -128,7 +128,7 @@ export function toBaseName(name = '') {
 }
 
 // Quantity bundle prefix like [1+1], [1+1+1], [2+1] — these are real products, not samples/gifts
-const BUNDLE_PREFIX_RE = /^\[(?:\d+\+)+\d+\]/;
+export const BUNDLE_PREFIX_RE = /^\[(?:\d+\+)+\d+\]/;
 
 export function hasExplicitCreamFormPhrase(text = '') {
   const src = String(text || '').toLowerCase();

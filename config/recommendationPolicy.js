@@ -12,6 +12,7 @@ export const RECOMMENDATION_POLICY = {
   },
   scoring: {
     categoryGate: 1000,
+    bundlePenalty: -20,
     promoPenalty: -12,
     reviewCap: 25,
     ratingCap: 20,
@@ -50,7 +51,7 @@ export const RECOMMENDATION_POLICY = {
     strictOnExplicitForm: false,
     formMatchBonus: 18,
     sameScoreBand: 3,
-    minFormMatchInMain: 2,
+    minFormMatchInMain: 3,
     maxNonMatchInMain: 1,
     defaultMainFormsByCategory: {
       sunscreen: ['cream', 'lotion'],

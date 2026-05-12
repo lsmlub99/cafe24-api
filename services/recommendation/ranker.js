@@ -301,6 +301,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   const intentFit = getRequestIntentScore(product, intent, policy, condition);
   const priceIntentScore = getPriceIntentScore(product, intent);
   const promoPenalty = product.is_promo ? policy.scoring.promoPenalty : 0;
+  const bundlePenalty = product.is_bundle ? (policy.scoring.bundlePenalty || 0) : 0;
   const categoryGate = categoryLocked ? policy.scoring.categoryGate : 0;
 
   const hasConditionSignal =
@@ -330,6 +331,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     priceIntentScore +
     queryMatch +
     promoPenalty +
+    bundlePenalty +
     conditionPriorityBonus +
     formMatchBonus +
     formMismatchPenalty -
@@ -370,6 +372,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     semantic_boost: Number(semanticBoost.toFixed(3)),
     query_match_score: Number(queryMatch.toFixed(3)),
     promo_penalty: promoPenalty,
+    bundle_penalty: bundlePenalty,
     category_gate: categoryGate,
     condition_priority_bonus: conditionPriorityBonus,
     form_mismatch_penalty: formMismatchPenalty,

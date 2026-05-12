@@ -1,4 +1,4 @@
-import { lower, parseDateMs, parsePrice, toBaseName, isPromoName } from './shared.js';
+import { lower, parseDateMs, parsePrice, toBaseName, isPromoName, BUNDLE_PREFIX_RE } from './shared.js';
 import { extractFeatureVector } from './featureExtractor.js';
 
 export function extractCategoryIds(raw = {}) {
@@ -77,7 +77,7 @@ export function extractProductAttributes(raw = {}, name = '') {
     .replace(/\[[^\]]*]/g, ' ')
     .trim()
     .split(/\s+/)
-    .slice(0, 2)
+    .slice(0, 1)
     .join(' ');
   const lineKey = lineTags[0] ? lower(String(lineTags[0]).trim()) : lower(nameLineGuess);
 
@@ -142,6 +142,7 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
     derived_attributes: derivedAttrs,
     line_key: derivedAttrs.line_key || '',
     is_promo: isPromoName(name),
+    is_bundle: BUNDLE_PREFIX_RE.test(name),
     is_new: Boolean(raw.is_new),
     is_best: Boolean(raw.is_best),
     is_event: Boolean(raw.is_event),

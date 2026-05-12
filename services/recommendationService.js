@@ -111,6 +111,7 @@ function buildReasoningTags(parsedIntent) {
 }
 
 function reinforceKeywordConstraints(parsedIntent = {}, args = {}) {
+  if (parsedIntent.variety_intent) return parsedIntent;
   const rawQuery = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
   const extracted = extractProductKeywordConstraints(rawQuery, RECOMMENDATION_TAXONOMY.productKeywordDictionary || []);
   const merged = [
@@ -572,7 +573,7 @@ function collectPromotions(normalizedProducts, parsedIntent, mainRecommendations
   const usedBase = new Set((mainRecommendations || []).map((item) => item.base_name));
 
   const promos = normalizedProducts
-    .filter((p) => p.is_promo || p.is_event)
+    .filter((p) => p.is_promo || p.is_event || p.is_bundle)
     .filter((p) => !usedBase.has(p.base_name))
     .filter((p) => !parsedIntent.requested_category || categoryMatches(p, parsedIntent))
     .sort((a, b) => (b.review_count + b.sales_count) - (a.review_count + a.sales_count));
@@ -897,7 +898,7 @@ export const recommendationService = {
         );
       }
       logger.info(
-        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} form_match_bonus=${breakdown.form_match_bonus ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} reason_code=${breakdown.reason_code || 'none'} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
+        `[Rank Debug] rank=${idx + 1} product="${item.name}" form=${item.form} base_score=${breakdown.base_score ?? item._base_score ?? 0} condition_score=${breakdown.condition_score ?? 0} quality_score=${breakdown.quality_score ?? 0} intent_score=${breakdown.intent_score ?? 0} novelty_score=${breakdown.novelty_score ?? 0} semantic_score=${breakdown.semantic_score ?? 0} semantic_boost=${breakdown.semantic_boost ?? 0} form_match_bonus=${breakdown.form_match_bonus ?? 0} price_intent_score=${breakdown.price_intent_score ?? 0} query_match_score=${breakdown.query_match_score ?? 0} bundle_penalty=${breakdown.bundle_penalty ?? 0} reactive_penalty=${breakdown.reactive_penalty ?? 0} repeat_penalty=${breakdown.repeat_penalty ?? 0} negative_scope_penalty=${breakdown.negative_scope_penalty ?? 0} reason_code=${breakdown.reason_code || 'none'} final_rank_reason="${breakdown.final_rank_reason || 'n/a'}"`
       );
     });
 

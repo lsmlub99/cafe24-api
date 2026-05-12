@@ -435,7 +435,7 @@ export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy, 
 
   let workingPool = pool;
   if (!includePromo) {
-    workingPool = workingPool.filter((p) => !p.is_promo);
+    workingPool = workingPool.filter((p) => !p.is_promo && !p.is_bundle);
   }
 
   if (!category_locked) {

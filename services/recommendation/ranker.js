@@ -306,7 +306,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
 
   const hasConditionSignal =
     Boolean(intent.skin_type) || (intent.concern || []).length > 0 || (intent.preference || []).length > 0;
-  const bestsellerBoost = (intent.sort_intent === 'popular' && !hasConditionSignal && product.is_best)
+  const bestsellerBoost = (!hasConditionSignal && product.is_best)
     ? (policy.scoring.bestsellerPopularBoost || 0)
     : 0;
   const conditionPriorityBonus =

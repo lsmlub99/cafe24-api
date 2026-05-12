@@ -369,16 +369,17 @@ async function stage2Rerank(candidates, parsedIntent, policy) {
   ].join(' ');
 
   try {
-    const res = await openai.responses.create({
+    const res = await openai.chat.completions.create({
       model,
       temperature: 0.2,
-      input: [
+      response_format: { type: 'json_object' },
+      messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: JSON.stringify({ intent: parsedIntent, candidates: payload }) },
       ],
     });
 
-    const parsed = parseJsonObject((res.output_text || '').trim());
+    const parsed = parseJsonObject((res.choices?.[0]?.message?.content || '').trim());
     const ordered = Array.isArray(parsed?.ordered_ids) ? parsed.ordered_ids.map(String) : [];
     if (!ordered.length) return candidates;
 
@@ -507,15 +508,16 @@ async function generateNarrativeWithLLM(mainRecommendations = [], promotions = [
   ].join(' ');
 
   try {
-    const res = await openai.responses.create({
+    const res = await openai.chat.completions.create({
       model: config.NARRATOR_MODEL || config.RERANK_MODEL || RECOMMENDATION_POLICY.rerank.model,
       temperature: 0.3,
-      input: [
+      response_format: { type: 'json_object' },
+      messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: JSON.stringify(promptPayload) },
       ],
     });
-    const parsed = parseJsonObject((res.output_text || '').trim());
+    const parsed = parseJsonObject((res.choices?.[0]?.message?.content || '').trim());
     const text = String(parsed?.text || '').trim();
     return text || null;
   } catch (error) {
@@ -866,17 +868,17 @@ export const recommendationService = {
       formCounts: new Map(),
     };
 
-    const scored = candidates
-      .map((p) => {
-        const breakdown = calculateMainScoreBreakdown(p, parsedIntent, categoryLocked, RECOMMENDATION_POLICY, softContext);
-        return {
-          ...p,
-          _score_breakdown: breakdown,
-          _base_score: breakdown.base_score,
-        };
-      })
-      .sort((a, b) => b._base_score - a._base_score)
-      .slice(0, RECOMMENDATION_POLICY.limits.stage1TopK);
+    const scored = [];
+    for (const p of candidates) {
+      const breakdown = calculateMainScoreBreakdown(p, parsedIntent, categoryLocked, RECOMMENDATION_POLICY, softContext);
+      scored.push({ ...p, _score_breakdown: breakdown, _base_score: breakdown.base_score });
+      const lk = p.line_key || '';
+      const fk = p.form || '';
+      if (lk) softContext.lineCounts.set(lk, (softContext.lineCounts.get(lk) || 0) + 1);
+      if (fk) softContext.formCounts.set(fk, (softContext.formCounts.get(fk) || 0) + 1);
+    }
+    scored.sort((a, b) => b._base_score - a._base_score);
+    scored.splice(RECOMMENDATION_POLICY.limits.stage1TopK);
 
     logger.info(
       `[Rank Pool] candidates=${candidates.length} stage1=${scored.length} requested_category=${parsedIntent.requested_category || 'none'} requested_form=${parsedIntent.requested_form || 'none'}`

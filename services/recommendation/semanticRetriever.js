@@ -1,5 +1,27 @@
+const EMBEDDING_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const EMBEDDING_CACHE_MAX = 2000;
+
+// Cache entries: key → { vector, ts }
 const productEmbeddingCache = new Map();
 const queryEmbeddingCache = new Map();
+
+function cacheGet(map, key) {
+  const entry = map.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > EMBEDDING_CACHE_TTL_MS) {
+    map.delete(key);
+    return undefined;
+  }
+  return entry.vector;
+}
+
+function cacheSet(map, key, vector) {
+  if (map.size >= EMBEDDING_CACHE_MAX) {
+    // evict oldest entry
+    map.delete(map.keys().next().value);
+  }
+  map.set(key, { vector, ts: Date.now() });
+}
 
 function hashText(input = '') {
   let hash = 2166136261;
@@ -160,7 +182,7 @@ async function ensureProductEmbeddings(products = [], openai, model, batchSize =
     const text = buildProductEmbeddingText(p);
     const key = `${model}:${p.id}:${hashText(text)}`;
     p._semantic_embedding_key = key;
-    if (!productEmbeddingCache.has(key)) missing.push({ key, text });
+    if (cacheGet(productEmbeddingCache, key) === undefined) missing.push({ key, text });
   }
 
   for (let i = 0; i < missing.length; i += batchSize) {
@@ -170,16 +192,17 @@ async function ensureProductEmbeddings(products = [], openai, model, batchSize =
       model,
       chunk.map((x) => x.text)
     );
-    chunk.forEach((item, idx) => productEmbeddingCache.set(item.key, vectors[idx] || []));
+    chunk.forEach((item, idx) => cacheSet(productEmbeddingCache, item.key, vectors[idx] || []));
   }
 }
 
 async function getQueryEmbedding(intent, openai, model, queryText) {
   const text = buildQueryEmbeddingText(intent, queryText);
   const key = `${model}:${hashText(text)}`;
-  if (queryEmbeddingCache.has(key)) return queryEmbeddingCache.get(key);
+  const cached = cacheGet(queryEmbeddingCache, key);
+  if (cached !== undefined) return cached;
   const [vec] = await embedInputs(openai, model, [text]);
-  queryEmbeddingCache.set(key, vec || []);
+  cacheSet(queryEmbeddingCache, key, vec || []);
   return vec || [];
 }
 
@@ -282,7 +305,7 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
 
     const scored = candidates
       .map((p) => {
-        const vector = productEmbeddingCache.get(p._semantic_embedding_key) || [];
+        const vector = cacheGet(productEmbeddingCache, p._semantic_embedding_key) || [];
         const cosine = vector.length ? dotProduct(queryVector, vector) : 0;
         const semanticScore = Number((((cosine + 1) / 2) * 100).toFixed(3));
         return { ...p, _semantic_score: semanticScore, _semantic_weight: semanticWeight };

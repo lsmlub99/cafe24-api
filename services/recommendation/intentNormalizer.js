@@ -158,16 +158,17 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
   if (!openai) return { intent: parsedIntent, source: 'rule' };
 
   try {
-    const res = await openai.responses.create({
+    const res = await openai.chat.completions.create({
       model,
       temperature: 0.1,
-      input: [
+      response_format: { type: 'json_object' },
+      messages: [
         { role: 'system', content: buildSystemPrompt(taxonomy) },
         { role: 'user', content: buildUserPrompt(args, parsedIntent) },
       ],
     });
 
-    const parsed = parseJsonObject((res.output_text || '').trim());
+    const parsed = parseJsonObject((res.choices?.[0]?.message?.content || '').trim());
     if (!parsed || typeof parsed !== 'object') {
       return { intent: parsedIntent, source: 'rule' };
     }

@@ -16,6 +16,7 @@ const ingredientDetailCache = new Map();
 // 29=유형별>선케어, 93=쇼핑>선케어 — products may be split across both
 const CATEGORY_ID_SEEDS = {
   선케어: [29, 93],
+  베스트: [47, 147, 148, 149, 150, 151, 152, 153],
 };
 
 // Bestseller category IDs (confirmed in Cafe24 admin)

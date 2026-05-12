@@ -458,6 +458,7 @@ async function syncAllProductsCore(accessToken) {
           if (!productToCategories[pNo]) productToCategories[pNo] = [];
           if (!productToCategories[pNo].includes(Number(catId))) productToCategories[pNo].push(Number(catId));
         });
+        logger.info(`[Sync] Fallback cat${catId}: ${items.length} products found`);
         logs.push(`Cat ${catId} fallback found ${items.length} items`);
       } catch (err) {
         logs.push(`Cat ${catId} fallback ERR: ${err.message}`);
@@ -531,7 +532,10 @@ async function syncAllProductsCore(accessToken) {
     });
 
     lastSyncTime = Date.now();
-    logger.info(`[Sync SUCCESS] Cached products: ${allProductsCache.length}`);
+    const bestCount = allProductsCache.filter((p) => p.is_best).length;
+    const bestNames = allProductsCache.filter((p) => p.is_best).map((p) => p.product_name).slice(0, 5).join(', ');
+    logger.info(`[Sync SUCCESS] Cached products: ${allProductsCache.length} | is_best=${bestCount} (e.g. ${bestNames || 'none'})`);
+
     return { products: allProductsCache };
   } catch (e) {
     logger.error('[Sync Error]:', e.message);

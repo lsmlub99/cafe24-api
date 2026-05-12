@@ -28,7 +28,6 @@ import {
 } from './recommendation/metrics.js';
 import { getSessionContext, updateSessionContext } from './recommendation/sessionContext.js';
 import { applySemanticSignals } from './recommendation/semanticRetriever.js';
-import { getCategoryIdsForTaxonomyKey } from './cafe24ApiService.js';
 
 let openaiClient = null;
 let openaiLoadAttempted = false;
@@ -836,12 +835,7 @@ export const recommendationService = {
   },
 
   get_primary_candidates(products = [], parsedIntent = {}, options = {}) {
-    let intent = parsedIntent;
-    if (intent.requested_category && !(intent.requested_category_ids?.length)) {
-      const catIds = getCategoryIdsForTaxonomyKey(intent.requested_category);
-      if (catIds.length) intent = { ...intent, requested_category_ids: catIds };
-    }
-    return retrievePrimaryCandidates(products, intent, RECOMMENDATION_TAXONOMY, RECOMMENDATION_POLICY, options);
+    return retrievePrimaryCandidates(products, parsedIntent, RECOMMENDATION_TAXONOMY, RECOMMENDATION_POLICY, options);
   },
 
   async rank_primary_recommendations(
@@ -980,6 +974,10 @@ export const recommendationService = {
       };
     }
     parsed = reinforceKeywordConstraints(parsed, args);
+
+    if (!parsed.requested_category_ids?.length && Array.isArray(args.target_category_ids) && args.target_category_ids.length) {
+      parsed = { ...parsed, requested_category_ids: args.target_category_ids.map(Number).filter(Number.isFinite) };
+    }
 
     logger.info(
       `[Intent] source=${normalizedIntentResult.source} category=${parsed.requested_category || 'none'} form=${parsed.requested_form || 'none'} skin=${parsed.skin_type || 'none'} concerns=${(parsed.concern || []).join('|') || 'none'} fit_issue=${(parsed.fit_issue || []).join('|') || 'none'} negative_scope=${parsed.negative_scope || 'none'} allow_category_switch=${parsed.allow_category_switch ? '1' : '0'} variety=${parsed.variety_intent ? '1' : '0'} product_keyword_constraints=${(parsed.product_keyword_constraints || []).join('|') || 'none'}`

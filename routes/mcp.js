@@ -8,7 +8,7 @@ import { recommendationService } from '../services/recommendationService.js';
 import { buildMcpToolResult as buildMcpToolResultContract } from './mcpResponseContract.js';
 
 const router = express.Router();
-let clientStream = null;
+const clientStreams = new Map(); // sessionId → res (SSE stream)
 
 const DEFAULT_BASE_URL = 'https://cafe24-api.onrender.com';
 const BASE_URL = (config.PUBLIC_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
@@ -84,10 +84,12 @@ const TOOLS = [
     },
     inputSchema: {
       type: 'object',
+      required: ['category'],
       properties: {
-        category: { type: 'string' },
-        skin_type: { type: 'string' },
-        concerns: { type: 'array', items: { type: 'string' } },
+        category: { type: 'string', description: '추천 카테고리 (예: 선크림, 토너, 세럼, 크림)' },
+        q: { type: 'string', description: '사용자 자연어 쿼리 (피부 고민, 제형 요청 등 전체 문장)' },
+        skin_type: { type: 'string', description: '피부 타입 (건성, 지성, 수부지, 민감성)' },
+        concerns: { type: 'array', items: { type: 'string' }, description: '피부 고민 목록 (보습, 진정, 유분, 톤업 등)' },
       },
     },
   },
@@ -177,17 +179,28 @@ function buildMcpToolResult({
   });
 }
 
-function sendToClient(msg) {
-  if (clientStream && !clientStream.writableEnded) {
-    clientStream.write('event: message\n');
-    clientStream.write(`data: ${JSON.stringify(msg)}\n\n`);
+function getSessionId(req) {
+  return (
+    req.headers['x-openai-conversation-id'] ||
+    req.headers['x-openai-session-id'] ||
+    req.headers['x-session-id'] ||
+    req.headers['x-request-id'] ||
+    'global'
+  );
+}
+
+function sendToClient(sessionId, msg) {
+  const stream = clientStreams.get(sessionId) || clientStreams.get('global');
+  if (stream && !stream.writableEnded) {
+    stream.write('event: message\n');
+    stream.write(`data: ${JSON.stringify(msg)}\n\n`);
   } else {
-    logger.warn('[MCP Stream] No active clientStream. Message not delivered via SSE.');
+    logger.warn(`[MCP Stream] No active clientStream for session=${sessionId}. Message not delivered via SSE.`);
   }
 }
 
-function sendError(id, code, message, data = undefined) {
-  sendToClient({
+function sendError(sessionId, id, code, message, data = undefined) {
+  sendToClient(sessionId, {
     jsonrpc: '2.0',
     id,
     error: { code, message, ...(data ? { data } : {}) },
@@ -502,12 +515,14 @@ function handleSseConnect(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.write('event: endpoint\ndata: /mcp/message\n\n');
   res.flushHeaders();
-  logger.mcpVerbose(`[MCP Stream] Connected path=${req.path}`);
 
-  clientStream = res;
+  const sessionId = getSessionId(req);
+  clientStreams.set(sessionId, res);
+  logger.mcpVerbose(`[MCP Stream] Connected path=${req.path} session=${sessionId} total=${clientStreams.size}`);
+
   res.on('close', () => {
-    logger.mcpVerbose(`[MCP Stream] Disconnected path=${req.path}`);
-    if (clientStream === res) clientStream = null;
+    if (clientStreams.get(sessionId) === res) clientStreams.delete(sessionId);
+    logger.mcpVerbose(`[MCP Stream] Disconnected path=${req.path} session=${sessionId} total=${clientStreams.size}`);
   });
 }
 
@@ -517,17 +532,21 @@ router.get('/sse', handleSseConnect);
 async function handleMcpMessage(req, res) {
   const { method, params, id } = req.body || {};
   const startedAt = Date.now();
+  const sessionId = getSessionId(req);
   res.status(202).send('Accepted');
 
+  const send = (msg) => sendToClient(sessionId, msg);
+  const sendErr = (errId, code, message, data = undefined) => sendError(sessionId, errId, code, message, data);
+
   if (method === 'tools/call' || method === 'resources/read') {
-    logger.info(`[MCP Inbound] method=${method} id=${id}`);
+    logger.info(`[MCP Inbound] method=${method} id=${id} session=${sessionId}`);
   } else {
-    logger.mcpVerbose(`[MCP Inbound] method=${method} id=${id}`);
+    logger.mcpVerbose(`[MCP Inbound] method=${method} id=${id} session=${sessionId}`);
   }
 
   try {
     if (method === 'initialize') {
-      sendToClient({
+      send({
         jsonrpc: '2.0',
         id,
         result: {
@@ -543,7 +562,7 @@ async function handleMcpMessage(req, res) {
 
     if (method === 'resources/list') {
       logger.mcpVerbose('[MCP Protocol] resources/list requested');
-      sendToClient({ jsonrpc: '2.0', id, result: { resources: RESOURCES } });
+      send({ jsonrpc: '2.0', id, result: { resources: RESOURCES } });
       return;
     }
 
@@ -554,13 +573,13 @@ async function handleMcpMessage(req, res) {
       logger.info(`[MCP Protocol] resources/read requested: ${requestedUri}`);
 
       if (!allowedUris.includes(normalized)) {
-        sendError(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: allowedUris });
+        sendErr(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: allowedUris });
         return;
       }
 
       const indexPath = path.join(process.cwd(), 'client/dist/index.html');
       if (!fs.existsSync(indexPath)) {
-        sendError(id, -32000, `Widget build not found at ${indexPath}`);
+        sendErr(id, -32000, `Widget build not found at ${indexPath}`);
         return;
       }
 
@@ -572,7 +591,7 @@ async function handleMcpMessage(req, res) {
       html = html.replace(/src="\//g, `src="${BASE_URL}/`);
       html = html.replace(/href="\//g, `href="${BASE_URL}/`);
 
-      sendToClient({
+      send({
         jsonrpc: '2.0',
         id,
         result: { contents: [{ uri: requestedUri, mimeType: RESOURCE_MIME_TYPE, text: html, _meta: RESOURCE_META }] },
@@ -581,25 +600,19 @@ async function handleMcpMessage(req, res) {
     }
 
     if (method === 'tools/list') {
-      sendToClient({ jsonrpc: '2.0', id, result: { tools: TOOLS } });
+      send({ jsonrpc: '2.0', id, result: { tools: TOOLS } });
       return;
     }
 
     if (method === 'tools/call') {
       const toolName = params?.name;
       if (toolName !== TOOL_NAME) {
-        sendError(id, -32601, `Tool not found: ${toolName}`);
+        sendErr(id, -32601, `Tool not found: ${toolName}`);
         return;
       }
 
-      const sessionHeaderKey =
-        req.headers['x-openai-conversation-id'] ||
-        req.headers['x-openai-session-id'] ||
-        req.headers['x-session-id'] ||
-        req.headers['x-request-id'] ||
-        'global';
       const toolArgs = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {};
-      const enrichedArgs = { ...toolArgs, __session_key: String(sessionHeaderKey) };
+      const enrichedArgs = { ...toolArgs, __session_key: sessionId };
       const toolResult = await executeTool(enrichedArgs);
       const finalResult = { ...toolResult };
       if (toolResult.structuredContent) {
@@ -616,20 +629,20 @@ async function handleMcpMessage(req, res) {
         : 0;
       const metric = recommendationService.getMetricsSnapshot?.();
       logger.info(
-        `[MCP Tool] ${TOOL_NAME} ok id=${id} recs=${recCount} elapsed_ms=${Date.now() - startedAt}` +
+        `[MCP Tool] ${TOOL_NAME} ok id=${id} session=${sessionId} recs=${recCount} elapsed_ms=${Date.now() - startedAt}` +
           (metric
             ? ` no_result_rate=${metric.no_result_rate} fallback_rate=${metric.fallback_rate} fallback_rate_rolling_100=${metric.fallback_rate_rolling_100 || 0} mismatch_rate_rolling_100=${metric.mismatch_rate_rolling_100 || 0} category_lock_violation_count=${metric.category_lock_violation_count} form_lock_violation_count=${metric.form_lock_violation_count || 0} explanation_mismatch_count=${metric.explanation_mismatch_count || 0}`
             : '')
       );
 
-      sendToClient({ jsonrpc: '2.0', id, result: finalResult });
+      send({ jsonrpc: '2.0', id, result: finalResult });
       return;
     }
 
-    sendError(id, -32601, `Method not found: ${method}`);
+    sendErr(id, -32601, `Method not found: ${method}`);
   } catch (error) {
     logger.error('[MCP Error]', error);
-    sendError(id, -32000, error.message);
+    sendErr(id, -32000, error.message);
   }
 }
 

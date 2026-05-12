@@ -211,6 +211,23 @@ function applySessionContextToIntent(parsedIntent = {}, sessionContext = {}) {
   };
 }
 
+const CAUTION_BY_CATEGORY = {
+  sunscreen: '야외 활동이 길면 2~3시간 간격 재도포를 권장합니다.',
+  cushion: '야외 활동 시 2~3시간마다 덧발라 자외선 차단 효과를 유지하세요.',
+  bb: '자외선 차단 성분이 포함된 경우 야외 활동 시 추가 도포를 권장합니다.',
+  toner: '자극이 느껴지면 사용을 중단하고 전문가와 상담하세요.',
+  serum: '새 성분 도입 시 패치 테스트 후 사용을 권장합니다.',
+  cream: '새 성분 도입 시 패치 테스트 후 사용을 권장합니다.',
+  cleansing: '눈가 등 예민한 부위는 자극에 주의하세요.',
+  mask: '주 1~2회 사용을 권장하며 과다 사용 시 자극이 생길 수 있어요.',
+  inner: '식품이므로 성분 알러지 여부를 확인 후 섭취하세요.',
+};
+
+function getCaution(product, parsedIntent) {
+  const category = parsedIntent?.requested_category || product?.category_key || 'sunscreen';
+  return CAUTION_BY_CATEGORY[category] || '피부 트러블 발생 시 사용을 중단하고 전문가와 상담하세요.';
+}
+
 function buildDetail(product, parsedIntent) {
   const reasons = [];
   const tips = [];
@@ -244,7 +261,7 @@ function buildDetail(product, parsedIntent) {
   return {
     why_pick: reasons.slice(0, 2).join(' '),
     usage_tip: tips[0],
-    caution: '야외 노출 시간이 길면 2~3시간 간격 재도포를 권장합니다.',
+    caution: getCaution(product, parsedIntent),
   };
 }
 
@@ -286,7 +303,7 @@ function buildDetailFromReason(product, parsedIntent) {
     reason_facts: breakdown.reason_facts || {},
     why_pick: whyPick,
     usage_tip: tips[0],
-    caution: '야외 활동이 길면 2~3시간 간격 재도포를 권장합니다.',
+    caution: getCaution(product, parsedIntent),
   };
 }
 

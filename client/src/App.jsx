@@ -413,8 +413,13 @@ function buildPersonalizedCardReason(item, widgetData, rank) {
   };
   const featureText = FORM_FEATURE[form] || '균형 잡힌 사용감이';
 
+  const sentence1 =
+    rank === 1 ? `${concernText} 때문에 가장 먼저 추천드려요.`
+    : rank === 2 ? `${concernText}에 맞는 비교 옵션이에요.`
+    : '취향에 따라 함께 고려해볼 만해요.';
+
   return {
-    sentence1: `${concernText} 때문에 추천했어요.`,
+    sentence1,
     sentence2: `${featureText} 도움이 될 거예요.`,
   };
 }
@@ -962,7 +967,7 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
           {Array.from({ length: 3 }, (_, idx) => {
             const product = widgetData.recommendations[idx] || null;
             const rank = idx + 1;
@@ -985,9 +990,9 @@ function App() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    minHeight: '320px',
+                    aspectRatio: '3/4',
                     color: '#bbb',
-                    fontSize: '14px',
+                    fontSize: '12px',
                     textAlign: 'center',
                   }}
                 >
@@ -1008,8 +1013,8 @@ function App() {
                 key={`${product.buy_url || product.name}-${idx}`}
                 style={{
                   border: '1px solid #eee',
-                  borderRadius: '12px',
-                  padding: '16px',
+                  borderRadius: '10px',
+                  padding: '12px',
                   background: '#fff',
                   display: 'flex',
                   flexDirection: 'column',
@@ -1021,11 +1026,11 @@ function App() {
                     alignSelf: 'flex-start',
                     background: badge.bg,
                     color: '#fff',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: 'bold',
-                    padding: '3px 8px',
+                    padding: '3px 6px',
                     borderRadius: '4px',
-                    marginBottom: '10px',
+                    marginBottom: '8px',
                   }}
                 >
                   {badge.label}
@@ -1036,8 +1041,8 @@ function App() {
                     width: '100%',
                     paddingBottom: '100%',
                     position: 'relative',
-                    marginBottom: '12px',
-                    borderRadius: '8px',
+                    marginBottom: '10px',
+                    borderRadius: '6px',
                     overflow: 'hidden',
                     background: '#f5f5f5',
                   }}
@@ -1050,36 +1055,36 @@ function App() {
                 </div>
 
                 {product.brand && (
-                  <div style={{ fontSize: '14px', color: '#999', marginBottom: '4px', lineHeight: '1.4' }}>{product.brand}</div>
+                  <div style={{ fontSize: '11px', color: '#999', marginBottom: '3px', lineHeight: '1.3' }}>{product.brand}</div>
                 )}
 
                 <div
                   style={{
                     fontWeight: 'bold',
-                    fontSize: '16px',
-                    lineHeight: '1.5',
-                    marginBottom: '8px',
+                    fontSize: '13px',
+                    lineHeight: '1.4',
+                    marginBottom: '6px',
                     ...clampMultilineStyle(2),
                   }}
                 >
                   {product.name}
                 </div>
 
-                <div style={{ marginBottom: '12px' }}>
+                <div style={{ marginBottom: '8px' }}>
                   {hasPrice ? (
-                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#111' }}>{priceDisplay}</span>
+                    <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#111' }}>{priceDisplay}</span>
                   ) : (
-                    <span style={{ fontSize: '14px', color: '#999' }}>가격 문의</span>
+                    <span style={{ fontSize: '12px', color: '#999' }}>가격 문의</span>
                   )}
                 </div>
 
                 <div
                   style={{
                     background: '#F8F8F8',
-                    borderRadius: '8px',
-                    padding: '10px 12px',
-                    marginBottom: '12px',
-                    fontSize: '14px',
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    marginBottom: '10px',
+                    fontSize: '11px',
                     lineHeight: '1.6',
                     color: '#555',
                     flexGrow: 1,
@@ -1099,9 +1104,9 @@ function App() {
                     textAlign: 'center',
                     background: hasPrice ? '#B31312' : '#ccc',
                     color: '#fff',
-                    padding: '12px',
-                    borderRadius: '8px',
-                    fontSize: '14px',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
                     border: 'none',
                     cursor: hasPrice ? 'pointer' : 'not-allowed',
                     fontWeight: 'bold',

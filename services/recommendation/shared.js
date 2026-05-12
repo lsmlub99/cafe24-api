@@ -130,6 +130,14 @@ export function toBaseName(name = '') {
 // Quantity bundle prefix like [1+1], [1+1+1], [2+1] — these are real products, not samples/gifts
 const BUNDLE_PREFIX_RE = /^\[(?:\d+\+)+\d+\]/;
 
+export function hasExplicitCreamFormPhrase(text = '') {
+  const src = String(text || '').toLowerCase();
+  if (!src) return false;
+  return ['크림 타입', '크림형', '크림 제형', '선케어 크림', 'cream type', 'cream-form', 'cream form'].some((token) =>
+    src.includes(token)
+  );
+}
+
 export function isPromoName(name = '') {
   const t = String(name || '');
   if (BUNDLE_PREFIX_RE.test(t)) return false;

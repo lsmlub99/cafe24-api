@@ -135,6 +135,17 @@ export const RECOMMENDATION_TAXONOMY = {
   },
   noveltyKeywords: ['신상', '신제품', '새로 나온', 'new'],
   popularityKeywords: ['인기', '베스트', 'best', 'popular', '잘나가는'],
+  productKeywordDictionary: [
+    { canonical: '어드밴스드 클리어', variants: ['어드밴스드 클리어', 'advanced clear'] },
+    { canonical: '더마 릴리프', variants: ['더마 릴리프', 'derma relief'] },
+    { canonical: '레이저 UV', variants: ['레이저 uv', 'laser uv'] },
+    { canonical: '아쿠아티카', variants: ['아쿠아티카', 'aquatica'] },
+    { canonical: '에어리 핏', variants: ['에어리 핏', 'airy fit'] },
+    { canonical: '잡티 토닝', variants: ['잡티 토닝'] },
+    { canonical: '쿨링', variants: ['쿨링', 'cooling'] },
+    { canonical: '포어', variants: ['포어', 'pore'] },
+    { canonical: '시카', variants: ['시카', 'cica'] },
+  ],
   crossSellCategory: {
     sunscreen: ['toner', 'cream', 'serum'],
     toner: ['serum', 'cream'],

@@ -1,4 +1,4 @@
-import { parseJsonObject } from './shared.js';
+import { parseJsonObject, hasExplicitCreamFormPhrase } from './shared.js';
 
 const ALLOWED = {
   requested_category: ['sunscreen', 'toner', 'serum', 'cream', 'cushion', 'bb', 'cleansing', 'mask', 'inner'],
@@ -37,20 +37,6 @@ function sanitizeArray(input, allowed) {
 function sanitizeEnum(value, allowed) {
   const v = String(value || '').trim();
   return allowed.includes(v) ? v : null;
-}
-
-function hasExplicitCreamFormPhrase(text = '') {
-  const src = String(text || '').toLowerCase();
-  if (!src) return false;
-  return [
-    '크림 타입',
-    '크림형',
-    '크림 제형',
-    '선케어 크림',
-    'cream type',
-    'cream-form',
-    'cream form',
-  ].some((token) => src.includes(token));
 }
 
 function sanitizeStringArray(input) {

@@ -112,7 +112,7 @@ function buildReasoningTags(parsedIntent) {
 
 function reinforceKeywordConstraints(parsedIntent = {}, args = {}) {
   const rawQuery = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
-  const extracted = extractProductKeywordConstraints(rawQuery);
+  const extracted = extractProductKeywordConstraints(rawQuery, RECOMMENDATION_TAXONOMY.productKeywordDictionary || []);
   const merged = [
     ...new Set([...(parsedIntent.product_keyword_constraints || []), ...extracted].map((x) => String(x || '').trim()).filter(Boolean)),
   ];
@@ -575,7 +575,7 @@ function collectPromotions(normalizedProducts, parsedIntent, mainRecommendations
     .filter((p) => p.is_promo || p.is_event)
     .filter((p) => !usedBase.has(p.base_name))
     .filter((p) => !parsedIntent.requested_category || categoryMatches(p, parsedIntent))
-    .sort((a, b) => b.price_value - a.price_value);
+    .sort((a, b) => (b.review_count + b.sales_count) - (a.review_count + a.sales_count));
 
   return dedupeByBase(promos).slice(0, maxCount).map(toPromotionItem);
 }

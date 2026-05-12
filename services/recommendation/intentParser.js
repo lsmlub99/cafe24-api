@@ -1,4 +1,4 @@
-import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower } from './shared.js';
+import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower, hasExplicitCreamFormPhrase } from './shared.js';
 
 const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)?/g;
 
@@ -14,17 +14,8 @@ const CATEGORY_EXIT_WORDS = [
 ];
 const VARIETY_WORDS = ['다른', '다른거', '다른 건', '또 다른', '새로운', '말고', '없나요', '없어?', 'other option'];
 
-const PRODUCT_KEYWORD_DICTIONARY = [
-  { canonical: '어드밴스드 클리어', variants: ['어드밴스드 클리어', 'advanced clear'] },
-  { canonical: '더마 릴리프', variants: ['더마 릴리프', 'derma relief'] },
-  { canonical: '레이저 UV', variants: ['레이저 uv', 'laser uv'] },
-  { canonical: '아쿠아티카', variants: ['아쿠아티카', 'aquatica'] },
-  { canonical: '에어리 핏', variants: ['에어리 핏', 'airy fit'] },
-  { canonical: '잡티 토닝', variants: ['잡티 토닝'] },
-  { canonical: '쿨링', variants: ['쿨링', 'cooling'] },
-  { canonical: '포어', variants: ['포어', 'pore'] },
-  { canonical: '시카', variants: ['시카', 'cica'] },
-];
+// Defined in config/recommendationPolicy.js RECOMMENDATION_TAXONOMY.productKeywordDictionary
+// Injected via taxonomy parameter in parseUserIntent — no hardcoded list here
 
 const CONCERN_NORMALIZATION = [
   { key: 'sebum_control', words: ['유분', '번들', '피지', '기름', '모공'] },
@@ -49,11 +40,11 @@ function normalizeKeywordText(text = '') {
     .trim();
 }
 
-export function extractProductKeywordConstraints(text = '') {
+export function extractProductKeywordConstraints(text = '', dictionary = []) {
   const source = normalizeKeywordText(text);
-  if (!source) return [];
+  if (!source || !dictionary.length) return [];
 
-  const sorted = [...PRODUCT_KEYWORD_DICTIONARY].sort((a, b) => {
+  const sorted = [...dictionary].sort((a, b) => {
     const aLen = Math.max(...a.variants.map((v) => normalizeKeywordText(v).length));
     const bLen = Math.max(...b.variants.map((v) => normalizeKeywordText(v).length));
     return bLen - aLen;
@@ -68,20 +59,6 @@ export function extractProductKeywordConstraints(text = '') {
     if (matched && !out.includes(entry.canonical)) out.push(entry.canonical);
   }
   return out;
-}
-
-function hasExplicitCreamFormPhrase(text = '') {
-  const src = lower(text);
-  if (!src) return false;
-  return includesAny(src, [
-    '크림 타입',
-    '크림형',
-    '크림 제형',
-    '선케어 크림',
-    'cream type',
-    'cream-form',
-    'cream form',
-  ]);
 }
 
 function detectExplicitSunForm(text = '') {
@@ -172,7 +149,7 @@ export function parseUserIntent(args = {}, taxonomy) {
   const categoryText = `${args.category || ''} ${q}`.trim();
   const formText = `${args.form || ''} ${args.category || ''} ${q}`.trim();
   const fullSignalText = `${q} ${concernsText} ${args.category || ''}`.trim();
-  const productKeywordConstraints = extractProductKeywordConstraints(fullSignalText);
+  const productKeywordConstraints = extractProductKeywordConstraints(fullSignalText, taxonomy.productKeywordDictionary || []);
 
   const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
   const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);

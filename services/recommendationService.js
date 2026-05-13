@@ -1028,7 +1028,12 @@ export const recommendationService = {
     });
 
     let { category_locked, form_locked, allowed_main_forms = [] } = strictPrimary;
-    let candidates = Array.isArray(broadPrimary.candidates) ? broadPrimary.candidates : [];
+    // Condition queries (skin type / concern specified) use strict form pool so non-primary
+    // forms (stick, spray) don't outrank cream/lotion candidates.
+    const useStrictPool = !isSimpleQuery && !shouldRelaxFormAtStart && !isExplicitStrictMain;
+    let candidates = useStrictPool && Array.isArray(strictPrimary.candidates) && strictPrimary.candidates.length > 0
+      ? strictPrimary.candidates
+      : (Array.isArray(broadPrimary.candidates) ? broadPrimary.candidates : []);
     if (isExplicitStrictMain) {
       candidates = Array.isArray(strictPrimary.candidates) ? strictPrimary.candidates : [];
       form_locked = true;

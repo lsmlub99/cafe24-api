@@ -29,8 +29,9 @@ function findWidgetDataCandidate(node, depth = 0) {
   if (!isObject(parsed)) return null;
   if (isObject(parsed._meta?.widgetData)) return parsed._meta.widgetData;
   if (isObject(parsed.widgetData)) return parsed.widgetData;
+  if (isObject(parsed.toolResponseMetadata?.widgetData)) return parsed.toolResponseMetadata.widgetData;
 
-  const directKeys = ['_meta', 'result', 'payload', 'data', 'output', 'toolOutput', 'params', 'structuredContent'];
+  const directKeys = ['_meta', 'toolResponseMetadata', 'result', 'payload', 'data', 'output', 'toolOutput', 'params', 'structuredContent'];
   for (const key of directKeys) {
     if (parsed[key] == null) continue;
     const found = findWidgetDataCandidate(parsed[key], depth + 1);
@@ -854,6 +855,8 @@ function App() {
     const handleMessage = (event) => {
       if (!event?.data) return;
       applyWidgetData(event.data);
+      if (isObject(event.data?.toolResponseMetadata)) applyWidgetData(event.data.toolResponseMetadata);
+      if (isObject(event.data?.params?.toolResponseMetadata)) applyWidgetData(event.data.params.toolResponseMetadata);
     };
 
     window.addEventListener('message', handleMessage);
@@ -864,13 +867,14 @@ function App() {
       window.__MCP_DATA__,
       window.openai?.appData,
       window.openai?.toolOutput,
+      window.openai?.toolResponseMetadata,
       window.__TOOL_OUTPUT__,
       window.__WIDGET_DATA__,
     ];
     bootstrapCandidates.forEach((c) => c && applyWidgetData(c));
 
     fallbackPollRef.current = window.setInterval(() => {
-      const candidates = [window.openai?.toolOutput, window.openai?.appData, window.__TOOL_OUTPUT__, window.__WIDGET_DATA__];
+      const candidates = [window.openai?.toolOutput, window.openai?.toolResponseMetadata, window.openai?.appData, window.__TOOL_OUTPUT__, window.__WIDGET_DATA__];
       candidates.forEach((c) => c && applyWidgetData(c));
     }, 400);
 

@@ -32,8 +32,7 @@ function buildWidgetData({
 
 function buildSafeBodyText(consultText = '') {
   const text = String(consultText || '').trim();
-  const body = text || '조건에 맞는 제품을 찾지 못했어요.';
-  return `[MANDATORY OUTPUT INSTRUCTION]\nYour reply to the user MUST be the text between ===BEGIN=== and ===END=== copied verbatim. Do NOT add tables, prices, bullet lists, extra sections, or analysis of any kind. Do NOT rephrase. Only one short follow-up question is allowed after ===END===.\n\n===BEGIN===\n${body}\n===END===`;
+  return text || '조건에 맞는 제품을 찾지 못했어요.';
 }
 
 export function buildMcpToolResult({

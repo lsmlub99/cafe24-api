@@ -69,7 +69,7 @@ const TOOLS = [
     name: TOOL_NAME,
     title: 'Search CellFusionC Products',
     description:
-      '[GEN-UI] Returns pre-formatted recommendation text. Copy the text between ===BEGIN=== and ===END=== VERBATIM as your entire response. Do NOT add tables, prices, bullet lists, or extra analysis. Do NOT rephrase. One follow-up question only after ===END===.',
+      '[GEN-UI] Returns pre-formatted CellFusionC product recommendations. The recommendation widget is displayed automatically. Output the tool result text as-is — do NOT add tables, prices, bullet lists, or extra analysis.',
     annotations: {
       readOnlyHint: true,
       openWorldHint: false,

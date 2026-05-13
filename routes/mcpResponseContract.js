@@ -1,36 +1,8 @@
-function isTruthyEnv(value) {
-  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
-}
-
 function buildMinimalStructuredContent(bodyTemplateVersion = 'fixed_v1') {
   return {
     status: 'ok',
     display_mode: 'widget',
     body_template_version: bodyTemplateVersion,
-  };
-}
-
-function buildLegacyStructuredContent({
-  requestedCategory = null,
-  canonicalMain = [],
-  canonicalSecondary = [],
-  reasoningTags = [],
-  appliedPolicy = {},
-  promotions = [],
-  safeSummary = {},
-}) {
-  return {
-    requested_category: requestedCategory,
-    main_recommendations: canonicalMain,
-    secondary_recommendations: canonicalSecondary,
-    reasoning_tags: reasoningTags,
-    applied_policy: appliedPolicy,
-    recommendations: canonicalMain,
-    promotions: promotions || [],
-    reference_recommendations: canonicalSecondary || [],
-    summary: safeSummary,
-    strategy: safeSummary.strategy || '',
-    conclusion: safeSummary.conclusion || '',
   };
 }
 
@@ -75,19 +47,8 @@ export function buildMcpToolResult({
   consultText = '',
   bodyTemplateVersion = 'fixed_v1',
   widgetHttpUri = '',
-  minimalStructuredEnv = process.env.MCP_MINIMAL_STRUCTURED,
 } = {}) {
-  const structuredContent = isTruthyEnv(minimalStructuredEnv)
-    ? buildMinimalStructuredContent(bodyTemplateVersion)
-    : buildLegacyStructuredContent({
-        requestedCategory,
-        canonicalMain,
-        canonicalSecondary,
-        reasoningTags,
-        appliedPolicy,
-        promotions,
-        safeSummary,
-      });
+  const structuredContent = buildMinimalStructuredContent(bodyTemplateVersion);
 
   return {
     content: [{ type: 'text', text: buildSafeBodyText(consultText) }],

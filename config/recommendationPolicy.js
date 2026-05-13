@@ -75,7 +75,7 @@ export const RECOMMENDATION_POLICY = {
 
 export const RECOMMENDATION_TAXONOMY = {
   categories: {
-    sunscreen: ['선케어', '선크림', '썬크림', '썬스크린', '선스크린', '선스틱', '선스프레이', '선세럼', 'sunscreen', 'sun'],
+    sunscreen: ['선케어', '선크림', '썬크림', '썬스크린', '선스크린', '선스틱', '선스프레이', '선세럼', 'sunscreen'],
     toner: ['토너', '스킨', 'toner'],
     serum: ['세럼', '앰플', 'serum', 'ampoule'],
     cream: ['크림', '로션', '수분크림', '보습크림', 'cream', 'lotion'],

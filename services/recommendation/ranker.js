@@ -451,7 +451,12 @@ export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy, 
 
   let workingPool = pool;
   if (!includePromo) {
-    workingPool = workingPool.filter((p) => !p.is_promo && !p.is_bundle);
+    workingPool = workingPool.filter((p) => {
+      if (p.is_promo || p.is_bundle) return false;
+      const sizeMatch = /(\d+(?:\.\d+)?)\s*(g|ml)/i.exec(p.name || '');
+      if (sizeMatch && Number(sizeMatch[1]) <= 10) return false;
+      return true;
+    });
   }
 
   if (!category_locked) {

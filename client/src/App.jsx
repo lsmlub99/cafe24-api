@@ -967,7 +967,7 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: widgetData.recommendations.length === 1 ? '1fr' : widgetData.recommendations.length === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: widgetData.recommendations.length === 1 ? 'minmax(auto, 280px)' : widgetData.recommendations.length === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '10px', justifyContent: widgetData.recommendations.length === 1 ? 'center' : undefined }}>
           {widgetData.recommendations.map((product, idx) => {
             const rank = idx + 1;
             const RANK_BADGE = {

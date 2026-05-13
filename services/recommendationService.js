@@ -589,7 +589,10 @@ function isCategoryMatchedByIntent(item = {}, parsedIntent = {}) {
     return ids.some((id) => requestedIds.includes(Number(id)));
   }
   if (!parsedIntent.requested_category) return true;
-  return item.category_key === parsedIntent.requested_category;
+  if (item.category_key === parsedIntent.requested_category) return true;
+  // Fallback: text-based alias match, consistent with how filterByCategory found this product
+  const aliases = RECOMMENDATION_TAXONOMY.categories[parsedIntent.requested_category] || [];
+  return aliases.length > 0 && includesAny(`${item.name} ${item.text}`, aliases);
 }
 
 function isExplicitBbRequest(parsedIntent = {}, args = {}) {

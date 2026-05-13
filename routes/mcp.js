@@ -175,7 +175,6 @@ function buildMcpToolResult({
     consultText,
     bodyTemplateVersion,
     widgetHttpUri: WIDGET_HTTP_URI,
-    minimalStructuredEnv: process.env.MCP_MINIMAL_STRUCTURED,
   });
 }
 
@@ -493,7 +492,6 @@ async function executeTool(args = {}) {
     consultText,
     bodyTemplateVersion,
     widgetHttpUri: WIDGET_HTTP_URI,
-    minimalStructuredEnv: process.env.MCP_MINIMAL_STRUCTURED,
   });
   const structuredContentKeys = Object.keys(toolResult?.structuredContent || {});
   const structuredContentHasRecommendations = Object.prototype.hasOwnProperty.call(

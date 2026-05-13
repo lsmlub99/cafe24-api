@@ -306,6 +306,8 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
 
   const hasConditionSignal =
     Boolean(intent.skin_type) || (intent.concern || []).length > 0 || (intent.preference || []).length > 0;
+  // Mild noise for variety on simple queries (no condition signals) — ±2.5pt, never flips a clear winner
+  const varietyNoise = !hasConditionSignal ? (Math.random() * 5 - 2.5) : 0;
   const bestsellerBoost = (!hasConditionSignal && product.is_best)
     ? (policy.scoring.bestsellerPopularBoost || 0)
     : 0;
@@ -342,7 +344,8 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
     reactivePenalty -
     repeatPenalty -
     negativeScopePenalty -
-    diversityPenalty;
+    diversityPenalty +
+    varietyNoise;
 
   const finalRankReason = hasConditionSignal
     ? `condition_priority(${condition.toFixed(1)}) over quality(${quality.toFixed(1)})`

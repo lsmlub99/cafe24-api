@@ -14,6 +14,7 @@ function buildWidgetData({
   appliedPolicy = {},
   promotions = [],
   safeSummary = {},
+  bodyText = '',
 }) {
   return {
     requested_category: requestedCategory,
@@ -27,6 +28,7 @@ function buildWidgetData({
     summary: safeSummary,
     strategy: safeSummary.strategy || '',
     conclusion: safeSummary.conclusion || '',
+    body_text: bodyText || '',
   };
 }
 
@@ -64,6 +66,7 @@ export function buildMcpToolResult({
         appliedPolicy,
         promotions,
         safeSummary,
+        bodyText: consultText,
       }),
     },
   };

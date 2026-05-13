@@ -122,6 +122,7 @@ function normalizeWidgetData(raw) {
     summary,
     strategy: structured.strategy || summary.strategy || '',
     conclusion: structured.conclusion || summary.conclusion || '',
+    body_text: typeof structured.body_text === 'string' ? structured.body_text : '',
   };
 }
 
@@ -1099,6 +1100,32 @@ function App() {
             );
           })}
         </div>
+
+        {widgetData.body_text && (
+          <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px', paddingBottom: '2px' }}>
+            {widgetData.body_text.split('\n').map((line, i) => {
+              const trimmed = line.trim();
+              const isRank = /^[1-3]순위/.test(trimmed);
+              const isBullet = trimmed.startsWith('- ');
+              const isEmpty = trimmed === '';
+              return (
+                <div
+                  key={`bt-${i}`}
+                  style={{
+                    margin: isEmpty ? '5px 0' : isRank ? '8px 0 2px' : '0 0 2px',
+                    fontSize: isRank ? '0.88rem' : '0.83rem',
+                    fontWeight: isRank ? 700 : 400,
+                    color: isRank ? '#B31312' : isBullet ? '#444' : '#666',
+                    lineHeight: 1.65,
+                    paddingLeft: isBullet ? '8px' : 0,
+                  }}
+                >
+                  {isEmpty ? ' ' : trimmed}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {widgetData.promotions.length > 0 && (
           <div style={{ marginTop: '14px', borderTop: '1px solid #eee', paddingTop: '12px' }}>

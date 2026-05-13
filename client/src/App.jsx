@@ -1051,6 +1051,16 @@ function App() {
                   {product.name}
                 </div>
 
+                {product.is_bundle && (() => {
+                  const bundleMatch = /\[(\d+(?:\+\d+)+)\]/.exec(product.raw_name || '');
+                  const label = bundleMatch ? `${bundleMatch[1]} 행사 묶음` : '행사 묶음 상품';
+                  return (
+                    <div style={{ fontSize: '11px', color: '#B31312', fontWeight: 600, marginBottom: '4px' }}>
+                      🎁 {label}
+                    </div>
+                  );
+                })()}
+
                 <div style={{ marginBottom: '8px' }}>
                   {hasPrice ? (
                     <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#111' }}>{priceDisplay}</span>

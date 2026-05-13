@@ -327,6 +327,7 @@ function toRecommendationItem(product, idx, parsedIntent) {
     usage_tip: details.usage_tip || '기초 마지막에 얇게 2~3회 나눠 바르세요.',
     caution: details.caution,
     is_promo: !!product.is_promo,
+    is_bundle: !!product.is_bundle,
     buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,
     image: product.image,
   };

@@ -160,6 +160,14 @@ function scoreByKeywordHints(product, intentSignals) {
     if ((keywordGroups[key] || []).some((kw) => source.includes(lower(kw)))) score += 3;
   }
 
+  if ((intentSignals.texture || []).includes('moisturizing')) {
+    const oilyKeywords = ['클리어', '논코메도', '오일프리', 'oil-free', '수부지', 'noncomedogenic'];
+    const hydroKeywords = ['수분', '보습', '촉촉', '아쿠아', 'aqua', 'hydra', '수분크림'];
+    const oilyPenalty = oilyKeywords.filter((kw) => source.includes(lower(kw))).length * 12;
+    const hydroBoost = hydroKeywords.filter((kw) => source.includes(lower(kw))).length * 10;
+    score += hydroBoost - oilyPenalty;
+  }
+
   return score;
 }
 
@@ -443,10 +451,7 @@ export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy, 
 
   let workingPool = pool;
   if (!includePromo) {
-    // Simple queries: allow is_best bundles so bestsellers can surface in main cards
-    workingPool = isSimpleQuery
-      ? workingPool.filter((p) => !p.is_promo && (!p.is_bundle || p.is_best))
-      : workingPool.filter((p) => !p.is_promo && !p.is_bundle);
+    workingPool = workingPool.filter((p) => !p.is_promo && !p.is_bundle);
   }
 
   if (!category_locked) {

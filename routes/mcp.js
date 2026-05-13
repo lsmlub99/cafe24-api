@@ -306,10 +306,8 @@ const FORM_BODY_REASON = {
   lotion: '로션 타입으로 가볍게 흡수되고 부담이 적어요.',
 };
 
-function buildShortIntroText(category = '', topName = '') {
-  const cat = String(category || '제품').trim();
-  const name = topName ? `${String(topName).trim()}을(를) 포함해 ` : '';
-  return `셀퓨전씨 ${cat} 라인업 중 ${name}어울릴 만한 제품을 골라드렸어요 😊 카드에서 추천 이유와 사용 팁을 확인해보세요! 다른 조건이나 제형을 원하시면 말씀해 주세요.`;
+function buildShortIntroText() {
+  return '카드 설명을 참고해서 골라보세요 😊 피부 타입이나 원하는 사용감을 말씀해주시면 딱 맞게 추천해드릴게요!';
 }
 
 function buildCanonicalConsultTextFixed(mainRecommendations = [], args = {}) {
@@ -475,7 +473,7 @@ async function executeTool(args = {}) {
   // unified body generation path: even when main is empty we keep fixed_v1 text shape.
 
   const widgetBodyText = buildCanonicalConsultTextFixed(canonicalMain, args);
-  const consultText = buildShortIntroText(args.category, canonicalMain[0]?.name);
+  const consultText = buildShortIntroText();
   const bodyTemplateVersion = 'fixed_v1';
   const bodyItemsCount = Array.isArray(canonicalMain) ? canonicalMain.length : 0;
   const bodyRankLinesCount = bodyItemsCount;

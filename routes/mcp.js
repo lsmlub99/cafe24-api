@@ -69,7 +69,7 @@ const TOOLS = [
     name: TOOL_NAME,
     title: 'Search CellFusionC Products',
     description:
-      '[GEN-UI] Analyze skin needs and recommend matching products. IMPORTANT: Output the tool result body text VERBATIM as your complete response. Do not rephrase, summarize, or add your own analysis. Append only one short follow-up question at the end.',
+      '[GEN-UI] Returns pre-formatted recommendation text. Copy the text between ===BEGIN=== and ===END=== VERBATIM as your entire response. Do NOT add tables, prices, bullet lists, or extra analysis. Do NOT rephrase. One follow-up question only after ===END===.',
     annotations: {
       readOnlyHint: true,
       openWorldHint: false,

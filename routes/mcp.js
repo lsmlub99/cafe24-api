@@ -33,7 +33,7 @@ const RESOURCE_META = {
       ],
     },
   },
-  'openai/widgetDescription': '셀퓨전씨 AI 추천 카드가 위젯에 자동 표시됩니다. 제품 목록·가격·성분을 텍스트로 반복하지 마세요.',
+  'openai/widgetDescription': '셀퓨전씨 AI 추천 카드가 위젯에 표시됩니다. 도구가 반환한 추천 텍스트를 그대로 사용자에게 전달하세요.',
   'openai/widgetPrefersBorder': true,
   'openai/widgetCSP': {
     connect_domains: [BASE_URL],

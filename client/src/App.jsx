@@ -967,9 +967,8 @@ function App() {
           셀퓨전씨 AI 맞춤 추천
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-          {Array.from({ length: 3 }, (_, idx) => {
-            const product = widgetData.recommendations[idx] || null;
+        <div style={{ display: 'grid', gridTemplateColumns: widgetData.recommendations.length === 1 ? '1fr' : widgetData.recommendations.length === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '10px' }}>
+          {widgetData.recommendations.map((product, idx) => {
             const rank = idx + 1;
             const RANK_BADGE = {
               1: { bg: '#7B2FBE', label: 'AI 추천 1위' },
@@ -977,29 +976,6 @@ function App() {
               3: { bg: '#34A853', label: 'AI 추천 3위' },
             };
             const badge = RANK_BADGE[rank];
-
-            if (!product) {
-              return (
-                <div
-                  key={`placeholder-${idx}`}
-                  style={{
-                    border: '1px dashed #ddd',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    background: '#fafafa',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    aspectRatio: '3/4',
-                    color: '#bbb',
-                    fontSize: '12px',
-                    textAlign: 'center',
-                  }}
-                >
-                  추천 상품 준비 중
-                </div>
-              );
-            }
 
             const { sentence1, sentence2 } = buildPersonalizedCardReason(product, widgetData, rank);
             const hasPrice = Boolean(product.price);

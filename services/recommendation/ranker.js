@@ -309,7 +309,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   // Mild noise for variety on simple queries (no condition signals) — ±2.5pt, never flips a clear winner
   const varietyNoise = !hasConditionSignal ? (Math.random() * 5 - 2.5) : 0;
   const bestsellerBoost = (!hasConditionSignal && product.is_best)
-    ? (policy.scoring.bestsellerPopularBoost || 0)
+    ? Math.max(50, policy.scoring.bestsellerPopularBoost || 0)
     : 0;
   const conditionPriorityBonus =
     hasConditionSignal && condition >= policy.scoring.conditionStrongMatchThreshold ? policy.scoring.conditionPriorityBonus : 0;
@@ -438,12 +438,15 @@ function filterByCategory(products, intent, taxonomy) {
 }
 
 export function retrievePrimaryCandidates(products = [], intent = {}, taxonomy, policy, options = {}) {
-  const { relaxForm = false, includePromo = false } = options;
+  const { relaxForm = false, includePromo = false, isSimpleQuery = false } = options;
   const { pool, category_locked } = filterByCategory(products, intent, taxonomy);
 
   let workingPool = pool;
   if (!includePromo) {
-    workingPool = workingPool.filter((p) => !p.is_promo && !p.is_bundle);
+    // Simple queries: allow is_best bundles so bestsellers can surface in main cards
+    workingPool = isSimpleQuery
+      ? workingPool.filter((p) => !p.is_promo && (!p.is_bundle || p.is_best))
+      : workingPool.filter((p) => !p.is_promo && !p.is_bundle);
   }
 
   if (!category_locked) {

@@ -1010,6 +1010,7 @@ export const recommendationService = {
     const shouldRelaxFormAtStart = Boolean(parsed.variety_intent || (parsed.concern || []).includes('not_fit'));
     const isExplicitStrictMain = Boolean(parsed.explicit_form_request && parsed.requested_form);
     const shouldUnlockCategoryForMain = Boolean(parsed.allow_category_switch && parsed.negative_scope === 'category');
+    const isSimpleQuery = !parsed.skin_type && !(parsed.concern?.length) && !(parsed.preference?.length) && !parsed.variety_intent;
     const retrievalIntent = shouldUnlockCategoryForMain
       ? { ...parsed, requested_category: null, requested_category_ids: [], requested_form: null, explicit_form_request: false }
       : parsed;
@@ -1017,10 +1018,12 @@ export const recommendationService = {
     const strictPrimary = this.get_primary_candidates(normalized, retrievalIntent, {
       relaxForm: false,
       includePromo: false,
+      isSimpleQuery,
     });
     const broadPrimary = this.get_primary_candidates(normalized, retrievalIntent, {
       relaxForm: true,
       includePromo: false,
+      isSimpleQuery,
     });
 
     let { category_locked, form_locked, allowed_main_forms = [] } = strictPrimary;

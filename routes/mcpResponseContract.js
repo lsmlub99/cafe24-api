@@ -46,6 +46,7 @@ export function buildMcpToolResult({
   promotions = [],
   safeSummary = {},
   consultText = '',
+  widgetBodyText = '',
   bodyTemplateVersion = 'fixed_v1',
   widgetHttpUri = '',
 } = {}) {
@@ -66,7 +67,7 @@ export function buildMcpToolResult({
         appliedPolicy,
         promotions,
         safeSummary,
-        bodyText: consultText,
+        bodyText: widgetBodyText || consultText,
       }),
     },
   };

@@ -62,7 +62,7 @@ app.use('/mcp', mcpRouter);
 
 app.use('/.well-known/openai-apps-challenge', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.type('text/plain').send('K45_GpkZPTE9KNc1LOcErDgBroZRYFqSvBK8e7Fe6D0');
+  res.type('text/plain').send('K45_GpkZPTE9KNcILocErDgBroZRYFqSvBK8e7Fe6D0');
 });
 
 // ── 🎁 [Web UI 추천 API] ──

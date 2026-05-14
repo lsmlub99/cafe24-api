@@ -60,7 +60,8 @@ const __dirname = path.dirname(__filename);
 app.use('/cafe24', cafe24Router);
 app.use('/mcp', mcpRouter);
 
-app.get('/.well-known/openai-apps-challenge', (req, res) => {
+app.use('/.well-known/openai-apps-challenge', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   res.type('text/plain').send('K45_GpkZPTE9KNc1LOcErDgBroZRYFqSvBK8e7Fe6D0');
 });
 

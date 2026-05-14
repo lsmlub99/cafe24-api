@@ -92,6 +92,29 @@ const TOOLS = [
         concerns: { type: 'array', items: { type: 'string' }, description: '피부 고민 목록 (보습, 진정, 유분, 톤업 등)' },
       },
     },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              text: { type: 'string' },
+            },
+          },
+        },
+        structuredContent: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            display_mode: { type: 'string' },
+            body_template_version: { type: 'string' },
+          },
+        },
+      },
+    },
   },
 ];
 

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "CellFusionC AI Recommendation",
+    "subtitle": "Skincare picks",
+    "description": "CellFusionC AI Recommendation helps users find CellFusionC skincare products that match their skin type, concerns, preferred texture, use case, and requested category. It searches the Cafe24 product catalog, ranks suitable products, separates primary recommendations from secondary and promotional items, and displays recommendation cards with product images, prices, buying links, and concise guidance.",
+    "category": "SHOPPING"
+  },
+  "tools": {
+    "search_cafe24_real_products": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves and ranks CellFusionC product information from the Cafe24 catalog and returns recommendation results without changing products, orders, customers, or storefront content.",
+        "open_world_justification": "Does not publish content, submit external forms, send messages, or modify publicly visible internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, place orders, or perform irreversible actions."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Recommend gentle sunscreen options for sensitive skin.",
+      "user_prompt": "I have sensitive skin and sunscreen sometimes stings. Recommend a gentle CellFusionC sunscreen.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns CellFusionC sunscreen recommendations that prioritize sensitive-skin and soothing signals, with primary cards and concise reasons.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Recommend lightweight sunscreen for oily or combination skin.",
+      "user_prompt": "I have oily-combination skin. Pick a lightweight sunscreen with less shine for summer.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns products matching sunscreen, lightweight texture, and oil-control concerns, with a clear top recommendation.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Respect a specific form request for sun serum.",
+      "user_prompt": "Recommend a sun serum. I do not want a heavy texture.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns sun serum recommendations and avoids prioritizing unrelated forms when matching products are available.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Recommend sunscreen suitable before makeup.",
+      "user_prompt": "Recommend a sunscreen that works well before makeup and does not pill easily.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns sunscreen recommendations with usage guidance relevant to makeup-prep and low-pilling needs.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Recommend a portable sunscreen format for outdoor reapplication.",
+      "user_prompt": "I spend a lot of time outdoors. Recommend a portable sun stick for reapplying.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns portable sun stick or equivalent reapplication-friendly recommendations with product cards and purchase links.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Handle a BB cream category request.",
+      "user_prompt": "Recommend a CellFusionC BB cream with natural tone correction.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns BB cream recommendations that match tone-correction intent and keeps unrelated categories out of the primary recommendations.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Handle a follow-up asking for alternatives after a previous recommendation.",
+      "user_prompt": "Show me lighter alternatives to the current recommendation so I can compare.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_cafe24_real_products",
+      "expected_output": "Returns alternative recommendations and uses session-aware variety signals when available, without repeating the same option unnecessarily.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not trigger for skincare medical diagnosis.",
+      "user_prompt": "I have a severe facial rash. Diagnose what condition it is.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because the request is medical diagnosis rather than CellFusionC product recommendation.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for unrelated restaurant recommendations.",
+      "user_prompt": "Recommend lunch restaurants near Gangnam Station.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because the request is outside skincare product discovery.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for order placement or checkout.",
+      "user_prompt": "Pay for and order one CellFusionC sunscreen for me.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked to place an order because it only recommends products and does not perform checkout or payment.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for modifying Cafe24 admin data.",
+      "user_prompt": "Change the Cafe24 admin product prices to a 20 percent discount.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because it does not update product records or admin settings.",
+      "expected_output_url": null
+    }
+  ]
+}

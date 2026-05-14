@@ -22,6 +22,9 @@ const TAXONOMY = {
   preferences: {},
   noveltyKeywords: [],
   popularityKeywords: [],
+  productKeywordDictionary: [
+    { canonical: '\uC544\uCFE0\uC544\uD2F0\uCE74', variants: ['\uC544\uCFE0\uC544\uD2F0\uCE74', 'aquatica'] },
+  ],
 };
 
 test('extracts product_keyword_constraints from line keyword query', () => {
@@ -41,4 +44,3 @@ test('falls back cleanly when no known product keyword is present', () => {
   const parsed = parseUserIntent({ query: 'unknown sunscreen' }, TAXONOMY);
   assert.deepStrictEqual(parsed.product_keyword_constraints, []);
 });
-

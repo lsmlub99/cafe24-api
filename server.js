@@ -60,6 +60,10 @@ const __dirname = path.dirname(__filename);
 app.use('/cafe24', cafe24Router);
 app.use('/mcp', mcpRouter);
 
+app.get('/.well-known/openai-apps-challenge', (req, res) => {
+  res.type('text/plain').send('K45_GpkZPTE9KNc1LOcErDgBroZRYFqSvBK8e7Fe6D0');
+});
+
 // ── 🎁 [Web UI 추천 API] ──
 // 리액트 프론트엔드와 실시간 연결되는 추천 엔드포인트
 app.post('/api/recommend', async (req, res) => {

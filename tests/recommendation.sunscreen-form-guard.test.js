@@ -25,6 +25,9 @@ const TAXONOMY = {
   preferences: {},
   noveltyKeywords: [],
   popularityKeywords: [],
+  productKeywordDictionary: [
+    { canonical: '아쿠아티카', variants: ['아쿠아티카', 'aquatica'] },
+  ],
 };
 
 test('"선크림 추천"은 form=cream으로 잡히면 안 된다', () => {

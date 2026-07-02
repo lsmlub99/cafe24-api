@@ -176,3 +176,21 @@ npm test
 - **토큰 영속화**: Cafe24 OAuth 토큰을 MongoDB에 저장해 서버 재시작 후에도 인증 유지
 - **비용 조절**: LLM 리랭킹과 시맨틱 임베딩을 독립 옵션으로 분리해 API 비용 제어 가능
 - **ChatGPT App 통합**: `chatgpt-app-submission.json`으로 GPT Store 제출 설정 포함
+
+---
+
+## 🕘 History
+
+| 시기 | 주요 변화 |
+|------|-----------|
+| 2026-04 초 | Cafe24 연동/OAuth, MCP 기본 통신 구조 정비 |
+| 2026-04 중 | 룰 기반 점수 체계 고도화, App in GPT 위젯 계약 정비 |
+| 2026-04 중 | Category/Form/Promo 정책 분리, main/secondary/promotions 응답 계층 고정 |
+| 2026-04 후 | intent normalization, 세션 신호 반영, semantic 보강 경로 도입 |
+| 2026-04 말 | 설명-로직 정합성 계측(`reason_code`, 정책 위반 카운트) 추가 |
+| 2026-05 | 카드 UX 개편(1:1 이미지, 랭크 배지), 베스트셀러/다양성 로직 개선 |
+| 2026-05 중 | 위젯 body 템플릿 고정화, GPT 응답 검증 강화 |
+| 2026-06 | 카테고리 오탐 방지(strict form pool, sample-size 필터), MCP 스키마 보강 |
+| 2026-06 말 | ChatGPT App 제출 자산 추가(`chatgpt-app-submission.json`, 소유권 확인 엔드포인트) |
+
+전체 변경 이력은 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)에서 날짜별로 확인할 수 있습니다.

@@ -68,6 +68,7 @@ ChatGPT GPT App
 | `tools/call` | 추천 실행 (JSON-RPC) |
 | `resources/read` | 상품 데이터 직접 조회 |
 | SSE Stream | 실시간 스트리밍 응답 |
+| `GET /.well-known/openai-apps-challenge` | ChatGPT App 제출용 소유권 확인 토큰 |
 
 ---
 
@@ -139,6 +140,10 @@ OPENAI_API_KEY=sk-...
 ENABLE_LLM_RERANKING=true
 ENABLE_SEMANTIC_RETRIEVAL=true
 LOG_LEVEL=info
+
+# 선택 (카테고리 자동탐지 보정, JSON)
+# 이름 기반 카테고리 탐지가 놓친 경우 시드 카테고리 ID를 추가 (하위 카테고리도 자동 포함)
+CATEGORY_NO_OVERRIDES={"선케어":[29]}
 ```
 
 ### Run

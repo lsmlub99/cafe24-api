@@ -7,6 +7,7 @@
 [![Express](https://img.shields.io/badge/Express-4.x-000000?style=flat&logo=express)](https://expressjs.com)
 [![MongoDB](https://img.shields.io/badge/MongoDB-7.x-47A248?style=flat&logo=mongodb&logoColor=white)](https://mongodb.com)
 [![OpenAI](https://img.shields.io/badge/OpenAI-API-412991?style=flat&logo=openai&logoColor=white)](https://openai.com)
+[![ChatGPT App](https://img.shields.io/badge/ChatGPT%20App-심사%20통과%20%26%20등록-10a37f?style=flat&logo=openai&logoColor=white)]()
 
 ---
 
@@ -192,5 +193,6 @@ npm test
 | 2026-05 중 | 위젯 body 템플릿 고정화, GPT 응답 검증 강화 |
 | 2026-06 | 카테고리 오탐 방지(strict form pool, sample-size 필터), MCP 스키마 보강 |
 | 2026-06 말 | ChatGPT App 제출 자산 추가(`chatgpt-app-submission.json`, 소유권 확인 엔드포인트) |
+| 2026-07 | 🎉 ChatGPT App 심사 통과 및 정식 등록 완료 |
 
 전체 변경 이력은 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)에서 날짜별로 확인할 수 있습니다.

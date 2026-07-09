@@ -288,7 +288,22 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
   }
 
   try {
-    await ensureProductEmbeddings(candidates, openai, model, batchSize);
+    // Only embed a bounded, cheaply-prioritized subset. Embedding every candidate here
+    // (which can be the entire catalog when category detection fails) turns one request
+    // into dozens of sequential OpenAI embedding calls and can take minutes. Pre-select
+    // by a free popularity signal, then compute semantic score only within that subset —
+    // the result was already going to be pruned to maxPool below, so nothing is lost.
+    const embedTarget = candidates.length > maxPool
+      ? [...candidates]
+          .sort(
+            (a, b) =>
+              Number(b.review_count || 0) + Number(b.sales_count || 0) - (Number(a.review_count || 0) + Number(a.sales_count || 0))
+          )
+          .slice(0, maxPool)
+      : candidates;
+    const embedTargetIds = new Set(embedTarget.map((p) => p.id));
+
+    await ensureProductEmbeddings(embedTarget, openai, model, batchSize);
     const queryVector = await getQueryEmbedding(intent, openai, model, queryInfo.text);
     if (!queryVector.length) {
       return {
@@ -305,6 +320,7 @@ export async function applySemanticSignals(candidates = [], intent = {}, options
 
     const scored = candidates
       .map((p) => {
+        if (!embedTargetIds.has(p.id)) return { ...p, _semantic_score: 0, _semantic_weight: 0 };
         const vector = cacheGet(productEmbeddingCache, p._semantic_embedding_key) || [];
         const cosine = vector.length ? dotProduct(queryVector, vector) : 0;
         const semanticScore = Number((((cosine + 1) / 2) * 100).toFixed(3));

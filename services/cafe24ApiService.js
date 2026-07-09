@@ -3,6 +3,7 @@ import { aiTaggingService } from './aiTaggingService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24AuthService } from './cafe24AuthService.js';
 import { logger } from '../utils/logger.js';
+import { fuzzyIncludes } from './recommendation/shared.js';
 
 let lastSyncLogs = [];
 let allProductsCache = [];
@@ -599,11 +600,17 @@ function getProductsFromCache(filters = {}) {
 
   if (keyword) {
     const lower = String(keyword).toLowerCase();
-    results = results.filter(
+    const beforeKeywordPool = results;
+    results = beforeKeywordPool.filter(
       (p) =>
         String(p.product_name || '').toLowerCase().includes(lower) ||
         (p.keywords || []).some((t) => String(t).toLowerCase().includes(lower))
     );
+    // Typo/spacing-tolerant fallback: if the exact substring match found nothing,
+    // retry with edit-distance matching so a slightly misspelled product name still hits.
+    if (results.length === 0) {
+      results = beforeKeywordPool.filter((p) => fuzzyIncludes(p.product_name, keyword));
+    }
     logger.cacheVerbose(`[Cache Filter] Active Products ${results.length} matched for keyword: ${keyword}`);
   }
 

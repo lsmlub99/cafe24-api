@@ -317,7 +317,7 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
   // Mild noise for variety on simple queries (no condition signals) — ±2.5pt, never flips a clear winner
   const varietyNoise = !hasConditionSignal ? (Math.random() * 5 - 2.5) : 0;
   const bestsellerBoost = (!hasConditionSignal && product.is_best)
-    ? Math.max(50, policy.scoring.bestsellerPopularBoost || 0)
+    ? (policy.scoring.bestsellerPopularBoost || 0)
     : 0;
   const conditionPriorityBonus =
     hasConditionSignal && condition >= policy.scoring.conditionStrongMatchThreshold ? policy.scoring.conditionPriorityBonus : 0;

@@ -1,4 +1,4 @@
-import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower, hasExplicitCreamFormPhrase } from './shared.js';
+import { includesAny, findFirstAliasKey, findAllAliasKeys, uniq, lower, hasExplicitCreamFormPhrase, fuzzyIncludes } from './shared.js';
 
 const PRICE_REGEX = /(\d{1,3})(\s?만원|\s?원)?/g;
 
@@ -54,7 +54,7 @@ export function extractProductKeywordConstraints(text = '', dictionary = []) {
   for (const entry of sorted) {
     const matched = entry.variants.some((variant) => {
       const token = normalizeKeywordText(variant);
-      return token && source.includes(token);
+      return token && fuzzyIncludes(source, token);
     });
     if (matched && !out.includes(entry.canonical)) out.push(entry.canonical);
   }

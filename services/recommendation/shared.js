@@ -11,6 +11,49 @@ export function includesAny(text, words = []) {
   return words.some((w) => t.includes(lower(w)));
 }
 
+function normalizeForFuzzyMatch(text = '') {
+  return lower(text).replace(/[\s_\-()[\]{}.,!?'"]/g, '');
+}
+
+function levenshteinDistance(a = '', b = '') {
+  const al = a.length;
+  const bl = b.length;
+  if (al === 0) return bl;
+  if (bl === 0) return al;
+  const dp = new Array(bl + 1);
+  for (let j = 0; j <= bl; j += 1) dp[j] = j;
+  for (let i = 1; i <= al; i += 1) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= bl; j += 1) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[bl];
+}
+
+// Typo/spacing-tolerant substring check: exact substring first, then a sliding
+// window edit-distance scan so slight typos in product names still match.
+export function fuzzyIncludes(haystack, needle, maxDistanceRatio = 0.25) {
+  const h = normalizeForFuzzyMatch(haystack);
+  const n = normalizeForFuzzyMatch(needle);
+  if (!h || !n) return false;
+  if (h.includes(n)) return true;
+  if (n.length < 3) return false;
+
+  const maxDist = Math.max(1, Math.floor(n.length * maxDistanceRatio));
+  for (let i = 0; i <= h.length - (n.length - maxDist); i += 1) {
+    for (let len = n.length - maxDist; len <= n.length + maxDist; len += 1) {
+      if (len <= 0 || i + len > h.length) continue;
+      const window = h.slice(i, i + len);
+      if (levenshteinDistance(window, n) <= maxDist) return true;
+    }
+  }
+  return false;
+}
+
 export function findFirstAliasKey(text, aliasMap) {
   const source = lower(text);
   let bestKey = null;

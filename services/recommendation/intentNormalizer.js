@@ -146,7 +146,7 @@ export async function normalizeIntentWithLLM(openai, args = {}, parsedIntent = {
   try {
     const res = await openai.chat.completions.create({
       model,
-      temperature: 0.1,
+      temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: buildSystemPrompt(taxonomy) },

@@ -11,7 +11,7 @@ import {
   retrievePrimaryCandidates,
   selectDiverseTopN,
 } from './recommendation/ranker.js';
-import { findFirstAliasKey, includesAny, parseJsonObject } from './recommendation/shared.js';
+import { findFirstAliasKey, includesAny, parseJsonObject, fuzzyIncludes } from './recommendation/shared.js';
 import {
   getRecommendationMetrics,
   trackCategoryLockViolation,
@@ -110,10 +110,10 @@ function buildReasoningTags(parsedIntent) {
   return tags;
 }
 
-function reinforceKeywordConstraints(parsedIntent = {}, args = {}) {
+function reinforceKeywordConstraints(parsedIntent = {}, args = {}, taxonomy = RECOMMENDATION_TAXONOMY) {
   if (parsedIntent.variety_intent) return parsedIntent;
-  const rawQuery = `${args.q || ''} ${args.query || ''} ${args.category || ''}`.trim();
-  const extracted = extractProductKeywordConstraints(rawQuery, RECOMMENDATION_TAXONOMY.productKeywordDictionary || []);
+  const rawQuery = `${args.q || ''} ${args.query || ''} ${args.category || ''} ${args.product_name || ''}`.trim();
+  const extracted = extractProductKeywordConstraints(rawQuery, taxonomy.productKeywordDictionary || []);
   const merged = [
     ...new Set([...(parsedIntent.product_keyword_constraints || []), ...extracted].map((x) => String(x || '').trim()).filter(Boolean)),
   ];
@@ -121,6 +121,21 @@ function reinforceKeywordConstraints(parsedIntent = {}, args = {}) {
     ...parsedIntent,
     product_keyword_constraints: merged,
   };
+}
+
+// Wraps every candidate product's own name as a matchable keyword entry so a user
+// naming a real (possibly typo'd) product surfaces it via the keyword overlay below,
+// not just the small static line-name dictionary in RECOMMENDATION_TAXONOMY.
+function buildDynamicProductKeywordDictionary(normalizedProducts = []) {
+  const seen = new Set();
+  const dict = [];
+  for (const p of normalizedProducts) {
+    const canonical = String(p.base_name || p.name || '').trim();
+    if (!canonical || canonical.length < 4 || seen.has(canonical)) continue;
+    seen.add(canonical);
+    dict.push({ canonical, variants: [canonical, p.name].filter(Boolean) });
+  }
+  return dict;
 }
 
 function normalizeKeywordConstraintText(text = '') {
@@ -145,7 +160,7 @@ function isKeywordMatchedCandidate(item = {}, constraints = []) {
   if (!haystack) return false;
   return constraints.some((keyword) => {
     const token = normalizeKeywordConstraintText(keyword);
-    return token && haystack.includes(token);
+    return token && fuzzyIncludes(haystack, token);
   });
 }
 
@@ -374,7 +389,7 @@ async function stage2Rerank(candidates, parsedIntent, policy) {
   try {
     const res = await openai.chat.completions.create({
       model,
-      temperature: 0.2,
+      temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },
@@ -982,7 +997,14 @@ export const recommendationService = {
     });
     const sessionKey = String(args.__session_key || args.session_key || 'global');
     const sessionContext = getSessionContext(sessionKey);
-    const ruleParsed = this.parse_user_request(args);
+    const requestTaxonomy = {
+      ...RECOMMENDATION_TAXONOMY,
+      productKeywordDictionary: [
+        ...(RECOMMENDATION_TAXONOMY.productKeywordDictionary || []),
+        ...buildDynamicProductKeywordDictionary(normalized),
+      ],
+    };
+    const ruleParsed = parseUserIntent(args, requestTaxonomy);
     const openai = await getOpenAIClient();
     const normalizedIntentResult = await normalizeIntentWithLLM(
       openai,
@@ -998,7 +1020,7 @@ export const recommendationService = {
         requested_category: 'bb',
       };
     }
-    parsed = reinforceKeywordConstraints(parsed, args);
+    parsed = reinforceKeywordConstraints(parsed, args, requestTaxonomy);
 
     if (!parsed.requested_category_ids?.length && Array.isArray(args.target_category_ids) && args.target_category_ids.length) {
       parsed = { ...parsed, requested_category_ids: args.target_category_ids.map(Number).filter(Number.isFinite) };

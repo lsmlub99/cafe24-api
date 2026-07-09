@@ -35,21 +35,21 @@ function levenshteinDistance(a = '', b = '') {
 }
 
 // Typo/spacing-tolerant substring check: exact substring first, then a sliding
-// window edit-distance scan so slight typos in product names still match.
+// fixed-length window edit-distance scan so slight typos in product names still
+// match. Levenshtein distance already tolerates insertions/deletions on its own,
+// so a single window length (== needle length) is enough — scanning a range of
+// window lengths as well was redundant and multiplied the cost for no benefit.
 export function fuzzyIncludes(haystack, needle, maxDistanceRatio = 0.25) {
   const h = normalizeForFuzzyMatch(haystack);
   const n = normalizeForFuzzyMatch(needle);
   if (!h || !n) return false;
   if (h.includes(n)) return true;
-  if (n.length < 3) return false;
+  if (n.length < 3 || h.length < n.length) return false;
 
   const maxDist = Math.max(1, Math.floor(n.length * maxDistanceRatio));
-  for (let i = 0; i <= h.length - (n.length - maxDist); i += 1) {
-    for (let len = n.length - maxDist; len <= n.length + maxDist; len += 1) {
-      if (len <= 0 || i + len > h.length) continue;
-      const window = h.slice(i, i + len);
-      if (levenshteinDistance(window, n) <= maxDist) return true;
-    }
+  for (let i = 0; i <= h.length - n.length; i += 1) {
+    const window = h.slice(i, i + n.length);
+    if (levenshteinDistance(window, n) <= maxDist) return true;
   }
   return false;
 }

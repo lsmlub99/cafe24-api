@@ -126,10 +126,13 @@ function reinforceKeywordConstraints(parsedIntent = {}, args = {}, taxonomy = RE
 // Wraps every candidate product's own name as a matchable keyword entry so a user
 // naming a real (possibly typo'd) product surfaces it via the keyword overlay below,
 // not just the small static line-name dictionary in RECOMMENDATION_TAXONOMY.
+const DYNAMIC_KEYWORD_DICTIONARY_MAX_ENTRIES = 150;
+
 function buildDynamicProductKeywordDictionary(normalizedProducts = []) {
   const seen = new Set();
   const dict = [];
   for (const p of normalizedProducts) {
+    if (dict.length >= DYNAMIC_KEYWORD_DICTIONARY_MAX_ENTRIES) break;
     const canonical = String(p.base_name || p.name || '').trim();
     if (!canonical || canonical.length < 4 || seen.has(canonical)) continue;
     seen.add(canonical);

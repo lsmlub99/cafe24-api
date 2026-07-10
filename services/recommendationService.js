@@ -351,6 +351,30 @@ function toRecommendationItem(product, idx, parsedIntent) {
   };
 }
 
+function toExactMatchRecommendationItem(product, parsedIntent = {}) {
+  return {
+    rank: 1,
+    rank_label: '1위(BEST)',
+    name: product.display_name || product.name,
+    raw_name: product.name,
+    base_name: product.base_name,
+    form: product.form,
+    category_key: product.category_key || inferProductCategory(product) || null,
+    category_ids: Array.isArray(product.category_ids) ? product.category_ids : [],
+    price: product.price,
+    key_point: '말씀하신 상품이에요.',
+    reason_code: 'EXACT_PRODUCT_MATCH',
+    reason_facts: {},
+    why_pick: '말씀하신 상품과 가장 가깝게 일치해 1순위로 안내드려요.',
+    usage_tip: '기초 마지막에 얇게 2~3회 나눠 바르세요.',
+    caution: getCaution(product, parsedIntent),
+    is_promo: !!product.is_promo,
+    is_bundle: !!product.is_bundle,
+    buy_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${product.id}`,
+    image: product.image,
+  };
+}
+
 function toPromotionItem(product) {
   return {
     name: product.display_name || product.name,
@@ -974,6 +998,66 @@ export const recommendationService = {
     return buildDeterministicNarrative(mainRecommendations, promotions, secondaryRecommendations, args);
   },
 
+  // A confirmed Stage-0 product-name match (see routes/mcp.js) is pinned as rank #1
+  // unconditionally; the remaining slots are filled by re-running the normal pipeline
+  // on the pool with that product removed, so alternatives still respect condition/
+  // popularity ranking exactly as they would for a query with no product-name match.
+  async buildExactMatchResponse(matchedRaw, cachedProducts, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
+    const matchedItem = normalizeCafe24Product(matchedRaw, RECOMMENDATION_TAXONOMY);
+    matchedItem.category_key = inferProductCategory(matchedItem);
+
+    const remainder = cachedProducts.filter((p) => String(p.product_no) !== String(matchedRaw.product_no));
+    const remainderArgs = { ...args };
+    delete remainderArgs.__exact_match_product_nos;
+
+    let rest = {
+      requested_category: null,
+      main_recommendations: [],
+      secondary_recommendations: [],
+      reasoning_tags: [],
+      applied_policy: { category_locked: false, form_locked: false, sort_mode: 'popular' },
+      promotions: [],
+    };
+    if (limit - 1 > 0 && remainder.length > 0) {
+      rest = await this.scoreAndFilterProducts(remainder, remainderArgs, limit - 1);
+    }
+
+    const pinnedItem = toExactMatchRecommendationItem(matchedItem, remainderArgs);
+    const restMain = Array.isArray(rest.main_recommendations) ? rest.main_recommendations : [];
+    const mainRecommendations = [pinnedItem, ...restMain].map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+      rank_label: idx === 0 ? '1위(BEST)' : `${idx + 1}위`,
+    }));
+
+    logger.info(
+      `[Exact Match Pin] product="${pinnedItem.name}" remainder_pool=${remainder.length} rest_main_count=${restMain.length}`
+    );
+
+    const sessionKey = String(args.__session_key || args.session_key || 'global');
+    updateSessionContext(sessionKey, {
+      query: `${args.query || args.q || ''}`.trim(),
+      parsedIntent: { requested_category: rest.requested_category || matchedItem.category_key || null },
+      mainRecommendations,
+    });
+
+    return {
+      requested_category: rest.requested_category || matchedItem.category_key || null,
+      main_recommendations: mainRecommendations,
+      secondary_recommendations: rest.secondary_recommendations || [],
+      reasoning_tags: ['exact_product_match', ...(rest.reasoning_tags || [])],
+      applied_policy: rest.applied_policy || { category_locked: false, form_locked: false, sort_mode: 'popular' },
+      recommendations: mainRecommendations,
+      reference_recommendations: rest.secondary_recommendations || [],
+      promotions: rest.promotions || [],
+      summary: {
+        message: '말씀하신 상품을 찾아 안내드립니다.',
+        strategy: '지정하신 상품을 1순위로 고정하고, 나머지는 유사 대안으로 정리했습니다.',
+        conclusion: `요청하신 ${pinnedItem.name} 제품을 우선 안내드립니다.`,
+      },
+    };
+  },
+
   async scoreAndFilterProducts(cachedProducts, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
     trackRequest();
 
@@ -992,6 +1076,16 @@ export const recommendationService = {
         promotions: [],
         summary: { message: '데이터가 없습니다.', strategy: '', conclusion: '' },
       };
+    }
+
+    const exactMatchProductNos = new Set(
+      (Array.isArray(args.__exact_match_product_nos) ? args.__exact_match_product_nos : []).map(String)
+    );
+    if (exactMatchProductNos.size > 0) {
+      const matchedRaw = cachedProducts.find((p) => exactMatchProductNos.has(String(p.product_no)));
+      if (matchedRaw) {
+        return this.buildExactMatchResponse(matchedRaw, cachedProducts, args, limit);
+      }
     }
 
     const normalized = cachedProducts.map((p) => {

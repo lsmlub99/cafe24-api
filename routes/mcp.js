@@ -416,6 +416,18 @@ async function executeTool(args = {}) {
     await cafe24ApiService.syncAllProducts();
   }
 
+  // Stage 0 — deterministic "did the user name a real product" check, run against the raw
+  // text regardless of which fields the calling model chose to fill (category/q/product_name).
+  // This takes priority over category/condition-based routing further down.
+  const exactMatchQueryText = [args.product_name, args.q, args.query, args.category, ...(Array.isArray(args.concerns) ? args.concerns : [])]
+    .filter(Boolean)
+    .join(' ');
+  const exactMatches = cafe24ApiService.findConfidentProductMatches(exactMatchQueryText);
+  const exactMatchProductNos = exactMatches.map((p) => String(p.product_no));
+  if (exactMatches.length > 0) {
+    logger.info(`[Exact Match] query='${exactMatchQueryText}' matched=${exactMatches.map((p) => p.product_name).join(' | ')}`);
+  }
+
   const { rawCat, standardCat } = normalizeCategory(args.category);
   const lookupKeywords =
     standardCat === '비비크림'
@@ -455,25 +467,20 @@ async function executeTool(args = {}) {
     }
   }
 
-  // Product-name aware supplement: if the user named a specific product, make sure it's
-  // in the candidate pool even when category detection missed/mismatched it. getProductsFromCache
-  // falls back to fuzzy (typo-tolerant) matching when the exact keyword match is empty.
-  const productNameQuery = String(args.product_name || '').trim();
-  if (productNameQuery) {
-    const nameMatches = cafe24ApiService.getProductsFromCache({ keyword: productNameQuery });
-    if (nameMatches.length > 0) {
-      const seen = new Set(rawProducts.map((p) => String(p.product_no)));
-      const supplementCats = categoryNos.map((id) => ({ category_no: id }));
-      let addedCount = 0;
-      for (const p of nameMatches) {
-        if (seen.has(String(p.product_no))) continue;
-        seen.add(String(p.product_no));
-        const existingCats = Array.isArray(p.categories) ? p.categories : [];
-        rawProducts.push({ ...p, categories: [...existingCats, ...supplementCats] });
-        addedCount += 1;
-      }
-      logger.info(`[Tool Exec] Product-name supplement: query='${productNameQuery}' matched=${nameMatches.length} added=${addedCount}`);
+  // Make sure any Stage-0 exact-match product is in the candidate pool even when category
+  // detection missed/mismatched it — the pinning step in recommendationService needs it present.
+  if (exactMatches.length > 0) {
+    const seen = new Set(rawProducts.map((p) => String(p.product_no)));
+    const supplementCats = categoryNos.map((id) => ({ category_no: id }));
+    let addedCount = 0;
+    for (const p of exactMatches) {
+      if (seen.has(String(p.product_no))) continue;
+      seen.add(String(p.product_no));
+      const existingCats = Array.isArray(p.categories) ? p.categories : [];
+      rawProducts.push({ ...p, categories: [...existingCats, ...supplementCats] });
+      addedCount += 1;
     }
+    logger.info(`[Tool Exec] Exact-match supplement: added=${addedCount}`);
   }
 
   const enrichMaxFetch = computeEnrichMaxFetch(args);
@@ -487,6 +494,7 @@ async function executeTool(args = {}) {
       category: standardCat || args.category,
       category_aliases: standardCat ? [standardCat] : [],
       target_category_ids: Array.isArray(categoryNos) ? categoryNos : [],
+      __exact_match_product_nos: exactMatchProductNos,
     },
     3
   );

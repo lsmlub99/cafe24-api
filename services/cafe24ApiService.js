@@ -3,7 +3,7 @@ import { aiTaggingService } from './aiTaggingService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24AuthService } from './cafe24AuthService.js';
 import { logger } from '../utils/logger.js';
-import { fuzzyIncludes } from './recommendation/shared.js';
+import { fuzzyIncludes, toBaseName } from './recommendation/shared.js';
 
 let lastSyncLogs = [];
 let allProductsCache = [];
@@ -697,6 +697,24 @@ async function inspectProductDetailFields(productNo) {
   };
 }
 
+// Stricter than the 0.25 ratio used for category-supplement fuzzy matching — this decides
+// whether the user is naming a real, specific product, so false positives are costlier here.
+const EXACT_MATCH_DISTANCE_RATIO = 0.15;
+const EXACT_MATCH_MIN_LENGTH = 4;
+
+// Ground-truth, deterministic "did the user name a real catalog product" check, run against
+// the raw text regardless of which tool arguments the calling model chose to fill.
+function findConfidentProductMatches(text) {
+  const query = String(text || '').trim();
+  if (!query) return [];
+  return allProductsCache.filter((p) => {
+    if (p.display !== 'T' || p.selling !== 'T') return false;
+    const base = toBaseName(p.product_name);
+    if (base.replace(/\s+/g, '').length < EXACT_MATCH_MIN_LENGTH) return false;
+    return fuzzyIncludes(query, base, EXACT_MATCH_DISTANCE_RATIO);
+  });
+}
+
 function getKeywordSupplementForLookup(lookupKeywords = []) {
   for (const kw of lookupKeywords) {
     for (const [key, supplements] of Object.entries(CATEGORY_KEYWORD_SUPPLEMENT)) {
@@ -711,6 +729,7 @@ export const cafe24ApiService = {
   getProductsFromCache,
   getDynamicCategoryNos,
   getKeywordSupplementForLookup,
+  findConfidentProductMatches,
   enrichProductsWithIngredientText,
   inspectProductDetailFields,
   get allProductsCache() {

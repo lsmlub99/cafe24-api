@@ -314,8 +314,10 @@ export function calculateMainScoreBreakdown(product, intent, categoryLocked, pol
 
   const hasConditionSignal =
     Boolean(intent.skin_type) || (intent.concern || []).length > 0 || (intent.preference || []).length > 0;
-  // Mild noise for variety on simple queries (no condition signals) — ±2.5pt, never flips a clear winner
-  const varietyNoise = !hasConditionSignal ? (Math.random() * 5 - 2.5) : 0;
+  // No random jitter: it made identical queries return slightly different orderings run-to-run
+  // ("답이 매번 조금씩 다름") without adding real variety. Determinism is preferred; the diversity
+  // limiter (selectDiverseTopN) already prevents same-line/same-form clustering.
+  const varietyNoise = 0;
   const bestsellerBoost = (!hasConditionSignal && product.is_best)
     ? (policy.scoring.bestsellerPopularBoost || 0)
     : 0;

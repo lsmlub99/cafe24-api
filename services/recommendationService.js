@@ -2,7 +2,6 @@ import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { RECOMMENDATION_POLICY, RECOMMENDATION_TAXONOMY } from '../config/recommendationPolicy.js';
 import { parseUserIntent, extractProductKeywordConstraints } from './recommendation/intentParser.js';
-import { normalizeIntentWithLLM } from './recommendation/intentNormalizer.js';
 import { normalizeCafe24Product } from './recommendation/productNormalizer.js';
 import {
   calculateMainScoreBreakdown,
@@ -936,8 +935,10 @@ export const recommendationService = {
     );
 
     const deduped = dedupeByBase(scored).slice(0, RECOMMENDATION_POLICY.limits.stage2TopK);
-    const reranked = await stage2Rerank(deduped, parsedIntent, RECOMMENDATION_POLICY);
-    const finalSelected = selectDiverseTopN(reranked, Math.max(1, limit), RECOMMENDATION_POLICY);
+    // LLM rerank removed from the hot path: with llmWeight 0.45 it was the dominant source of
+    // run-to-run instability ("답이 매번 조금씩 다름") and added a serial chat-completion call.
+    // The deterministic base score (which already folds in the semantic-similarity boost) decides.
+    const finalSelected = selectDiverseTopN(deduped, Math.max(1, limit), RECOMMENDATION_POLICY);
 
     finalSelected.forEach((item, idx) => {
       const breakdown = item._score_breakdown || {};
@@ -1106,13 +1107,11 @@ export const recommendationService = {
     };
     const ruleParsed = parseUserIntent(args, requestTaxonomy);
     const openai = await getOpenAIClient();
-    const normalizedIntentResult = await normalizeIntentWithLLM(
-      openai,
-      args,
-      ruleParsed,
-      RECOMMENDATION_TAXONOMY,
-      config.INTENT_NORMALIZER_MODEL || config.RERANK_MODEL || RECOMMENDATION_POLICY.rerank.model
-    );
+    // Intent is derived purely from the deterministic rule parser now. The LLM intent normalizer
+    // was removed from the hot path: it added a serial chat-completion round-trip (latency +
+    // occasional tool-call timeouts) and run-to-run nondeterminism, while the rule parser already
+    // covers category/form/skin_type/concern and the semantic embedding handles fuzzy nuance.
+    const normalizedIntentResult = { intent: ruleParsed, source: 'rule' };
     let parsed = applySessionContextToIntent(normalizedIntentResult.intent, sessionContext);
     if (isExplicitBbRequest(parsed, args) && parsed.requested_category !== 'bb') {
       parsed = {

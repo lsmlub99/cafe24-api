@@ -712,4 +712,5 @@ async function handleMcpMessage(req, res) {
 router.post('/message', handleMcpMessage);
 router.post('/messages', handleMcpMessage);
 
+export { executeTool };
 export default router;

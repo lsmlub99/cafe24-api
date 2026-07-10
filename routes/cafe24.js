@@ -4,6 +4,7 @@ import { config } from '../config/env.js';
 import { cafe24AuthService } from '../services/cafe24AuthService.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
 import { recommendationService } from '../services/recommendationService.js';
+import { executeTool as executeMcpTool } from './mcp.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { stateStore } from '../stores/stateStore.js';
 import { logger } from '../utils/logger.js';
@@ -179,6 +180,22 @@ router.get('/debug/exact-match-full', async (req, res) => {
       reasoning_tags: result.reasoning_tags,
       main_top1: result.main_recommendations?.[0]?.name,
       main_top1_reason_code: result.main_recommendations?.[0]?.reason_code,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
+// Calls the REAL routes/mcp.js executeTool directly (no hand-copied replica) to rule out any
+// drift between this debug harness and the actual MCP tools/call path.
+router.get('/debug/exact-match-real', async (req, res) => {
+  try {
+    const category = String(req.query.category || '');
+    const q = String(req.query.q || '');
+    const toolResult = await executeMcpTool({ category, q });
+    res.json({
+      structuredContent: toolResult.structuredContent,
+      widgetData: toolResult._meta?.widgetData,
     });
   } catch (err) {
     res.status(500).json({ error: err.message, stack: err.stack });

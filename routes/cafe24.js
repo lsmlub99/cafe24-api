@@ -3,6 +3,7 @@ import express from 'express';
 import { config } from '../config/env.js';
 import { cafe24AuthService } from '../services/cafe24AuthService.js';
 import { cafe24ApiService } from '../services/cafe24ApiService.js';
+import { recommendationService } from '../services/recommendationService.js';
 import { tokenStore } from '../stores/tokenStore.js';
 import { stateStore } from '../stores/stateStore.js';
 import { logger } from '../utils/logger.js';
@@ -127,6 +128,57 @@ router.get('/debug/exact-match', async (req, res) => {
       cacheSize: cafe24ApiService.cacheSize,
       matchCount: matches.length,
       matches: matches.map((p) => ({ product_no: p.product_no, product_name: p.product_name })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
+// Temporary diagnostic route — replicates routes/mcp.js executeTool's Stage-0 wiring step by
+// step so we can see exactly where the pin breaks (rawProducts pool vs scoreAndFilterProducts).
+router.get('/debug/exact-match-full', async (req, res) => {
+  try {
+    const category = String(req.query.category || '');
+    const q = String(req.query.q || '');
+    const exactMatchQueryText = [q, category].filter(Boolean).join(' ');
+    const exactMatches = cafe24ApiService.findConfidentProductMatches(exactMatchQueryText);
+    const exactMatchProductNos = exactMatches.map((p) => String(p.product_no));
+
+    const categoryNos = cafe24ApiService.getDynamicCategoryNos([category]) || [];
+    let rawProducts =
+      categoryNos.length > 0
+        ? cafe24ApiService.getProductsFromCache({ categoryNos })
+        : cafe24ApiService.getProductsFromCache({ keyword: category });
+    if (!rawProducts.length) rawProducts = cafe24ApiService.getProductsFromCache({});
+
+    const seen = new Set(rawProducts.map((p) => String(p.product_no)));
+    let addedCount = 0;
+    for (const p of exactMatches) {
+      if (seen.has(String(p.product_no))) continue;
+      seen.add(String(p.product_no));
+      rawProducts.push(p);
+      addedCount += 1;
+    }
+
+    const rawProductsHasMatch = rawProducts.some((p) => exactMatchProductNos.includes(String(p.product_no)));
+
+    const result = await recommendationService.scoreAndFilterProducts(
+      rawProducts,
+      { category, q, __exact_match_product_nos: exactMatchProductNos },
+      3
+    );
+
+    res.json({
+      exactMatchQueryText,
+      exactMatchCount: exactMatches.length,
+      exactMatchProductNos,
+      categoryNos,
+      rawProductsCount: rawProducts.length,
+      supplementAdded: addedCount,
+      rawProductsHasMatch,
+      reasoning_tags: result.reasoning_tags,
+      main_top1: result.main_recommendations?.[0]?.name,
+      main_top1_reason_code: result.main_recommendations?.[0]?.reason_code,
     });
   } catch (err) {
     res.status(500).json({ error: err.message, stack: err.stack });

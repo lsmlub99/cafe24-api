@@ -151,8 +151,15 @@ export function parseUserIntent(args = {}, taxonomy) {
   const fullSignalText = `${q} ${concernsText} ${args.category || ''}`.trim();
   const productKeywordConstraints = extractProductKeywordConstraints(fullSignalText, taxonomy.productKeywordDictionary || []);
 
-  const explicitCategoryOverride = detectExplicitCategoryOverride(categoryText);
-  const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryText, taxonomy.categories);
+  // "스킨케어"/"skincare" is a generic umbrella, NOT the toner category — but it literally contains
+  // "스킨" (a toner alias), which was mis-locking broad queries like "남성 스킨케어" to toner. Strip
+  // umbrella terms before category detection so such queries fall through to general recommendations.
+  const stripUmbrella = (text) =>
+    String(text || '').replace(/스킨\s*케어|skin\s*care|기초\s*화장품/gi, ' ').replace(/\s+/g, ' ').trim();
+  const categoryTextForDetection = stripUmbrella(categoryText);
+
+  const explicitCategoryOverride = detectExplicitCategoryOverride(categoryTextForDetection);
+  const requestedCategory = explicitCategoryOverride || findFirstAliasKey(categoryTextForDetection, taxonomy.categories);
   const explicitSunForm = detectExplicitSunForm(fullSignalText);
   let requestedForm = explicitSunForm || findFirstAliasKey(formText, taxonomy.forms);
   if (requestedCategory === 'sunscreen' && requestedForm === 'cream' && !hasExplicitCreamFormPhrase(fullSignalText)) {

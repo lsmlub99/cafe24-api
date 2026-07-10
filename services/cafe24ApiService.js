@@ -4,6 +4,7 @@ import { tokenStore } from '../stores/tokenStore.js';
 import { cafe24AuthService } from './cafe24AuthService.js';
 import { logger } from '../utils/logger.js';
 import { fuzzyIncludes, toBaseName } from './recommendation/shared.js';
+import { RECOMMENDATION_TAXONOMY } from '../config/recommendationPolicy.js';
 
 let lastSyncLogs = [];
 let allProductsCache = [];
@@ -702,16 +703,40 @@ async function inspectProductDetailFields(productNo) {
 const EXACT_MATCH_DISTANCE_RATIO = 0.15;
 const EXACT_MATCH_MIN_LENGTH = 4;
 
+// Generic category/form words ("썬스크린", "토너", "크림", ...) must not count as a "product
+// name" match on their own — every product in that category would spuriously match, turning
+// an ordinary category browse into a false single-product pin. Only distinctive line/product
+// words (e.g. "아쿠아티카") count.
+const GENERIC_PRODUCT_TOKEN_STOPWORDS = new Set(
+  [...Object.values(RECOMMENDATION_TAXONOMY.categories || {}).flat(), ...Object.values(RECOMMENDATION_TAXONOMY.forms || {}).flat()].map(
+    (w) => String(w).toLowerCase().replace(/\s+/g, '')
+  )
+);
+
+function getDistinctiveNameTokens(productName) {
+  return toBaseName(productName)
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => {
+      if (!t) return false;
+      if (/^\d+(\.\d+)?\s?(ml|g|kg|oz|ea)$/i.test(t)) return false;
+      const compact = t.toLowerCase().replace(/\s+/g, '');
+      if (compact.length < EXACT_MATCH_MIN_LENGTH) return false;
+      return !GENERIC_PRODUCT_TOKEN_STOPWORDS.has(compact);
+    });
+}
+
 // Ground-truth, deterministic "did the user name a real catalog product" check, run against
-// the raw text regardless of which tool arguments the calling model chose to fill.
+// the raw text regardless of which tool arguments the calling model chose to fill. Matches on
+// distinctive name tokens (not the whole product name) so a short brand/line mention like
+// "아쿠아티카" still hits even though the user didn't repeat the full "아쿠아티카 쿨링 썬스크린 35ml".
 function findConfidentProductMatches(text) {
   const query = String(text || '').trim();
   if (!query) return [];
   return allProductsCache.filter((p) => {
     if (p.display !== 'T' || p.selling !== 'T') return false;
-    const base = toBaseName(p.product_name);
-    if (base.replace(/\s+/g, '').length < EXACT_MATCH_MIN_LENGTH) return false;
-    return fuzzyIncludes(query, base, EXACT_MATCH_DISTANCE_RATIO);
+    const tokens = getDistinctiveNameTokens(p.product_name);
+    return tokens.some((token) => fuzzyIncludes(query, token, EXACT_MATCH_DISTANCE_RATIO));
   });
 }
 

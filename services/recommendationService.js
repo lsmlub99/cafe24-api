@@ -1002,6 +1002,56 @@ export const recommendationService = {
     return buildDeterministicNarrative(mainRecommendations, promotions, secondaryRecommendations, args);
   },
 
+  // Men's-intent short-circuit: Cafe24 has no gendered category, so we rank only the
+  // men's-tagged products (identified in routes/mcp.js) and — unlike the normal path —
+  // allow gift sets / 기획세트 into main, because the men's line is frequently sold only
+  // as a set. If a skin_type/concern is present it still influences ordering via the
+  // existing score; category/form locks are intentionally not applied here.
+  buildMensResponse(cachedProducts, mensProductNos, args = {}, limit = RECOMMENDATION_POLICY.limits.defaultMain) {
+    const parsed = this.parse_user_request(args);
+    const pool = cachedProducts
+      .filter((p) => mensProductNos.has(String(p.product_no)))
+      .map((p) => {
+        const item = normalizeCafe24Product(p, RECOMMENDATION_TAXONOMY);
+        return { ...item, category_key: inferProductCategory(item) };
+      });
+
+    const softContext = { lineCounts: new Map(), formCounts: new Map() };
+    const scored = pool
+      .map((p) => {
+        const breakdown = calculateMainScoreBreakdown(p, parsed, false, RECOMMENDATION_POLICY, softContext);
+        return { ...p, _score_breakdown: breakdown, _base_score: breakdown.base_score };
+      })
+      .sort((a, b) => b._base_score - a._base_score);
+    const selected = selectDiverseTopN(dedupeByBase(scored), Math.max(1, limit), RECOMMENDATION_POLICY);
+    const mainRecommendations = selected.map((p, idx) => toRecommendationItem(p, idx, parsed));
+
+    logger.info(`[Mens Response] pool=${pool.length} main=${mainRecommendations.map((x) => x.name).join(' | ') || 'none'}`);
+
+    const sessionKey = String(args.__session_key || args.session_key || 'global');
+    updateSessionContext(sessionKey, {
+      query: `${args.query || args.q || ''}`.trim(),
+      parsedIntent: parsed,
+      mainRecommendations,
+    });
+
+    return {
+      requested_category: null,
+      main_recommendations: mainRecommendations,
+      secondary_recommendations: [],
+      reasoning_tags: ['mens_intent', ...buildReasoningTags(parsed)],
+      applied_policy: { category_locked: false, form_locked: false, sort_mode: parsed.sort_intent || 'popular' },
+      recommendations: mainRecommendations,
+      reference_recommendations: [],
+      promotions: [],
+      summary: {
+        message: mainRecommendations.length ? '남성용으로 추천드릴 제품입니다.' : '조건에 맞는 남성용 제품을 찾지 못했습니다.',
+        strategy: '남성용 태그가 붙은 제품을 우선 정리했습니다.',
+        conclusion: mainRecommendations.length ? `남성용 라인 중 ${mainRecommendations[0].name}을(를) 먼저 추천드려요.` : '',
+      },
+    };
+  },
+
   // A confirmed Stage-0 product-name match (see routes/mcp.js) is pinned as rank #1
   // unconditionally; the remaining slots are filled by re-running the normal pipeline
   // on the pool with that product removed, so alternatives still respect condition/
@@ -1090,6 +1140,13 @@ export const recommendationService = {
       if (matchedRaw) {
         return this.buildExactMatchResponse(matchedRaw, cachedProducts, args, limit);
       }
+    }
+
+    const mensProductNos = new Set(
+      (Array.isArray(args.__mens_product_nos) ? args.__mens_product_nos : []).map(String)
+    );
+    if (args.__mens_intent && mensProductNos.size > 0) {
+      return this.buildMensResponse(cachedProducts, mensProductNos, args, limit);
     }
 
     const normalized = cachedProducts.map((p) => {

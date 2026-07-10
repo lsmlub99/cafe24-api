@@ -443,6 +443,16 @@ async function executeTool(args = {}) {
     }
   }
 
+  // Men's-intent detection. There's no gendered category in Cafe24; men's products are only
+  // tag-marked and often sold as gift sets, so we detect the intent from the raw text and pull
+  // the men's-tagged products (sets included) explicitly.
+  const MENS_INTENT_RE = /남성|남자|맨즈|멘즈|for\s*men|men'?s|포\s*맨/i;
+  const mensIntent = exactMatches.length === 0 && !soldOutMatchName && MENS_INTENT_RE.test(exactMatchQueryText);
+  const mensProducts = mensIntent ? cafe24ApiService.findMensProducts() : [];
+  if (mensIntent) {
+    logger.info(`[Mens Intent] query='${exactMatchQueryText}' mens_products=${mensProducts.length}`);
+  }
+
   const { rawCat, standardCat } = normalizeCategory(args.category);
   const lookupKeywords =
     standardCat === '비비크림'
@@ -498,6 +508,19 @@ async function executeTool(args = {}) {
     logger.info(`[Tool Exec] Exact-match supplement: added=${addedCount}`);
   }
 
+  // Ensure men's-tagged products (often gift sets) are in the pool for men's-intent queries.
+  if (mensProducts.length > 0) {
+    const seen = new Set(rawProducts.map((p) => String(p.product_no)));
+    let addedCount = 0;
+    for (const p of mensProducts) {
+      if (seen.has(String(p.product_no))) continue;
+      seen.add(String(p.product_no));
+      rawProducts.push(p);
+      addedCount += 1;
+    }
+    logger.info(`[Tool Exec] Mens supplement: added=${addedCount}`);
+  }
+
   const enrichMaxFetch = computeEnrichMaxFetch(args);
   if (enrichMaxFetch > 0) logger.info(`[Tool Exec] Hybrid enrich enabled: maxFetch=${enrichMaxFetch}`);
   rawProducts = await cafe24ApiService.enrichProductsWithIngredientText(rawProducts, enrichMaxFetch);
@@ -510,6 +533,8 @@ async function executeTool(args = {}) {
       category_aliases: standardCat ? [standardCat] : [],
       target_category_ids: Array.isArray(categoryNos) ? categoryNos : [],
       __exact_match_product_nos: exactMatchProductNos,
+      __mens_intent: mensIntent,
+      __mens_product_nos: mensProducts.map((p) => String(p.product_no)),
     },
     3
   );

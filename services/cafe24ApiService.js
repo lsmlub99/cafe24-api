@@ -754,6 +754,18 @@ function findSoldOutProductMatches(text) {
   return allProductsCache.filter((p) => !isSellable(p) && matchesProductName(p, query));
 }
 
+const MENS_MARKERS = ['남성', '남자', '맨즈', '멘즈', 'for men', "men's", '포맨', '포 맨'];
+
+// Sellable products explicitly targeted at men (by tag/name), including gift sets — the catalog's
+// men's line is often sold only as a "기획세트", which the normal promo filter would hide.
+function findMensProducts() {
+  return allProductsCache.filter((p) => {
+    if (!isSellable(p)) return false;
+    const hay = `${p.product_name || ''} ${(p.keywords || []).join(' ')} ${p.search_features || ''}`.toLowerCase();
+    return MENS_MARKERS.some((m) => hay.includes(m.toLowerCase()));
+  });
+}
+
 function getKeywordSupplementForLookup(lookupKeywords = []) {
   for (const kw of lookupKeywords) {
     for (const [key, supplements] of Object.entries(CATEGORY_KEYWORD_SUPPLEMENT)) {
@@ -770,6 +782,7 @@ export const cafe24ApiService = {
   getKeywordSupplementForLookup,
   findConfidentProductMatches,
   findSoldOutProductMatches,
+  findMensProducts,
   enrichProductsWithIngredientText,
   inspectProductDetailFields,
   get allProductsCache() {

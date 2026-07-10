@@ -117,30 +117,6 @@ router.get('/products', async (req, res) => {
   }
 });
 
-// Temporary read-only catalog inspector — remove after Stage B redesign is validated.
-router.get('/debug/find', async (req, res) => {
-  try {
-    const term = String(req.query.term || '').toLowerCase();
-    const all = cafe24ApiService.allProductsCache || [];
-    const hits = all
-      .filter((p) => String(p.product_name || '').toLowerCase().includes(term))
-      .map((p) => ({
-        product_no: p.product_no,
-        product_name: p.product_name,
-        display: p.display,
-        selling: p.selling,
-        sold_out: p.sold_out,
-        category_ids: p.category_ids,
-        is_best: p.is_best,
-        is_new: p.is_new,
-        is_event: p.is_event,
-      }));
-    res.json({ term, cacheSize: all.length, hitCount: hits.length, hits });
-  } catch (err) {
-    res.status(500).json({ error: err.message, stack: err.stack });
-  }
-});
-
 router.get('/categories', async (req, res) => {
   const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
   if (!accessToken) return res.status(401).send(`토큰이 없습니다. <a href="/cafe24/start">인증 시작</a>`);

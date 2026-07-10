@@ -756,7 +756,10 @@ function enforceMainPolicyOnRanked(
   const promoPool = [];
   for (const item of ranked || []) {
     if (!item) continue;
-    if (item.is_promo || item.is_event) {
+    // Exclude only genuine non-primary SKUs (samples/gifts/bundles/market names) from main.
+    // Being in a promotional CATEGORY (is_event) must NOT banish an otherwise-normal standalone
+    // product — that was hiding legit on-sale items (e.g. "워터 핏 쿨링 썬 스틱") from main.
+    if (item.is_promo || item.is_bundle) {
       drop.DROP_PROMO_MAIN += 1;
       if (!categoryLocked || isCategoryMatchedByIntent(item, parsedIntent)) {
         promoPool.push(item);

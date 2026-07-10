@@ -170,7 +170,9 @@ const PROMO_PATTERN = new RegExp(
     K_MARKET,
     'market',
     K_POPUP,
-    '(^|\\s)x(\\s|$)', // standalone "X" denotes a brand collab (e.g. "\uC140\uD4E8\uC804\uC528 X \uB77D\uCC44\uC740")
+    // NOTE: standalone "X" (brand-collab marker) intentionally NOT matched here \u2014 a collab-branded
+    // SKU of a real product (e.g. "[\uC140\uD4E8\uC804\uC528X\uC870\uC564\uD504\uB80C\uC988] \uC544\uCFE0\uC544\uD2F0\uCE74 \uCFE8\uB9C1 \uC36C\uC2A4\uD06C\uB9B0") is still a
+    // legitimate primary product. Only true bundle/market/gift markers above should flag promo.
   ].join('|'),
   'i'
 );

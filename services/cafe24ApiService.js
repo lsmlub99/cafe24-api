@@ -730,14 +730,28 @@ function getDistinctiveNameTokens(productName) {
 // the raw text regardless of which tool arguments the calling model chose to fill. Matches on
 // distinctive name tokens (not the whole product name) so a short brand/line mention like
 // "아쿠아티카" still hits even though the user didn't repeat the full "아쿠아티카 쿨링 썬스크린 35ml".
+function matchesProductName(p, query) {
+  const tokens = getDistinctiveNameTokens(p.product_name);
+  return tokens.some((token) => fuzzyIncludes(query, token, EXACT_MATCH_DISTANCE_RATIO));
+}
+
+function isSellable(p) {
+  return p.display === 'T' && p.selling === 'T' && p.sold_out !== 'T';
+}
+
 function findConfidentProductMatches(text) {
   const query = String(text || '').trim();
   if (!query) return [];
-  return allProductsCache.filter((p) => {
-    if (p.display !== 'T' || p.selling !== 'T') return false;
-    const tokens = getDistinctiveNameTokens(p.product_name);
-    return tokens.some((token) => fuzzyIncludes(query, token, EXACT_MATCH_DISTANCE_RATIO));
-  });
+  return allProductsCache.filter((p) => isSellable(p) && matchesProductName(p, query));
+}
+
+// Same name match but for currently-unavailable SKUs only. Lets the tool say "that product is
+// sold out" instead of silently showing unrelated alternatives, when a user names a real product
+// whose every variant is out of stock (e.g. "워터 핏 쿨링 썬 스틱").
+function findSoldOutProductMatches(text) {
+  const query = String(text || '').trim();
+  if (!query) return [];
+  return allProductsCache.filter((p) => !isSellable(p) && matchesProductName(p, query));
 }
 
 function getKeywordSupplementForLookup(lookupKeywords = []) {
@@ -755,6 +769,7 @@ export const cafe24ApiService = {
   getDynamicCategoryNos,
   getKeywordSupplementForLookup,
   findConfidentProductMatches,
+  findSoldOutProductMatches,
   enrichProductsWithIngredientText,
   inspectProductDetailFields,
   get allProductsCache() {

@@ -428,6 +428,21 @@ async function executeTool(args = {}) {
     logger.info(`[Exact Match] query='${exactMatchQueryText}' matched=${exactMatches.map((p) => p.product_name).join(' | ')}`);
   }
 
+  // If the user named a real product whose every variant is currently unavailable, tell them it's
+  // sold out (rather than silently showing unrelated alternatives). Only when there's no sellable
+  // exact match.
+  let soldOutMatchName = '';
+  if (exactMatches.length === 0) {
+    const soldOut = cafe24ApiService.findSoldOutProductMatches(exactMatchQueryText);
+    if (soldOut.length > 0) {
+      soldOutMatchName = String(soldOut[0].product_name || '')
+        .replace(/^(\[[^\]]*\]\s*)+/, '')
+        .replace(/\s*\d+\s?(ml|g|kg|oz|ea)\b/gi, '')
+        .trim();
+      logger.info(`[Sold Out Match] query='${exactMatchQueryText}' matched=${soldOut.map((p) => p.product_name).join(' | ')}`);
+    }
+  }
+
   const { rawCat, standardCat } = normalizeCategory(args.category);
   const lookupKeywords =
     standardCat === '비비크림'
@@ -531,8 +546,13 @@ async function executeTool(args = {}) {
 
   // unified body generation path: even when main is empty we keep fixed_v1 text shape.
 
-  const widgetBodyText = buildCanonicalConsultTextFixed(canonicalMain, args);
-  const consultText = buildShortIntroText();
+  const soldOutNotice = soldOutMatchName
+    ? `말씀하신 '${soldOutMatchName}'은(는) 현재 품절이라 바로 추천이 어려워요. 대신 비슷하게 쓸 만한 제품을 정리해드릴게요.`
+    : '';
+  const widgetBodyText = soldOutNotice
+    ? `${soldOutNotice}\n\n${buildCanonicalConsultTextFixed(canonicalMain, args)}`
+    : buildCanonicalConsultTextFixed(canonicalMain, args);
+  const consultText = soldOutNotice ? `${soldOutNotice} ${buildShortIntroText()}` : buildShortIntroText();
   const bodyTemplateVersion = 'fixed_v1';
   const bodyItemsCount = Array.isArray(canonicalMain) ? canonicalMain.length : 0;
   const bodyRankLinesCount = bodyItemsCount;

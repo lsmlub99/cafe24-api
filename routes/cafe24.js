@@ -117,6 +117,22 @@ router.get('/products', async (req, res) => {
   }
 });
 
+// Temporary diagnostic route — remove once Stage-0 exact-match matching is confirmed working live.
+router.get('/debug/exact-match', async (req, res) => {
+  try {
+    const q = String(req.query.q || '');
+    const matches = cafe24ApiService.findConfidentProductMatches(q);
+    res.json({
+      query: q,
+      cacheSize: cafe24ApiService.cacheSize,
+      matchCount: matches.length,
+      matches: matches.map((p) => ({ product_no: p.product_no, product_name: p.product_name })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 router.get('/categories', async (req, res) => {
   const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
   if (!accessToken) return res.status(401).send(`토큰이 없습니다. <a href="/cafe24/start">인증 시작</a>`);

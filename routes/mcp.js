@@ -546,8 +546,24 @@ async function executeTool(args = {}) {
 
   // unified body generation path: even when main is empty we keep fixed_v1 text shape.
 
+  // Honesty about a requested attribute that isn't actually available. The keyword overlay floats
+  // matching products to the top, so if a requested product-line keyword (e.g. "쿨링") isn't present
+  // in any returned main pick, it means there's no in-stock item of that kind — say so instead of
+  // presenting unrelated items as if they answered the request.
+  const normalizeKw = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+  const requestedKeywords = (reasoningTags || [])
+    .filter((t) => typeof t === 'string' && t.startsWith('product_keyword:'))
+    .map((t) => t.slice('product_keyword:'.length))
+    .filter(Boolean);
+  const unmetKeywords = requestedKeywords.filter((kw) => {
+    const nkw = normalizeKw(kw);
+    return nkw && !canonicalMain.some((m) => normalizeKw(m?.name).includes(nkw));
+  });
+
   const soldOutNotice = soldOutMatchName
     ? `말씀하신 '${soldOutMatchName}'은(는) 현재 품절이라 바로 추천이 어려워요. 대신 비슷하게 쓸 만한 제품을 정리해드릴게요.`
+    : unmetKeywords.length > 0
+    ? `요청하신 '${unmetKeywords.join(', ')}' 타입은 지금 바로 추천 가능한 재고가 없어서, 대신 사용 가능한 제품으로 안내드릴게요.`
     : '';
   const widgetBodyText = soldOutNotice
     ? `${soldOutNotice}\n\n${buildCanonicalConsultTextFixed(canonicalMain, args)}`

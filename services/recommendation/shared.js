@@ -111,6 +111,9 @@ const K_PLAN = '\uAE30\uD68D';
 const K_SET = '\uC138\uD2B8';
 const K_LIMITED = '\uD55C\uC815';
 const K_LIMITED_EDITION = '\uD55C\uC815\uD310';
+const K_COLLAB = '\uCF5C\uB77C\uBCF4';
+const K_MARKET = '\uB9C8\uCF13';
+const K_POPUP = '\uD31D\uC5C5';
 
 const PROMO_TOKENS = [
   '1+1',
@@ -132,6 +135,13 @@ const PROMO_TOKENS = [
   K_LIMITED_EDITION,
   'event',
   'promo',
+  K_COLLAB,
+  'collab',
+  K_MARKET,
+  'market',
+  K_POPUP,
+  'pop-up',
+  'pop up',
 ];
 
 const PROMO_PATTERN = new RegExp(
@@ -155,6 +165,12 @@ const PROMO_PATTERN = new RegExp(
     'bundle',
     'promo',
     'event',
+    K_COLLAB,
+    'collab',
+    K_MARKET,
+    'market',
+    K_POPUP,
+    '(^|\\s)x(\\s|$)', // standalone "X" denotes a brand collab (e.g. "\uC140\uD4E8\uC804\uC528 X \uB77D\uCC44\uC740")
   ].join('|'),
   'i'
 );

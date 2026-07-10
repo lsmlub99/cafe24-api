@@ -756,7 +756,7 @@ function enforceMainPolicyOnRanked(
   const promoPool = [];
   for (const item of ranked || []) {
     if (!item) continue;
-    if (item.is_promo) {
+    if (item.is_promo || item.is_event) {
       drop.DROP_PROMO_MAIN += 1;
       if (!categoryLocked || isCategoryMatchedByIntent(item, parsedIntent)) {
         promoPool.push(item);

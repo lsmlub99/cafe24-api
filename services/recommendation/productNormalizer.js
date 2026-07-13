@@ -117,6 +117,10 @@ export function normalizeCafe24Product(raw = {}, taxonomy) {
   if (image.startsWith('//')) image = `https:${image}`;
   else if (image.startsWith('/')) image = `https://cellfusionc.co.kr${image}`;
   image = image.replace('http:', 'https:');
+  // On mobile user-agents cellfusionc.co.kr 301-redirects images to m.cellfusionc.co.kr, which is
+  // NOT in the widget CSP allowlist → images break in the ChatGPT mobile app ("?" placeholders).
+  // Serve them from img.cellfusionc.co.kr instead (already CSP-allowed, no mobile redirect).
+  image = image.replace(/^https:\/\/(www\.|m\.)?cellfusionc\.co\.kr/i, 'https://img.cellfusionc.co.kr');
 
   const productTagText = String(raw.product_tag || '').replace(/,/g, ' ');
   const text = lower(

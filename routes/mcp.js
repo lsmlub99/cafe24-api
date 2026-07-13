@@ -685,11 +685,15 @@ async function handleMcpMessage(req, res) {
 
     if (method === 'resources/read') {
       const requestedUri = String(params?.uri || '');
-      const normalized = requestedUri.split(/[?#]/)[0];
+      // Strip query/hash AND a trailing slash: some clients (e.g. Codex) normalize the widget URL
+      // to ".../ui/recommendation/" while others send ".../ui/recommendation". A strict string
+      // compare rejected the slash variant with -32602 → widget failed to load on those clients.
+      const stripTrailingSlash = (u) => String(u).replace(/\/+$/, '');
+      const normalized = stripTrailingSlash(requestedUri.split(/[?#]/)[0]);
       const allowedUris = [WIDGET_UI_URI, WIDGET_HTTP_URI];
       logger.info(`[MCP Protocol] resources/read requested: ${requestedUri}`);
 
-      if (!allowedUris.includes(normalized)) {
+      if (!allowedUris.some((u) => stripTrailingSlash(u) === normalized)) {
         sendErr(id, -32602, `Unknown resource URI: ${requestedUri}`, { available: allowedUris });
         return;
       }

@@ -707,15 +707,25 @@ const EXACT_MATCH_MIN_LENGTH = 4;
 // name" match on their own — every product in that category would spuriously match, turning
 // an ordinary category browse into a false single-product pin. Only distinctive line/product
 // words (e.g. "아쿠아티카") count.
+// Brand name appears in EVERY product ("셀퓨전씨 …"), and promo/market wrappers ("마켓_추가구성")
+// are not product identity — neither should count as a distinctive product-name token, or a bare
+// brand mention like "셀퓨전씨 남성용 화장품 있나요?" falsely matches a random product.
+const BRAND_AND_NOISE_STOPWORDS = [
+  '셀퓨전씨', '셀퓨전', '셀퓨전c', 'cellfusion', 'cellfusionc',
+  '마켓', '마켓종료', '추가구성', '종료', '기획', '세트',
+];
+
 const GENERIC_PRODUCT_TOKEN_STOPWORDS = new Set(
-  [...Object.values(RECOMMENDATION_TAXONOMY.categories || {}).flat(), ...Object.values(RECOMMENDATION_TAXONOMY.forms || {}).flat()].map(
-    (w) => String(w).toLowerCase().replace(/\s+/g, '')
-  )
+  [
+    ...Object.values(RECOMMENDATION_TAXONOMY.categories || {}).flat(),
+    ...Object.values(RECOMMENDATION_TAXONOMY.forms || {}).flat(),
+    ...BRAND_AND_NOISE_STOPWORDS,
+  ].map((w) => String(w).toLowerCase().replace(/\s+/g, ''))
 );
 
 function getDistinctiveNameTokens(productName) {
   return toBaseName(productName)
-    .split(/\s+/)
+    .split(/[\s_]+/)
     .map((t) => t.trim())
     .filter((t) => {
       if (!t) return false;

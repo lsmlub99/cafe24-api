@@ -87,14 +87,7 @@ const TOOLS = [
       required: ['category'],
       properties: {
         category: { type: 'string', description: '추천 카테고리 (예: 선크림, 토너, 세럼, 크림)' },
-        product_name: {
-          type: 'string',
-          description: '사용자가 특정 상품명을 언급한 경우, 그 상품명을 원문 그대로 여기에 넣으세요 (예: "아쿠아티카 선크림 있어요?" → "아쿠아티카 선크림").',
-        },
-        q: {
-          type: 'string',
-          description: '사용자 자연어 쿼리 (피부 고민, 제형 요청 등 전체 문장). 상품명이 언급되었다면 여기에도 원문 그대로 포함하세요.',
-        },
+        q: { type: 'string', description: '사용자 자연어 쿼리 (피부 고민, 제형 요청 등 전체 문장)' },
         skin_type: { type: 'string', description: '피부 타입 (건성, 지성, 수부지, 민감성)' },
         concerns: { type: 'array', items: { type: 'string' }, description: '피부 고민 목록 (보습, 진정, 유분, 톤업 등)' },
       },

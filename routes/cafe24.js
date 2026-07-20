@@ -117,11 +117,31 @@ router.get('/products', async (req, res) => {
   }
 });
 
+// Merchandising buckets that are NOT product types — excluded from category_names/summary so an
+// external analysis grounds on real lines (선케어/토너/…), not "best/new/event" noise.
+const MERCH_CATEGORY_NAMES = new Set(['베스트', '신상품', '행사', 'best', 'new', 'event']);
+
+function buildCategoryIdToNames() {
+  const catMap = cafe24ApiService.categoryMapping || {};
+  const idToNames = {};
+  for (const [name, ids] of Object.entries(catMap)) {
+    if (MERCH_CATEGORY_NAMES.has(String(name).toLowerCase()) || MERCH_CATEGORY_NAMES.has(name)) continue;
+    for (const id of Array.isArray(ids) ? ids : [ids]) {
+      if (!id) continue;
+      (idToNames[Number(id)] ||= []).push(name);
+    }
+  }
+  return idToNames;
+}
+
+const cleanProductName = (name = '') => String(name).replace(/^(\[[^\]]*\]\s*)+/, '').replace(/☆/g, '').trim();
+
 // Full product-catalog export for external systems (pipelines / other AIs).
 // Read-only, always fresh (served from the 10-min in-memory sync of Cafe24 Admin data).
 // Optional guard: if CATALOG_API_KEY env is set, require ?key=... or "Authorization: Bearer ...".
-//   - GET /cafe24/catalog          → sellable products only (display=T & selling=T & not sold out)
-//   - GET /cafe24/catalog?all=true → every synced product incl. hidden/sold-out
+//   - GET /cafe24/catalog             → sellable products (display=T & selling=T) + category_names
+//   - GET /cafe24/catalog?all=true     → every synced product incl. hidden/sold-out
+//   - GET /cafe24/catalog?summary=true → compact "what this brand sells": category → count + examples
 router.get('/catalog', async (req, res) => {
   try {
     const requiredKey = process.env.CATALOG_API_KEY;
@@ -137,8 +157,40 @@ router.get('/catalog', async (req, res) => {
 
     const includeAll = String(req.query.all || '') === 'true';
     const source = includeAll ? cafe24ApiService.allProductsCache || [] : cafe24ApiService.getProductsFromCache({});
+    const idToNames = buildCategoryIdToNames();
+    const namesForIds = (ids) => [...new Set((ids || []).flatMap((id) => idToNames[Number(id)] || []))];
+    const syncedAt = cafe24ApiService.lastSyncTime ? new Date(cafe24ApiService.lastSyncTime).toISOString() : null;
 
-    const products = source.map((p) => ({
+    const withMeta = source.map((p) => {
+      const category_ids = Array.isArray(p.category_ids)
+        ? p.category_ids
+        : Array.isArray(p.categories)
+        ? p.categories.map((c) => c.category_no)
+        : [];
+      return { p, category_ids, category_names: namesForIds(category_ids) };
+    });
+
+    // Compact brand-profile mode: ideal for grounding "what does CellFusionC actually sell".
+    if (String(req.query.summary || '') === 'true') {
+      const byCategory = {};
+      for (const { p, category_names } of withMeta) {
+        for (const cat of category_names.length ? category_names : ['(미분류)']) {
+          (byCategory[cat] ||= new Set()).add(cleanProductName(p.product_name));
+        }
+      }
+      const categories = Object.entries(byCategory)
+        .map(([category, names]) => ({ category, product_count: names.size, examples: [...names].slice(0, 8) }))
+        .sort((a, b) => b.product_count - a.product_count);
+      return res.json({
+        mall_id: config.MALL_ID,
+        brand: 'CellFusion C',
+        synced_at: syncedAt,
+        sells: categories.map((c) => c.category).filter((c) => c !== '(미분류)'),
+        categories,
+      });
+    }
+
+    const products = withMeta.map(({ p, category_ids, category_names }) => ({
       product_no: p.product_no,
       product_name: p.product_name,
       price: p.price,
@@ -146,11 +198,8 @@ router.get('/catalog', async (req, res) => {
       display: p.display,
       selling: p.selling,
       sold_out: p.sold_out,
-      category_ids: Array.isArray(p.category_ids)
-        ? p.category_ids
-        : Array.isArray(p.categories)
-        ? p.categories.map((c) => c.category_no)
-        : [],
+      category_ids,
+      category_names,
       image: p.list_image || p.detail_image || p.tiny_image || '',
       tags: Array.isArray(p.keywords) ? p.keywords : [],
       summary_description: p.summary_description || '',
@@ -159,7 +208,8 @@ router.get('/catalog', async (req, res) => {
 
     res.json({
       mall_id: config.MALL_ID,
-      synced_at: cafe24ApiService.lastSyncTime ? new Date(cafe24ApiService.lastSyncTime).toISOString() : null,
+      brand: 'CellFusion C',
+      synced_at: syncedAt,
       count: products.length,
       products,
     });

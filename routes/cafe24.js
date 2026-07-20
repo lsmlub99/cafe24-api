@@ -117,6 +117,58 @@ router.get('/products', async (req, res) => {
   }
 });
 
+// Full product-catalog export for external systems (pipelines / other AIs).
+// Read-only, always fresh (served from the 10-min in-memory sync of Cafe24 Admin data).
+// Optional guard: if CATALOG_API_KEY env is set, require ?key=... or "Authorization: Bearer ...".
+//   - GET /cafe24/catalog          → sellable products only (display=T & selling=T & not sold out)
+//   - GET /cafe24/catalog?all=true → every synced product incl. hidden/sold-out
+router.get('/catalog', async (req, res) => {
+  try {
+    const requiredKey = process.env.CATALOG_API_KEY;
+    if (requiredKey) {
+      const provided = req.query.key || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      if (provided !== requiredKey) return res.status(401).json({ error: 'invalid or missing API key' });
+    }
+
+    if ((cafe24ApiService.cacheSize || 0) === 0) {
+      const token = await tokenStore.getAccessToken(config.MALL_ID);
+      if (token) await cafe24ApiService.syncAllProducts(token);
+    }
+
+    const includeAll = String(req.query.all || '') === 'true';
+    const source = includeAll ? cafe24ApiService.allProductsCache || [] : cafe24ApiService.getProductsFromCache({});
+
+    const products = source.map((p) => ({
+      product_no: p.product_no,
+      product_name: p.product_name,
+      price: p.price,
+      retail_price: p.retail_price,
+      display: p.display,
+      selling: p.selling,
+      sold_out: p.sold_out,
+      category_ids: Array.isArray(p.category_ids)
+        ? p.category_ids
+        : Array.isArray(p.categories)
+        ? p.categories.map((c) => c.category_no)
+        : [],
+      image: p.list_image || p.detail_image || p.tiny_image || '',
+      tags: Array.isArray(p.keywords) ? p.keywords : [],
+      summary_description: p.summary_description || '',
+      product_url: `https://cellfusionc.co.kr/product/detail.html?product_no=${p.product_no}`,
+    }));
+
+    res.json({
+      mall_id: config.MALL_ID,
+      synced_at: cafe24ApiService.lastSyncTime ? new Date(cafe24ApiService.lastSyncTime).toISOString() : null,
+      count: products.length,
+      products,
+    });
+  } catch (err) {
+    logger.error('[Catalog] export error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/categories', async (req, res) => {
   const accessToken = await tokenStore.getAccessToken(config.MALL_ID);
   if (!accessToken) return res.status(401).send(`토큰이 없습니다. <a href="/cafe24/start">인증 시작</a>`);
